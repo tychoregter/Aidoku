@@ -216,14 +216,14 @@ class ReaderViewController: BaseObservingViewController {
         toolbarView.sliderView.addTarget(self, action: #selector(sliderStopped(_:)), for: .editingDidEnd)
         toolbarView.translatesAutoresizingMaskIntoConstraints = false
         let toolbarButtonItemView = UIBarButtonItem(customView: toolbarView)
-        toolbarButtonItemView.customView?.heightAnchor.constraint(equalToConstant: 40).isActive = true
         if #available(iOS 26.0, *) {
+            toolbarButtonItemView.customView?.heightAnchor.constraint(equalToConstant: 52).isActive = true
             toolbarViewWidthConstraint = toolbarButtonItemView.customView?.widthAnchor.constraint(
-                equalToConstant: node.bounds.width - 32 - 10
+                equalToConstant: view.bounds.width - 52
             )
-            // shift down farther to account for different toolbar and slider knob size
-            toolbarButtonItemView.customView?.transform = CGAffineTransform(translationX: 0, y: -5)
+            toolbarButtonItemView.customView?.transform = CGAffineTransform(translationX: 0, y: 1)
         } else {
+            toolbarButtonItemView.customView?.heightAnchor.constraint(equalToConstant: 40).isActive = true
             toolbarViewWidthConstraint = toolbarButtonItemView.customView?.widthAnchor.constraint(equalToConstant: view.bounds.width)
             toolbarButtonItemView.customView?.transform = CGAffineTransform(translationX: 0, y: -10)
         }
@@ -432,7 +432,7 @@ class ReaderViewController: BaseObservingViewController {
 
         coordinator.animate(alongsideTransition: nil) { _ in
             if #available(iOS 26.0, *) {
-                self.toolbarViewWidthConstraint?.constant = size.width - 32 - 10
+                self.toolbarViewWidthConstraint?.constant = size.width - 52
             } else {
                 self.toolbarViewWidthConstraint?.constant = size.width
             }

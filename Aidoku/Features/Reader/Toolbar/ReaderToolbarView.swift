@@ -71,16 +71,16 @@ class ReaderToolbarView: UIView {
 
         NSLayoutConstraint.activate([
             incognitoModeLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            incognitoModeLabel.bottomAnchor.constraint(equalTo: bottomAnchor),
+            incognitoModeLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
 
             currentPageLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
-            currentPageLabel.bottomAnchor.constraint(equalTo: bottomAnchor),
+            currentPageLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
 
             pagesLeftLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            pagesLeftLabel.bottomAnchor.constraint(equalTo: bottomAnchor),
+            pagesLeftLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
 
             sliderView.heightAnchor.constraint(equalToConstant: 12),
-            sliderView.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            sliderView.centerYAnchor.constraint(equalTo: centerYAnchor),
             sliderView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             sliderView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12)
         ])

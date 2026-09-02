@@ -941,13 +941,19 @@ extension LibraryViewController {
     func filtersSubtitle() -> String? {
         guard !viewModel.filters.isEmpty else { return nil }
         var options: [String] = []
-        var methods: Set<LibraryFilter.FilterMethod> = []
         for filterMethod in LibraryFilter.FilterMethod.allCases {
-            // ensure we only list each method type once (e.g. for multiple source filters)
-            guard methods.insert(filterMethod).inserted else {
-                continue
+            let methodFilters = viewModel.filters.filter { $0.type == filterMethod }
+            guard !methodFilters.isEmpty else { continue }
+
+            // Show each selected value for submenu filters, but keep the other
+            // filter types collapsed to one entry (for example, multiple sources).
+            let filtersToShow = if filterMethod == .contentRating || filterMethod == .category || filterMethod == .collection {
+                methodFilters
+            } else {
+                Array(methodFilters.prefix(1))
             }
-            if let filter = viewModel.filters.first(where: { $0.type == filterMethod }) {
+
+            for filter in filtersToShow {
                 guard options.count < 3 else {
                     options.removeLast() // make subtitle fit in two lines
                     options.append(NSLocalizedString("AND_MORE"))
@@ -969,6 +975,10 @@ extension LibraryViewController {
                 } else {
                     options.append(filterMethod.title)
                 }
+            }
+
+            if options.last == NSLocalizedString("AND_MORE") {
+                break
             }
         }
         return options.joined(separator: NSLocalizedString("FILTER_SEPARATOR"))
