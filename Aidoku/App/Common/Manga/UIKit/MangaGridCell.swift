@@ -80,9 +80,10 @@ class MangaGridCell: UICollectionViewCell {
 
     func configure() {
         contentView.clipsToBounds = true
-        contentView.layer.cornerRadius = 5
+        contentView.layer.cornerRadius = 12
+        contentView.layer.cornerCurve = .continuous
         contentView.layer.borderWidth = 1
-        contentView.layer.borderColor = UIColor.quaternarySystemFill.cgColor
+        updatePosterBorderAppearance()
 
         imageView.image = UIImage(named: "MangaPlaceholder")
         imageView.contentMode = .scaleAspectFill
@@ -97,7 +98,8 @@ class MangaGridCell: UICollectionViewCell {
         gradient.cornerRadius = layer.cornerRadius
         gradient.needsDisplayOnBoundsChange = true
 
-        overlayView.layer.insertSublayer(gradient, at: 0)
+        // Keep the poster image clean; titles are shown below cards by the
+        // surrounding library/list layout rather than over the artwork.
         overlayView.layer.cornerRadius = layer.cornerRadius
         contentView.addSubview(overlayView)
 
@@ -105,6 +107,8 @@ class MangaGridCell: UICollectionViewCell {
         titleLabel.numberOfLines = 2
         titleLabel.font = .systemFont(ofSize: 15, weight: .medium)
         contentView.addSubview(titleLabel)
+        titleLabel.isHidden = true
+        overlayView.isHidden = true
 
         contentView.addSubview(badgeView)
 
@@ -122,6 +126,20 @@ class MangaGridCell: UICollectionViewCell {
 
         contentView.addSubview(shadowOverlayView)
         contentView.addSubview(selectionView)
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle {
+            updatePosterBorderAppearance()
+        }
+    }
+
+    private func updatePosterBorderAppearance() {
+        let borderColor = traitCollection.userInterfaceStyle == .dark
+            ? UIColor.white.withAlphaComponent(0.24)
+            : UIColor.black.withAlphaComponent(0.18)
+        contentView.layer.borderColor = borderColor.cgColor
     }
 
     func constrain() {
@@ -144,13 +162,9 @@ class MangaGridCell: UICollectionViewCell {
             overlayView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             overlayView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
-            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8),
-            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
-            titleLabel.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
-
-            badgeView.heightAnchor.constraint(equalToConstant: 20),
-            badgeView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 5),
-            badgeView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 5),
+            badgeView.heightAnchor.constraint(equalToConstant: 24),
+            badgeView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
+            badgeView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 6),
 
             bookmarkView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
             bookmarkView.topAnchor.constraint(equalTo: contentView.topAnchor),

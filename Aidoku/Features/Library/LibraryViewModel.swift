@@ -11,9 +11,12 @@ import UIKit
 
 @MainActor
 class LibraryViewModel {
+    private static let favoritesKey = "library.favoriteMangaIdentifiers"
+
     var manga: [MangaInfo] = []
     var pinnedManga: [MangaInfo] = []
     var sourceKeys: [String] = []
+    var collections: [String] = []
 
     // temporary storage when searching
     private var searchQuery: String = ""
@@ -131,6 +134,7 @@ class LibraryViewModel {
             saveFilters()
         }
     }
+    private(set) var favoriteIds: Set<String>
     var activeFilters: [LibraryFilter] {
         if let currentCategory, let group = filterGroups.first(where: { $0.title == currentCategory }) {
             group.filters + self.filters
@@ -159,6 +163,7 @@ class LibraryViewModel {
     private(set) var actuallyEmpty = true
 
     init() {
+        favoriteIds = Set(UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? [])
         let filtersData = AppSettings.library.filtersData.get()
         if let filtersData {
             let filters = try? JSONDecoder().decode([LibraryFilter].self, from: filtersData)
@@ -166,6 +171,17 @@ class LibraryViewModel {
         } else {
             self.filters = []
         }
+    }
+
+    func isFavorite(_ mangaId: MangaIdentifier) -> Bool {
+        favoriteIds.contains(mangaId.description)
+    }
+
+    func toggleFavorite(_ mangaId: MangaIdentifier) {
+        if !favoriteIds.insert(mangaId.description).inserted {
+            favoriteIds.remove(mangaId.description)
+        }
+        UserDefaults.standard.set(Array(favoriteIds), forKey: Self.favoritesKey)
     }
 }
 
@@ -216,7 +232,7 @@ extension LibraryViewModel {
             manga,
             sourceKeys,
             unappliedFilters
-        ) = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [sortMethod, sortAscending, pinType] context in
+        ) = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [sortMethod, sortAscending, pinType, favoriteIds] context in
             var pinnedManga: [MangaInfo] = []
             var manga: [MangaInfo] = []
             var sourceKeys: Set<String> = []
@@ -287,6 +303,9 @@ extension LibraryViewModel {
                         case .hasUnread:
                             unappliedFilters.append(filter)
                             continue
+                        case .caughtUp:
+                            unappliedFilters.append(filter)
+                            continue
                         case .started:
                             condition = CoreDataManager.shared.hasHistory(
                                 mangaId: info.id,
@@ -321,6 +340,12 @@ extension LibraryViewModel {
                                 filteredCategories.insert(category)
                                 continue
                             }
+                        case .favorite:
+                            condition = favoriteIds.contains(info.id.description)
+                        case .collection:
+                            guard let collection = filter.value else { continue }
+                            let memberships = (UserDefaults.standard.dictionary(forKey: "\(info.id.sourceKey).collectionMembership") as? [String: [String]] ?? [:])[info.id.mangaKey] ?? []
+                            condition = memberships.contains(collection)
 
                     }
                     let shouldSkip = filter.exclude ? condition : !condition
@@ -363,6 +388,11 @@ extension LibraryViewModel {
         self.storedPinnedManga = nil
         self.storedManga = nil
         self.sourceKeys = sourceKeys.sorted()
+        self.collections = sourceKeys.flatMap { sourceKey in
+            (UserDefaults.standard.dictionary(forKey: "\(sourceKey).collectionMembership") as? [String: [String]] ?? [:]).values.flatMap { $0 }
+        }.sorted().reduce(into: []) { result, value in
+            if result.last != value { result.append(value) }
+        }
         self.actuallyEmpty = actuallyEmpty
 
         await fetchUnreads(skipSortCheck: true)
@@ -375,6 +405,7 @@ extension LibraryViewModel {
                     switch filter.type {
                         case .downloaded: condition = info.downloads > 0
                         case .hasUnread: condition = info.unread > 0
+                        case .caughtUp: condition = info.unread == 0
                         default: continue
                     }
                     let shouldSkip = filter.exclude ? condition : !condition
@@ -461,7 +492,7 @@ extension LibraryViewModel {
                 }
             }
         }
-        if pinType == .unread || activeFilters.contains(where: { $0.type == .hasUnread }) {
+        if pinType == .unread || activeFilters.contains(where: { $0.type == .hasUnread || $0.type == .caughtUp }) {
             await loadLibrary()
         } else if sortMethod == .unreadChapters {
             await sortLibrary()
@@ -639,6 +670,8 @@ extension LibraryViewModel {
             } else {
                 filters[filterIndex].exclude = true
             }
+        } else if method == .contentRating || method == .category || method == .collection {
+            filters.append(LibraryFilter(type: method, value: value, exclude: true))
         } else {
             filters.append(LibraryFilter(type: method, value: value, exclude: false))
         }
@@ -723,7 +756,7 @@ extension LibraryViewModel {
     }
 
     func mangaRead(mangaId: MangaIdentifier) async {
-        if activeFilters.contains(where: { $0.type == .hasUnread }) {
+        if activeFilters.contains(where: { $0.type == .hasUnread || $0.type == .caughtUp }) {
             // reload library in case all chapters were read and the manga should be filtered
             await loadLibrary()
             return

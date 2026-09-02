@@ -48,6 +48,7 @@ struct MangaDetailsHeaderView: View {
     @State private var longHeldSafari = false
     @State private var isTracking = false
     @State private var hasAvailableTrackers = false
+    @State private var isFavorite = false
     @State private var showLibraryRemoveConfirm = false
 
     static let coverWidth: CGFloat = 114
@@ -253,6 +254,7 @@ struct MangaDetailsHeaderView: View {
         .task {
             updateReadButtonText()
             hasAvailableTrackers = await TrackerManager.shared.hasAvailableTrackers(mangaId: manga.identifier)
+            isFavorite = UserDefaults.standard.stringArray(forKey: "library.favoriteMangaIdentifiers")?.contains(manga.identifier.description) ?? false
         }
     }
 
@@ -333,6 +335,21 @@ struct MangaDetailsHeaderView: View {
                 }
             } message: {
                 Text(NSLocalizedString("REMOVE_FROM_LIBRARY_CONFIRM_TEXT"))
+            }
+
+            if bookmarked {
+                Button {
+                    let identifier = manga.identifier.description
+                    var favoriteIds = Set(UserDefaults.standard.stringArray(forKey: "library.favoriteMangaIdentifiers") ?? [])
+                    if !favoriteIds.insert(identifier).inserted {
+                        favoriteIds.remove(identifier)
+                    }
+                    UserDefaults.standard.set(Array(favoriteIds), forKey: "library.favoriteMangaIdentifiers")
+                    isFavorite.toggle()
+                } label: {
+                    Image(systemName: isFavorite ? "star.fill" : "star")
+                }
+                .buttonStyle(MangaActionButtonStyle(selected: isFavorite))
             }
 
             if hasAvailableTrackers {

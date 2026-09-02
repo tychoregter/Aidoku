@@ -12,6 +12,9 @@ struct HomeGridView: View {
     let source: AidokuRunner.Source
     let entries: [AidokuRunner.Manga]
     @Binding var bookmarkedItems: Set<String>
+    let selectionMode: Bool
+    @Binding var selectedItems: Set<String>
+    var onToggleSelection: ((AidokuRunner.Manga) -> Void)?
     var loadMore: (() async -> Void)?
     var onSelect: ((AidokuRunner.Manga) -> Void)?
 
@@ -26,14 +29,20 @@ struct HomeGridView: View {
         source: AidokuRunner.Source,
         entries: [AidokuRunner.Manga],
         bookmarkedItems: Binding<Set<String>> = .constant([]),
+        selectionMode: Bool = false,
+        selectedItems: Binding<Set<String>> = .constant([]),
         loadMore: (() async -> Void)? = nil,
-        onSelect: ((AidokuRunner.Manga) -> Void)? = nil
+        onSelect: ((AidokuRunner.Manga) -> Void)? = nil,
+        onToggleSelection: ((AidokuRunner.Manga) -> Void)? = nil
     ) {
         self.source = source
         self.entries = entries
         self._bookmarkedItems = bookmarkedItems
+        self.selectionMode = selectionMode
+        self._selectedItems = selectedItems
         self.loadMore = loadMore
         self.onSelect = onSelect
+        self.onToggleSelection = onToggleSelection
         self._columns = State(initialValue: Self.getColumns())
     }
 
@@ -108,18 +117,29 @@ struct HomeGridView: View {
     private func mangaGridItem(entry: AidokuRunner.Manga) -> some View {
         let inLibrary = bookmarkedItems.contains(entry.key)
         return Button {
-            if let onSelect {
+            if selectionMode, let onToggleSelection {
+                onToggleSelection(entry)
+            } else if let onSelect {
                 onSelect(entry)
             } else {
                 path.push(MangaViewController(source: source, manga: entry, parent: path.rootViewController))
             }
         } label: {
-            MangaGridItem(
-                source: source,
-                title: entry.title,
-                coverImage: entry.cover ?? "",
-                bookmarked: inLibrary
-            )
+            ZStack(alignment: .topLeading) {
+                MangaGridItem(
+                    source: source,
+                    title: entry.title,
+                    coverImage: entry.cover ?? "",
+                    bookmarked: inLibrary
+                )
+                if selectionMode {
+                    Image(systemName: selectedItems.contains(entry.key) ? "checkmark.circle.fill" : "circle")
+                        .font(.title2)
+                        .foregroundStyle(selectedItems.contains(entry.key) ? .white : .secondary)
+                        .background(Circle().fill(selectedItems.contains(entry.key) ? Color.accentColor : Color.white))
+                        .padding(6)
+                }
+            }
         }
         .buttonStyle(MangaGridButtonStyle())
         .contextMenu {

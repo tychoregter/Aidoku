@@ -11,6 +11,17 @@ import SwiftUI
 import AidokuRunner
 
 class LibraryViewController: OldMangaCollectionViewController {
+
+    func scrollToTop(animated: Bool = true) {
+        guard isViewLoaded else { return }
+        navigationItem.largeTitleDisplayMode = .always
+        // Match UIKit's status-bar scroll-to-top destination exactly.
+        collectionView.setContentOffset(
+            CGPoint(x: -collectionView.adjustedContentInset.left,
+                    y: -collectionView.adjustedContentInset.top),
+            animated: animated
+        )
+    }
     let viewModel = LibraryViewModel()
 
     // MARK: Bar Buttons
@@ -28,7 +39,8 @@ class LibraryViewController: OldMangaCollectionViewController {
     private lazy var moreBarButton =  makeBarButton(
         systemName: "ellipsis",
         action: nil,
-        titleKey: "MORE_BARBUTTON"
+        titleKey: "MORE_BARBUTTON",
+        sharesBackground: false
     )
     private lazy var mangaUpdatesButton = makeBarButton(
         systemName: "bell",
@@ -36,7 +48,12 @@ class LibraryViewController: OldMangaCollectionViewController {
         titleKey: "MANGA_UPDATES",
         sharesBackground: false
     )
-
+    private lazy var categoryBarButton = makeBarButton(
+        systemName: "line.3.horizontal.decrease",
+        action: nil,
+        titleKey: "CATEGORY",
+        sharesBackground: false
+    )
     private func makeBarButton(systemName: String? = nil, action: Selector?, titleKey: String, sharesBackground: Bool = true) -> UIBarButtonItem {
         let item = UIBarButtonItem(
             image: systemName.flatMap { UIImage(systemName: $0) },
@@ -57,7 +74,6 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     private lazy var locked = viewModel.isCategoryLocked()
     private var ignoreOptionChange = false
-    private var lastSearch: String?
 
     private let libraryUndoManager = UndoManager()
     override var undoManager: UndoManager { libraryUndoManager }
@@ -87,11 +103,6 @@ class LibraryViewController: OldMangaCollectionViewController {
         // fix refresh control snapping height
         refreshControl.didMoveToSuperview()
 
-        // hack to show search bar on initial presentation
-        if !navigationItem.hidesSearchBarWhenScrolling {
-            navigationItem.hidesSearchBarWhenScrolling = true
-        }
-
         becomeFirstResponder()
     }
 
@@ -111,18 +122,8 @@ class LibraryViewController: OldMangaCollectionViewController {
         title = NSLocalizedString("LIBRARY")
 
         navigationController?.navigationBar.prefersLargeTitles = true
-        navigationItem.hidesSearchBarWhenScrolling = false
-
         collectionView.keyboardDismissMode = .onDrag
-
-        // search controller
-        let searchController = UISearchController(searchResultsController: nil)
-        searchController.searchResultsUpdater = self
-        searchController.obscuresBackgroundDuringPresentation = false
-        searchController.searchBar.placeholder = viewModel.currentCategory == nil
-            ? NSLocalizedString("LIBRARY_SEARCH")
-            : NSLocalizedString("CATEGORY_SEARCH")
-        navigationItem.searchController = searchController
+        collectionView.contentInset.top = 8
 
         // navbar buttons
         updateMoreMenu()
@@ -159,61 +160,6 @@ class LibraryViewController: OldMangaCollectionViewController {
 
         collectionView.allowsMultipleSelection = !ProcessInfo.processInfo.isMacCatalystApp
         collectionView.allowsSelectionDuringEditing = true
-
-        // header view
-        let registration = UICollectionView.SupplementaryRegistration<LibraryCategorySelectionHeader>(
-            elementKind: UICollectionView.elementKindSectionHeader
-        ) { [weak self] header, _, _ in
-            guard let self, header.options.isEmpty else { return }
-
-            header.delegate = self
-            var options: [LibraryCategorySelectionHeader.Section] = []
-            if AppSettings.library.showUncategorizedCategory.get() {
-                options.append(.init(options: [NSLocalizedString("ALL"), NSLocalizedString("UNCATEGORIZED")]))
-            } else {
-                options.append(.init(options: [NSLocalizedString("ALL")]))
-            }
-            if !viewModel.categories.isEmpty {
-                options.append(.init(title: NSLocalizedString("CATEGORIES"), options: viewModel.categories))
-            }
-            if !viewModel.filterGroups.isEmpty {
-                options.append(.init(title: NSLocalizedString("FILTER_GROUPS"), options: viewModel.filterGroups.map { $0.title }))
-            }
-            header.options = options
-            if let currentCategory = viewModel.currentCategory {
-                if let index = viewModel.categories.firstIndex(of: currentCategory) {
-                    header.setSelectedOption(IndexPath(row: index, section: 1))
-                } else if let index = viewModel.filterGroups.firstIndex(where: { $0.title == currentCategory }) {
-                    header.setSelectedOption(IndexPath(row: index, section: viewModel.categories.isEmpty ? 1 : 2))
-                } else if currentCategory.isEmpty {
-                    header.setSelectedOption(.init(row: 1, section: 0))
-                }
-            }
-
-            // load locked icons
-            if AppSettings.library.lockLibrary.get() {
-                let lockedCategories = AppSettings.library.lockedCategories.get()
-                header.lockedOptions = [IndexPath(row: 0, section: 0)] + lockedCategories.compactMap { category -> IndexPath? in
-                    if let index = self.viewModel.categories.firstIndex(of: category) {
-                        return IndexPath(row: index, section: 1)
-                    }
-                    if let index = self.viewModel.filterGroups.firstIndex(where: { $0.title == category }) {
-                        return IndexPath(row: index, section: self.viewModel.categories.isEmpty ? 1 : 2)
-                    }
-                    return nil
-                }
-            }
-        }
-
-        dataSource.supplementaryViewProvider = { collectionView, kind, indexPath in
-            if kind == UICollectionView.elementKindSectionHeader {
-                return collectionView.dequeueConfiguredReusableSupplementary(
-                    using: registration,
-                    for: indexPath
-                )
-            }
-            return nil
-        }
 
         // empty text view
         emptyStackView.isHidden = true
@@ -452,17 +398,6 @@ class LibraryViewController: OldMangaCollectionViewController {
 
         let config = UICollectionViewCompositionalLayoutConfiguration()
         config.interSectionSpacing = layout.configuration.interSectionSpacing
-        if !viewModel.categories.isEmpty || !viewModel.filterGroups.isEmpty {
-            let globalHeader = NSCollectionLayoutBoundarySupplementaryItem(
-                layoutSize: NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1),
-                    heightDimension: .absolute(40)
-                ),
-                elementKind: UICollectionView.elementKindSectionHeader,
-                alignment: .top
-            )
-            config.boundarySupplementaryItems = [globalHeader]
-        }
         layout.configuration = config
 
         return layout
@@ -527,11 +462,11 @@ extension LibraryViewController {
                 action: #selector(stopEditing)
             )]
         } else {
-            var items: [UIBarButtonItem] = [moreBarButton]
+            updateCategoryMenu()
+            var items: [UIBarButtonItem] = [moreBarButton, mangaUpdatesButton]
             if viewModel.isCategoryLocked() {
                 items.append(lockBarButton)
             }
-            items.append(mangaUpdatesButton)
             navigationItem.rightBarButtonItems = items
             navigationItem.leftBarButtonItem = nil
             Task { @MainActor in
@@ -545,6 +480,30 @@ extension LibraryViewController {
                 }
             }
         }
+    }
+
+    private func updateCategoryMenu() {
+        var actions: [UIAction] = []
+        let all = UIAction(title: NSLocalizedString("ALL"), state: viewModel.currentCategory == nil ? .on : .off) { [weak self] _ in
+            self?.optionSelected(IndexPath(row: 0, section: 0))
+        }
+        actions.append(all)
+        if AppSettings.library.showUncategorizedCategory.get() {
+            actions.append(UIAction(title: NSLocalizedString("UNCATEGORIZED"), state: viewModel.currentCategory == "" ? .on : .off) { [weak self] _ in
+                self?.optionSelected(IndexPath(row: 1, section: 0))
+            })
+        }
+        actions += self.viewModel.categories.enumerated().map { index, category in
+            UIAction(title: category, state: self.viewModel.currentCategory == category ? .on : .off) { [weak self] _ in
+                self?.optionSelected(IndexPath(row: index, section: 1))
+            }
+        }
+        actions += self.viewModel.filterGroups.enumerated().map { index, group in
+            UIAction(title: group.title, state: self.viewModel.currentCategory == group.title ? .on : .off) { [weak self] _ in
+                self?.optionSelected(IndexPath(row: index, section: self?.viewModel.categories.isEmpty == true ? 1 : 2))
+            }
+        }
+        categoryBarButton.menu = UIMenu(title: "", children: actions)
     }
 
     func updateToolbar() {
@@ -605,9 +564,6 @@ extension LibraryViewController {
             ? NSLocalizedString("LIBRARY_ADD_CONTENT")
             : NSLocalizedString("LIBRARY_ADJUST_FILTERS")
 
-        navigationItem.searchController?.searchBar.placeholder = viewModel.currentCategory == nil
-            ? NSLocalizedString("LIBRARY_SEARCH")
-            : NSLocalizedString("CATEGORY_SEARCH")
     }
 
     @objc func stopEditing() {
@@ -694,6 +650,7 @@ extension LibraryViewController {
         navigationController?.pushViewController(viewController, animated: true)
     }
 
+
     @objc func removeSelectedFromLibrary() {
         let inCategory = viewModel.isInRealCategory
         let selectedItems = collectionView.indexPathsForSelectedItems ?? []
@@ -761,9 +718,7 @@ extension LibraryViewController {
         dataSource.apply(snapshot)
 
         // handle empty library or category
-        if navigationItem.searchController?.searchBar.text?.isEmpty ?? true {
-            emptyStackView.isHidden = !snapshot.itemIdentifiers.isEmpty
-        }
+        emptyStackView.isHidden = !snapshot.itemIdentifiers.isEmpty
         collectionView.isScrollEnabled = emptyStackView.isHidden && lockedStackView.isHidden
         collectionView.refreshControl = collectionView.isScrollEnabled ? refreshControl : nil
     }
@@ -950,7 +905,7 @@ extension LibraryViewController {
         if let filter = viewModel.filters.first(where: { $0.type == method && $0.value == value }) {
             filter.exclude ? .mixed : .on
         } else {
-            .off
+            (method == .contentRating || method == .category || method == .collection) ? .on : .off
         }
     }
 
@@ -960,10 +915,11 @@ extension LibraryViewController {
             image: UIImage(systemName: "minus.circle")
         ) { [weak self] _ in
             Task {
-                self?.viewModel.filters = []
-                await self?.viewModel.loadLibrary()
-                self?.updateDataSource()
-                self?.updateMoreMenu()
+                guard let self else { return }
+                self.viewModel.filters = []
+                await self.viewModel.loadLibrary()
+                self.updateDataSource()
+                self.updateMoreMenu()
             }
         }
     }
@@ -984,7 +940,18 @@ extension LibraryViewController {
                     break
                 }
                 if filter.exclude {
-                    options.append(String(format: NSLocalizedString("NOT_%@"), filterMethod.title))
+                    let hiddenTitle = if (filterMethod == .contentRating || filterMethod == .category || filterMethod == .collection),
+                                         let value = filter.value,
+                                         !value.isEmpty {
+                        if filterMethod == .contentRating {
+                            MangaContentRating(stringValue: value)?.title ?? value
+                        } else {
+                            value
+                        }
+                    } else {
+                        filterMethod.title
+                    }
+                    options.append(String(format: NSLocalizedString("NOT_%@"), hiddenTitle))
                 } else {
                     options.append(filterMethod.title)
                 }
@@ -1002,28 +969,34 @@ extension LibraryViewController {
 
         func updateFilterSubmenu(_ menu: UIMenu) -> UIMenu {
             menu.subtitle = self.filtersSubtitle()
-            return menu.replacingChildren(menu.children.map { element in
-                guard let action = element as? UIAction else { return element }
-                if let method = LibraryFilter.FilterMethod.allCases.first(where: { $0.title == action.title }) {
-                    action.state = filterState(for: method)
+
+            func updateElement(_ element: UIMenuElement, method: LibraryFilter.FilterMethod? = nil) -> UIMenuElement {
+                if let action = element as? UIAction {
+                    if let method {
+                        action.state = filterState(for: method, value: action.title)
+                    } else if let method = LibraryFilter.FilterMethod.allCases.first(where: { $0.title == action.title }) {
+                        action.state = filterState(for: method)
+                    }
+                    return action
                 }
-                return action
-            })
+                guard let submenu = element as? UIMenu else { return element }
+                let submenuMethod: LibraryFilter.FilterMethod? = switch submenu.title {
+                    case LibraryFilter.FilterMethod.contentRating.title: .contentRating
+                    case LibraryFilter.FilterMethod.category.title: .category
+                    case LibraryFilter.FilterMethod.collection.title: .collection
+                    default: nil
+                }
+                return submenu.replacingChildren(submenu.children.map {
+                    updateElement($0, method: submenuMethod)
+                })
+            }
+
+            return menu.replacingChildren(menu.children.map { updateElement($0) })
         }
 
         contextMenuInteraction.updateVisibleMenu { menu in
             if menu.title == NSLocalizedString("BUTTON_FILTER") {
                 updateFilterSubmenu(menu)
-            } else if menu.title == LibraryFilter.FilterMethod.source.title {
-                menu.replacingChildren(self.viewModel.sourceKeys.map { key in
-                    UIAction(
-                        title: SourceManager.shared.store.source(for: key)?.name ?? key,
-                        attributes: .keepsMenuPresented,
-                        state: self.filterState(for: .source, value: key)
-                    ) { [weak self] _ in
-                        self?.toggleFilter(method: .source, value: key)
-                    }
-                })
             } else if menu.title == LibraryFilter.FilterMethod.contentRating.title {
                 menu.replacingChildren(MangaContentRating.allCases.map { rating in
                     UIAction(
@@ -1042,6 +1015,16 @@ extension LibraryViewController {
                         state: self.filterState(for: .category, value: category)
                     ) { [weak self] _ in
                         self?.toggleFilter(method: .category, value: category)
+                    }
+                })
+            } else if menu.title == LibraryFilter.FilterMethod.collection.title {
+                menu.replacingChildren(self.viewModel.collections.map { collection in
+                    UIAction(
+                        title: collection,
+                        attributes: .keepsMenuPresented,
+                        state: self.filterState(for: .collection, value: collection)
+                    ) { [weak self] _ in
+                        self?.toggleFilter(method: .collection, value: collection)
                     }
                 })
             } else {
@@ -1070,14 +1053,9 @@ extension LibraryViewController {
             }
         }
 
-        if !viewModel.filters.isEmpty {
-            moreBarButton.isSelected = true
-            moreBarButton.image = UIImage(systemName: "line.3.horizontal.decrease")?
-                .withTintColor(.white, renderingMode: .alwaysOriginal)
-        } else {
-            moreBarButton.isSelected = false
-            moreBarButton.image = UIImage(systemName: "ellipsis")
-        }
+        // Keep the single Library menu control on the filter icon.
+        moreBarButton.isSelected = false
+        moreBarButton.image = UIImage(systemName: "line.3.horizontal.decrease")
     }
 
     func updateMoreMenu() {
@@ -1154,7 +1132,10 @@ extension LibraryViewController {
                 subtitle: self.filtersSubtitle(),
                 image: UIImage(systemName: "line.3.horizontal.decrease"),
                 children: LibraryFilter.FilterMethod.allCases.compactMap { method in
-                    guard method.isAvailable else { return nil }
+                    guard method.isAvailable,
+                          method != .downloaded,
+                          method != .hasUnread,
+                          method != .completed else { return nil }
                     return UIAction(
                         title: method.title,
                         image: method.image,
@@ -1178,19 +1159,6 @@ extension LibraryViewController {
                         }
                     ),
                     UIMenu(
-                        title: LibraryFilter.FilterMethod.source.title,
-                        image: LibraryFilter.FilterMethod.source.image,
-                        children: self.viewModel.sourceKeys.map { key in
-                            UIAction(
-                                title: SourceManager.shared.store.source(for: key)?.name ?? key,
-                                attributes: attributes,
-                                state: self.filterState(for: .source, value: key)
-                            ) { [weak self] _ in
-                                self?.toggleFilter(method: .source, value: key)
-                            }
-                        }
-                    ),
-                    UIMenu(
                         title: LibraryFilter.FilterMethod.category.title,
                         image: LibraryFilter.FilterMethod.category.image,
                         children: self.viewModel.categories.map { category in
@@ -1200,6 +1168,19 @@ extension LibraryViewController {
                                 state: self.filterState(for: .category, value: category)
                             ) { [weak self] _ in
                                 self?.toggleFilter(method: .category, value: category)
+                            }
+                        }
+                    ),
+                    UIMenu(
+                        title: LibraryFilter.FilterMethod.collection.title,
+                        image: LibraryFilter.FilterMethod.collection.image,
+                        children: self.viewModel.collections.map { collection in
+                            UIAction(
+                                title: collection,
+                                attributes: attributes,
+                                state: self.filterState(for: .collection, value: collection)
+                            ) { [weak self] _ in
+                                self?.toggleFilter(method: .collection, value: collection)
                             }
                         }
                     )
@@ -1220,16 +1201,8 @@ extension LibraryViewController {
             ]
         )
 
-        if #available(iOS 26.0, *) {
-            if !viewModel.filters.isEmpty {
-                moreBarButton.isSelected = true
-                moreBarButton.image = UIImage(systemName: "line.3.horizontal.decrease")?
-                    .withTintColor(.white, renderingMode: .alwaysOriginal)
-            } else {
-                moreBarButton.isSelected = false
-                moreBarButton.image = UIImage(systemName: "ellipsis")
-            }
-        }
+        moreBarButton.isSelected = false
+        moreBarButton.image = UIImage(systemName: "line.3.horizontal.decrease")
     }
 }
 
@@ -1436,6 +1409,20 @@ extension LibraryViewController {
                 })
             }
 
+            if mangaInfo.count == 1 {
+                let isFavorite = self.viewModel.isFavorite(manga.id)
+                actions.append(UIAction(
+                    title: NSLocalizedString(isFavorite ? "UNFAVORITE" : "FAVORITE"),
+                    image: UIImage(systemName: isFavorite ? "star.slash" : "star")
+                ) { _ in
+                    self.viewModel.toggleFavorite(manga.id)
+                    Task {
+                        await self.viewModel.loadLibrary()
+                        self.updateDataSource()
+                    }
+                })
+            }
+
             if !self.viewModel.categories.isEmpty {
                 actions.append(UIAction(
                     title: NSLocalizedString("EDIT_CATEGORIES"),
@@ -1580,18 +1567,6 @@ extension LibraryViewController {
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
         self.collectionView(collectionView, contextMenuConfigurationForItemsAt: [indexPath], point: point)
-    }
-}
-
-// MARK: - Search Results
-extension LibraryViewController: UISearchResultsUpdating {
-    func updateSearchResults(for searchController: UISearchController) {
-        guard searchController.searchBar.text != lastSearch else { return }
-        lastSearch = searchController.searchBar.text
-        Task {
-            await viewModel.search(query: searchController.searchBar.text ?? "")
-            updateDataSource()
-        }
     }
 }
 

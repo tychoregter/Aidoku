@@ -392,13 +392,8 @@ class ReaderViewController: BaseObservingViewController {
         sessionStartDate = Date.now
         sessionLastInteraction = nil
 
-        if navigationController?.toolbar.alpha == 0 {
-            hideBars()
-        }
-
-        // there's a bug on ios 15 where the toolbar just disappears when adding a child hosting controller
-        navigationController?.isToolbarHidden = false
-        navigationController?.toolbar.alpha = 1
+        // Open directly in the clean reading view. A tap still reveals the bars.
+        hideBars()
 
         disableSwipeGestures()
         configureNavigationBarDismissTapGesture(enabled: isDictionarySingleTapLookupActiveForCurrentChapter)

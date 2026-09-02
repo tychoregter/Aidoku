@@ -77,7 +77,7 @@
 "MANGA_INFO" = "Manga Info";
 "SORT_BY" = "Sort By";
 "FILTER_BY" = "Filter By";
-"REMOVE_FILTER" = "Remove Filter";
+"REMOVE_FILTER" = "Reset Filters";
 "SORT_TITLE" = "Title";
 "SORT_LAST_OPENED" = "Last Opened";
 "SORT_LAST_READ" = "Last Read";
@@ -98,6 +98,9 @@
 "COVER" = "Cover";
 "LAYOUT_GRID" = "Grid";
 "LAYOUT_LIST" = "List";
+"FAVORITE" = "Favorite";
+"UNFAVORITE" = "Unfavorite";
+"CAUGHT_UP" = "Caught Up";
 "REMOVING_(ONE)_ITEM_FROM_LIBRARY" = "Removing Item from Library";
 "REMOVING_%i_ITEMS_FROM_LIBRARY" = "Removing %i Items from Library";
 "REMOVING_(ONE)_ITEM_FROM_CATEGORY_%@" = "Removing Item from Category %@";
@@ -117,6 +120,7 @@
 "NONE" = "None";
 "CATEGORIES" = "Categories";
 "CATEGORY" = "Category";
+"COLLECTIONS" = "Collection";
 "UNCATEGORIZED" = "Uncategorized";
 "EDIT_CATEGORIES" = "Edit Categories";
 "CATEGORY_ADD" = "Add Category";

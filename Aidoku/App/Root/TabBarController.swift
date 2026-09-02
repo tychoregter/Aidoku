@@ -15,10 +15,7 @@ class TabBarController: UITabBarController {
     private var cancellables: [AnyCancellable] = []
 
     private var settingsPath: NavigationCoordinator?
-    private var previousSelectedIndex: Int?
-
-    private weak var historyNavigationController: UINavigationController?
-
+    private weak var libraryViewController: LibraryViewController?
     private lazy var libraryProgressView = CircularProgressView(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
 
     private lazy var libraryRefreshAccessory: UIView = {
@@ -70,17 +67,14 @@ class TabBarController: UITabBarController {
         super.viewDidLoad()
 
         delegate = self
+        if #available(iOS 26.0, *) {
+            tabBarMinimizeBehavior = .onScrollDown
+        }
 
-        let libraryViewController = NavigationController(rootViewController: LibraryViewController())
-        let browseViewController = NavigationController(rootViewController: BrowseViewController())
+        let libraryRootViewController = LibraryViewController()
+        self.libraryViewController = libraryRootViewController
+        let libraryViewController = NavigationController(rootViewController: libraryRootViewController)
         let searchViewController = NavigationController(rootViewController: SearchViewController())
-
-        let historyPath = NavigationCoordinator(rootViewController: nil)
-        let historyHostingController = UIHostingController(rootView: HistoryView()
-            .environmentObject(historyPath))
-        historyPath.rootViewController = historyHostingController
-        let historyViewController = NavigationController(rootViewController: historyHostingController)
-        historyNavigationController = historyViewController
 
         let settingsPath = NavigationCoordinator(rootViewController: nil)
         let settingsViewController: UIViewController
@@ -104,8 +98,6 @@ class TabBarController: UITabBarController {
         self.settingsPath = settingsPath
 
         libraryViewController.navigationBar.prefersLargeTitles = true
-        browseViewController.navigationBar.prefersLargeTitles = true
-        historyViewController.navigationBar.prefersLargeTitles = true
         searchViewController.navigationBar.prefersLargeTitles = true
 
         if #available(iOS 26.0, *) {
@@ -122,23 +114,9 @@ class TabBarController: UITabBarController {
                     libraryViewController
                 },
                 UITab(
-                    title: NSLocalizedString("BROWSE"),
-                    image: UIImage(systemName: "globe"),
-                    identifier: "1"
-                ) { _ in
-                    browseViewController
-                },
-                UITab(
-                    title: NSLocalizedString("HISTORY"),
-                    image: UIImage(systemName: "clock.fill"),
-                    identifier: "2"
-                ) { _ in
-                    historyViewController
-                },
-                UITab(
                     title: NSLocalizedString("SETTINGS"),
                     image: UIImage(systemName: "gear"),
-                    identifier: "3"
+                    identifier: "2"
                 ) { _ in
                     settingsViewController
                 }
@@ -154,41 +132,29 @@ class TabBarController: UITabBarController {
                 image: UIImage(systemName: "books.vertical.fill"),
                 tag: 0
             )
-            browseViewController.tabBarItem = UITabBarItem(
-                title: NSLocalizedString("BROWSE"),
-                image: UIImage(systemName: "globe"),
-                tag: 1
-            )
-            historyViewController.tabBarItem = UITabBarItem(
-                tabBarSystemItem: .history,
-                tag: 2
-            )
             searchViewController.tabBarItem = UITabBarItem(
                 tabBarSystemItem: .search,
-                tag: 3
+                tag: 2
             )
             settingsViewController.tabBarItem = UITabBarItem(
                 title: NSLocalizedString("SETTINGS"),
                 image: UIImage(systemName: "gear"),
-                tag: 4
+                tag: 3
             )
             viewControllers = [
                 libraryViewController,
-                browseViewController,
-                historyViewController,
                 searchViewController,
                 settingsViewController
             ]
         }
 
         let updateCount = AppSettings.browse.updateCount.get()
-        browseViewController.tabBarItem.badgeValue = updateCount > 0 ? String(updateCount) : nil
-
         NotificationCenter.default.publisher(for: .init(AppSettings.general.incognitoMode.key))
             .sink { [weak self] _ in
                 self?.updateFrame(animated: true)
             }
             .store(in: &cancellables)
+
     }
 
     func updateFrame(animated: Bool = false) {
@@ -224,6 +190,10 @@ extension TabBarController {
         libraryProgressView.setProgress(value: 0, withAnimation: false)
 
         if #available(iOS 26.0, *) {
+            // Keep the tab bar geometry stable while the bottom refresh accessory
+            // is present; otherwise the liquid-glass background can stretch the
+            // leading tab group to the full width.
+            tabBarMinimizeBehavior = .never
             setBottomAccessory(.init(contentView: libraryRefreshAccessory), animated: true)
         } else {
             libraryRefreshAccessory.layer.opacity = 0
@@ -241,6 +211,7 @@ extension TabBarController {
     func hideAccessoryView() {
         if #available(iOS 26.0, *) {
             setBottomAccessory(nil, animated: true)
+            tabBarMinimizeBehavior = .onScrollDown
         } else {
             UIView.animate(withDuration: 0.5) {
                 self.libraryRefreshAccessory.layer.opacity = 0
@@ -287,7 +258,11 @@ extension TabBarController {
 extension TabBarController: UITabBarControllerDelegate {
     @available(iOS 18.0, *)
     func tabBarController(_ tabBarController: UITabBarController, didSelectTab selectedTab: UITab, previousTab: UITab?) {
-        checkForSettingsPop()
+        if selectedTab.identifier == "2" {
+            popSettingsToRoot()
+        } else {
+            checkForSettingsPop()
+        }
     }
 
     func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
@@ -298,46 +273,56 @@ extension TabBarController: UITabBarControllerDelegate {
 
     @available(iOS 18.0, *)
     func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
-        if tab === tabBarController.selectedTab {
-            checkForHistoryReselection()
+        if tab.identifier == "0", let libraryViewController {
+            libraryViewController.scrollToTop()
+        } else if tab.identifier == "2" {
+            popSettingsToRoot()
+            scrollSettingsToTop()
         }
         return true
     }
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
-        if viewController === selectedViewController {
-            checkForHistoryReselection()
+        if viewController is UINavigationController, let libraryViewController {
+            libraryViewController.scrollToTop()
+        } else if viewController === settingsPath?.rootViewController || viewController === settingsPath?.navigationController {
+            popSettingsToRoot()
+            scrollSettingsToTop()
         }
         return true
-    }
-
-    // when the history tab is selected while it's already showing the top of the history list,
-    // let the history view know so that it can continue reading the last opened manga
-    private func checkForHistoryReselection() {
-        guard
-            AppSettings.library.continueReadingOnReselect.get(),
-            let historyNavigationController,
-            selectedViewController === historyNavigationController,
-            // if there's anything pushed on top, the default behavior pops back to the history list
-            historyNavigationController.viewControllers.count == 1,
-            // if the list isn't at the top, the default behavior scrolls it there
-            let scrollView = historyNavigationController.topViewController?.view.firstScrollView(),
-            scrollView.isScrolledToTop
-        else { return }
-        NotificationCenter.default.post(name: .historyTabReselected, object: nil)
     }
 
     private func checkForSettingsPop() {
         let settingsIndex: Int
         if #available(iOS 26.0, *) {
-            settingsIndex = 3
+            settingsIndex = 1
         } else {
-            settingsIndex = 4
+            settingsIndex = 2
         }
-        if selectedIndex == previousSelectedIndex && previousSelectedIndex == settingsIndex {
-            settingsPath?.navigationController?.popToRootViewController(animated: true)
+        if selectedIndex == settingsIndex {
+            popSettingsToRoot()
         }
-        previousSelectedIndex = selectedIndex
+    }
+
+    private func popSettingsToRoot() {
+        settingsPath?.navigationController?.popToRootViewController(animated: true)
+    }
+
+    private func scrollSettingsToTop() {
+        guard let root = settingsPath?.rootViewController else { return }
+        func findScrollView(in view: UIView) -> UIScrollView? {
+            if let scrollView = view as? UIScrollView { return scrollView }
+            for child in view.subviews {
+                if let scrollView = findScrollView(in: child) { return scrollView }
+            }
+            return nil
+        }
+        if let scrollView = findScrollView(in: root.view) {
+            scrollView.setContentOffset(
+                CGPoint(x: -scrollView.adjustedContentInset.left, y: -scrollView.adjustedContentInset.top),
+                animated: true
+            )
+        }
     }
 }
 

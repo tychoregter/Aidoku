@@ -48,6 +48,11 @@ class NewSourceViewController: UIViewController {
             importHostingController.rootView = importFileView
         }
     }
+    private var selectionMode = false {
+        didSet { updateHostingControllers(); loadNavbarButtons() }
+    }
+    private var selectedItems: Set<String> = []
+    private var selectedManga: [String: AidokuRunner.Manga] = [:]
     private var searchText: String {
         didSet {
             handleFilterHeaderVisibility()
@@ -120,6 +125,9 @@ class NewSourceViewController: UIViewController {
             set: { [weak self] in self?.filtersEmpty = $0 }
         )
     }
+    private var selectedItemsBinding: Binding<Set<String>> {
+        .init(get: { [weak self] in self?.selectedItems ?? [] }, set: { [weak self] in self?.selectedItems = $0 })
+    }
 
     // MARK: SwiftUI Views
     private var searchFilterHeaderView: SearchFilterHeaderView {
@@ -151,7 +159,10 @@ class NewSourceViewController: UIViewController {
             source: source,
             holdingViewController: self,
             listings: listingsBinding,
-            headerListingSelection: headerListingSelectionBinding
+            headerListingSelection: headerListingSelectionBinding,
+            selectionMode: selectionMode,
+            selectedItems: selectedItemsBinding,
+            onToggleSelection: { [weak self] manga in self?.toggleSelection(manga) }
         )
     }
 
@@ -584,6 +595,11 @@ extension NewSourceViewController {
     // - hide website button when source doesn't have a url
     // - put website and settings buttons into a menu button if we have all three
     private func loadNavbarButtons() {
+        if selectionMode {
+            navigationItem.leftBarButtonItem = UIBarButtonItem(title: NSLocalizedString("CANCEL"), style: .plain, target: self, action: #selector(cancelSelection))
+            navigationItem.rightBarButtonItem = UIBarButtonItem(title: NSLocalizedString("ADD_TO_LIBRARY"), style: .done, target: self, action: #selector(addSelectedItems))
+            return
+        }
         let settingsAction = UIAction(title: NSLocalizedString("SETTINGS"), image: UIImage(systemName: "gear")) { [weak self] _ in
             guard let self else { return }
 
@@ -634,6 +650,14 @@ extension NewSourceViewController {
                 image: UIImage(systemName: "ellipsis"),
                 primaryAction: nil,
                 menu: UIMenu(children: [
+                    UIAction(title: NSLocalizedString("SELECT"), image: UIImage(systemName: "checkmark.circle")) { [weak self] _ in self?.beginSelection() },
+                    UIAction(title: NSLocalizedString("SELECT_ALL"), image: UIImage(systemName: "checkmark.circle.fill")) { [weak self] _ in
+                        guard let self else { return }
+                        self.beginSelection()
+                        DispatchQueue.main.async {
+                            NotificationCenter.default.post(name: .init("select-all-source-items"), object: nil)
+                        }
+                    },
                     settingsAction,
                     safariAction
                 ])
@@ -675,6 +699,32 @@ extension NewSourceViewController {
         }
 
         navigationItem.rightBarButtonItems = rightBarButtonItems
+    }
+
+    private func beginSelection() { selectedItems.removeAll(); selectedManga.removeAll(); selectionMode = true }
+    @objc private func cancelSelection() { selectedItems.removeAll(); selectedManga.removeAll(); selectionMode = false }
+    private func toggleSelection(_ manga: AidokuRunner.Manga) {
+        if selectedItems.contains(manga.key) {
+            selectedItems.remove(manga.key)
+            selectedManga.removeValue(forKey: manga.key)
+        } else {
+            selectedItems.insert(manga.key)
+            selectedManga[manga.key] = manga
+        }
+        updateHostingControllers()
+    }
+    @objc private func addSelectedItems() {
+        guard !selectedItems.isEmpty else { return }
+        let manga = Array(selectedManga.values)
+        selectedItems.removeAll()
+        selectedManga.removeAll()
+        selectionMode = false
+        Task {
+            for item in manga {
+                await MangaManager.shared.addToLibrary(manga: item, fetchMangaDetails: true)
+            }
+            NotificationCenter.default.post(name: .init("refresh-content"), object: nil)
+        }
     }
 
     // find a uiscrollview in a view hierarchy

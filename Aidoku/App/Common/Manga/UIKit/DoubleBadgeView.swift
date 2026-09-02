@@ -25,8 +25,22 @@ class DoubleBadgeView: UIView {
     private lazy var badgeView = {
         let badgeView = UIView()
         badgeView.isHidden = true
-        badgeView.backgroundColor = tintColor
-        badgeView.layer.cornerRadius = 5
+        badgeView.backgroundColor = UIColor.white.withAlphaComponent(0.22)
+        badgeView.layer.cornerRadius = 8
+        badgeView.layer.cornerCurve = .continuous
+        badgeView.clipsToBounds = true
+        badgeView.layer.borderWidth = 1
+        badgeView.layer.borderColor = UIColor.white.withAlphaComponent(0.32).cgColor
+        let blurView = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterialDark))
+        blurView.isUserInteractionEnabled = false
+        blurView.translatesAutoresizingMaskIntoConstraints = false
+        badgeView.insertSubview(blurView, at: 0)
+        NSLayoutConstraint.activate([
+            blurView.leadingAnchor.constraint(equalTo: badgeView.leadingAnchor),
+            blurView.trailingAnchor.constraint(equalTo: badgeView.trailingAnchor),
+            blurView.topAnchor.constraint(equalTo: badgeView.topAnchor),
+            blurView.bottomAnchor.constraint(equalTo: badgeView.bottomAnchor)
+        ])
         badgeView.addSubview(badgeLabel)
         return badgeView
     }()
@@ -42,8 +56,22 @@ class DoubleBadgeView: UIView {
     private lazy var badgeView2 = {
         let badgeView = UIView()
         badgeView.isHidden = true
-        badgeView.backgroundColor = .systemIndigo
-        badgeView.layer.cornerRadius = 5
+        badgeView.backgroundColor = UIColor.white.withAlphaComponent(0.22)
+        badgeView.layer.cornerRadius = 8
+        badgeView.layer.cornerCurve = .continuous
+        badgeView.clipsToBounds = true
+        badgeView.layer.borderWidth = 1
+        badgeView.layer.borderColor = UIColor.white.withAlphaComponent(0.32).cgColor
+        let blurView = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterialDark))
+        blurView.isUserInteractionEnabled = false
+        blurView.translatesAutoresizingMaskIntoConstraints = false
+        badgeView.insertSubview(blurView, at: 0)
+        NSLayoutConstraint.activate([
+            blurView.leadingAnchor.constraint(equalTo: badgeView.leadingAnchor),
+            blurView.trailingAnchor.constraint(equalTo: badgeView.trailingAnchor),
+            blurView.topAnchor.constraint(equalTo: badgeView.topAnchor),
+            blurView.bottomAnchor.constraint(equalTo: badgeView.bottomAnchor)
+        ])
         badgeView.addSubview(badgeLabel2)
         return badgeView
     }()
@@ -61,12 +89,12 @@ class DoubleBadgeView: UIView {
     override var intrinsicContentSize: CGSize {
         var width: CGFloat = 0
         if !badgeView.isHidden {
-            width += (badgeLabel.text?.size(withAttributes: [.font: badgeLabel.font as Any]).width ?? 0) + 10
+            width += (badgeLabel.text?.size(withAttributes: [.font: badgeLabel.font as Any]).width ?? 0) + 16
         }
         if !badgeView2.isHidden {
-            width += (badgeLabel2.text?.size(withAttributes: [.font: badgeLabel2.font as Any]).width ?? 0) + 10
+            width += (badgeLabel2.text?.size(withAttributes: [.font: badgeLabel2.font as Any]).width ?? 0) + 16
         }
-        return CGSize(width: width, height: 20)
+        return CGSize(width: width, height: 24)
     }
 
     override init(frame: CGRect) {
@@ -98,14 +126,14 @@ class DoubleBadgeView: UIView {
         NSLayoutConstraint.activate([
             badgeView.leadingAnchor.constraint(equalTo: leadingAnchor),
             badgeView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            badgeView.widthAnchor.constraint(equalTo: badgeLabel.widthAnchor, constant: 10),
-            badgeView.heightAnchor.constraint(equalToConstant: 20),
+            badgeView.widthAnchor.constraint(equalTo: badgeLabel.widthAnchor, constant: 16),
+            badgeView.heightAnchor.constraint(equalToConstant: 24),
             badgeLabel.centerXAnchor.constraint(equalTo: badgeView.centerXAnchor),
             badgeLabel.centerYAnchor.constraint(equalTo: badgeView.centerYAnchor),
 
             badgeView2.centerYAnchor.constraint(equalTo: centerYAnchor),
-            badgeView2.widthAnchor.constraint(equalTo: badgeLabel2.widthAnchor, constant: 10),
-            badgeView2.heightAnchor.constraint(equalToConstant: 20),
+            badgeView2.widthAnchor.constraint(equalTo: badgeLabel2.widthAnchor, constant: 16),
+            badgeView2.heightAnchor.constraint(equalToConstant: 24),
             badgeLabel2.centerXAnchor.constraint(equalTo: badgeView2.centerXAnchor),
             badgeLabel2.centerYAnchor.constraint(equalTo: badgeView2.centerYAnchor)
         ])
@@ -114,12 +142,7 @@ class DoubleBadgeView: UIView {
     }
 
     override func tintColorDidChange() {
-        badgeView.backgroundColor = tintColor
-        if tintAdjustmentMode == .dimmed {
-            badgeView2.backgroundColor = .systemIndigo.grayscale()
-        } else {
-            badgeView2.backgroundColor = .systemIndigo
-        }
+        super.tintColorDidChange()
     }
 
     func updateLayout() {

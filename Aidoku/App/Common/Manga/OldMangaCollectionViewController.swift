@@ -8,7 +8,9 @@
 import UIKit
 
 class OldMangaCollectionViewController: BaseCollectionViewController {
-    static let itemSpacing: CGFloat = 12
+    // Slightly wider gutters keep the poster grid airy while the compositional
+    // layout automatically reduces each poster's width to fit the row.
+    static let itemSpacing: CGFloat = 16
     static let sectionSpacing: CGFloat = 6 // extra spacing betweeen sections
 
     var usesListLayout = false
@@ -164,7 +166,7 @@ extension OldMangaCollectionViewController {
         group.interItemSpacing = .fixed(itemSpacing)
 
         let section = NSCollectionLayoutSection(group: group)
-        section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16)
+        section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 18, bottom: 0, trailing: 18)
         section.interGroupSpacing = itemSpacing
 
         return section

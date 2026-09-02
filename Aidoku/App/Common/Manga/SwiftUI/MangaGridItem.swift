@@ -34,30 +34,14 @@ struct MangaGridItem: View {
                 )
             }
             .overlay(
-                LinearGradient(
-                    gradient: Self.gradient,
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .overlay(
                 bookmarkView,
                 alignment: .topTrailing
             )
-            .contentShape(RoundedRectangle(cornerRadius: 5))
-            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 5)
-                    .strokeBorder(Color(UIColor.quaternarySystemFill), lineWidth: 1)
-            )
-            .overlay(
-                Text(title)
-                    .foregroundStyle(.white)
-                    .font(.system(size: 15, weight: .medium))
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(2)
-                    .padding(8),
-                alignment: .bottomLeading
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.24), lineWidth: 1)
             )
         if coverImage.hasSuffix("gif") {
             // if the image is a gif, we can't use drawingGroup (static image)
@@ -85,10 +69,10 @@ struct MangaGridItem: View {
         Rectangle()
             .fill(Color(uiColor: .secondarySystemFill))
             .aspectRatio(2/3, contentMode: .fill)
-            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 5)
-                    .strokeBorder(Color(UIColor.quaternarySystemFill), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.24), lineWidth: 1)
             )
     }
 }

@@ -146,9 +146,13 @@ extension MangaManager {
         var manga = manga
         var chapters = chapters
         // update manga or chapters
-        if fetchMangaDetails || chapters.isEmpty {
+        if fetchMangaDetails || chapters.isEmpty || manga.sourceKey.hasPrefix("komga") {
             if let source = await SourceManager.shared.source(for: manga.sourceKey) {
-                manga = (try? await source.getMangaUpdate(manga: manga, needsDetails: fetchMangaDetails, needsChapters: chapters.isEmpty)) ?? manga
+                manga = (try? await source.getMangaUpdate(
+                    manga: manga,
+                    needsDetails: fetchMangaDetails || manga.sourceKey.hasPrefix("komga"),
+                    needsChapters: chapters.isEmpty
+                )) ?? manga
                 chapters = manga.chapters ?? chapters
             }
         }

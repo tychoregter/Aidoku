@@ -173,18 +173,10 @@ extension HistoryView.ViewModel {
 
         loadingState = .loading
 
-        if loadTask == nil {
-            loadTask = Task.detached { [offset] in
-                let newObjectCount = await self.processHistoryObjects(limit: self.batchSize, offset: offset)
-                await self.increaseOffset(by: newObjectCount)
-                return newObjectCount < self.batchSize // if less than the limit, we reached the end
-            }
-        }
-        guard let loadTask else { return }
-        let completed = await loadTask.value
-        self.loadTask = nil
+        let newObjectCount = await processHistoryObjects(limit: batchSize, offset: offset)
+        await increaseOffset(by: newObjectCount)
 
-        loadingState = completed ? .complete : .idle
+        loadingState = newObjectCount < batchSize ? .complete : .idle
     }
 }
 

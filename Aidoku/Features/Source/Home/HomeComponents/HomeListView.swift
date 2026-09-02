@@ -14,6 +14,9 @@ struct HomeListView: View {
     let component: HomeComponent
     let partial: Bool
     @Binding var bookmarkedItems: Set<String>
+    let selectionMode: Bool
+    @Binding var selectedItems: Set<String>
+    var onToggleSelection: ((AidokuRunner.Manga) -> Void)?
     var loadMore: (() async -> Void)?
     var onSelect: ((AidokuRunner.Manga) -> Void)?
 
@@ -35,14 +38,20 @@ struct HomeListView: View {
         component: HomeComponent,
         partial: Bool = false,
         bookmarkedItems: Binding<Set<String>>? = nil,
+        selectionMode: Bool = false,
+        selectedItems: Binding<Set<String>> = .constant([]),
         loadMore: (() async -> Void)? = nil,
-        onSelect: ((AidokuRunner.Manga) -> Void)? = nil
+        onSelect: ((AidokuRunner.Manga) -> Void)? = nil,
+        onToggleSelection: ((AidokuRunner.Manga) -> Void)? = nil
     ) {
         self.source = source
         self.component = component
         self.partial = partial
         self.loadMore = loadMore
         self.onSelect = onSelect
+        self.selectionMode = selectionMode
+        self._selectedItems = selectedItems
+        self.onToggleSelection = onToggleSelection
         if let bookmarkedItems {
             self._loadedBookmarks = State(initialValue: true)
             self._bookmarkedItems = bookmarkedItems
@@ -232,7 +241,9 @@ struct HomeListView: View {
                     case .listing(let listing):
                         path.push(SourceListingViewController(source: source, listing: listing))
                     case .manga(let manga):
-                        if let onSelect {
+                        if selectionMode, let onToggleSelection {
+                            onToggleSelection(manga)
+                        } else if let onSelect {
                             onSelect(manga)
                         } else {
                             path.push(MangaViewController(source: source, manga: manga, parent: path.rootViewController))

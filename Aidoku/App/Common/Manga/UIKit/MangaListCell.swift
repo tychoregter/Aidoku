@@ -151,7 +151,7 @@ class MangaListCell: UICollectionViewCell {
             titleStackView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
 
             badgeWidthConstraint!,
-            badgeView.heightAnchor.constraint(equalToConstant: 20),
+            badgeView.heightAnchor.constraint(equalToConstant: 24),
             badgeView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             badgeView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor)
         ])

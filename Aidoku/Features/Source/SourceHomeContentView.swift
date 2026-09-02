@@ -13,6 +13,9 @@ struct SourceHomeContentView: View {
 
     @Binding var listings: [AidokuRunner.Listing]
     @Binding var headerListingSelection: Int // used only for listing header
+    let selectionMode: Bool
+    @Binding var selectedItems: Set<String>
+    var onToggleSelection: ((AidokuRunner.Manga) -> Void)?
 
     @State private var home: Home?
     @State private var listingHome: Home? // Home-like layout for current listing
@@ -54,11 +57,17 @@ struct SourceHomeContentView: View {
         source: AidokuRunner.Source,
         holdingViewController: UIViewController,
         listings: Binding<[AidokuRunner.Listing]>,
-        headerListingSelection: Binding<Int>
+        headerListingSelection: Binding<Int>,
+        selectionMode: Bool = false,
+        selectedItems: Binding<Set<String>> = .constant([]),
+        onToggleSelection: ((AidokuRunner.Manga) -> Void)? = nil
     ) {
         self.source = source
         self._listings = listings
         self._headerListingSelection = headerListingSelection
+        self.selectionMode = selectionMode
+        self._selectedItems = selectedItems
+        self.onToggleSelection = onToggleSelection
         self._path = StateObject(wrappedValue: NavigationCoordinator(rootViewController: holdingViewController))
     }
 
@@ -84,20 +93,32 @@ struct SourceHomeContentView: View {
                             Group {
                                 switch listing.kind {
                                     case .default:
-                                        HomeGridView(source: source, entries: entries, bookmarkedItems: $bookmarkedItems) {
-                                            if hasMore && listingLoadState != .loading {
-                                                await loadEntries()
-                                            }
-                                        }
+                        HomeGridView(
+                            source: source,
+                            entries: entries,
+                            bookmarkedItems: $bookmarkedItems,
+                            selectionMode: selectionMode,
+                            selectedItems: $selectedItems,
+                            loadMore: {
+                            if hasMore && listingLoadState != .loading {
+                                await loadEntries()
+                            }
+                            },
+                            onToggleSelection: onToggleSelection
+                        )
                                     case .list:
                                         HomeListView(
                                             source: source,
-                                            component: .init(title: nil, value: .mangaList(entries: entries.map { $0.intoLink() }))
-                                        ) {
-                                            if hasMore && listingLoadState != .loading {
-                                                await loadEntries()
-                                            }
-                                        }
+                                            component: .init(title: nil, value: .mangaList(entries: entries.map { $0.intoLink() })),
+                                            selectionMode: selectionMode,
+                                            selectedItems: $selectedItems,
+                                            loadMore: {
+                                                if hasMore && listingLoadState != .loading {
+                                                    await loadEntries()
+                                                }
+                                            },
+                                            onToggleSelection: onToggleSelection
+                                        )
                                         .id(listingSelection) // Force recreation on listing change
                                         .padding(.bottom)
                                 }
@@ -197,6 +218,12 @@ struct SourceHomeContentView: View {
                 if source.features.providesHome && listingSelection != 0 {
                     await loadHome()
                 }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("select-all-source-items"))) { _ in
+            guard selectionMode else { return }
+            for manga in entries {
+                onToggleSelection?(manga)
             }
         }
         .task {

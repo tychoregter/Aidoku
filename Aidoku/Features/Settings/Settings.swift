@@ -50,6 +50,26 @@ enum Settings {
         ]))),
         .init(value: .group(.init(items: [
             .init(
+                key: "Browse",
+                title: NSLocalizedString("BROWSE"),
+                value: .page(.init(
+                    items: [],
+                    inlineTitle: true,
+                    icon: .system(name: "globe", color: "green")
+                ))
+            ),
+            .init(
+                key: "History",
+                title: NSLocalizedString("HISTORY"),
+                value: .page(.init(
+                    items: [],
+                    inlineTitle: true,
+                    icon: .system(name: "clock.fill", color: "orange")
+                ))
+            )
+        ]))),
+        .init(value: .group(.init(items: [
+            .init(
                 title: NSLocalizedString("APPEARANCE"),
                 value: .page(.init(
                     items: appearanceSettings,
@@ -96,27 +116,6 @@ enum Settings {
                     items: [],
                     inlineTitle: true,
                     icon: .system(name: "clock.arrow.2.circlepath", color: "orange", inset: 4)
-                ))
-            ),
-            .init(
-                title: NSLocalizedString("ICLOUD_SYNC"),
-                value: .page(.init(
-                    items: [
-                        .init(value: .group(.init(items: [
-                            .init(
-                                key: AppSettings.general.icloudSync.key,
-                                title: String(format: NSLocalizedString("%@_EXPERIMENTAL"), NSLocalizedString("ICLOUD_SYNC")),
-                                requires: AppSettings.flags.isiCloudAvailable.key,
-                                value: .toggle(.init())
-                            )
-                        ])))
-                    ],
-                    icon: .system(name: "icloud.fill", color: "blue"),
-                    info: NSLocalizedString(
-                        AppSettings.flags.isSideloaded.get()
-                            ? "ICLOUD_SYNC_TEXT_SIDELOADED"
-                            : "ICLOUD_SYNC_TEXT_EXPERIMENTAL"
-                    )
                 ))
             ),
             .init(

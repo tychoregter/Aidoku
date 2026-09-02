@@ -23,6 +23,11 @@ struct KomgaLibrary: Codable, Sendable {
     let name: String
 }
 
+struct KomgaCollection: Codable, Sendable {
+    let id: String
+    let name: String
+}
+
 struct KomgaPage: Codable, Sendable {
     let number: Int
     let mediaType: String

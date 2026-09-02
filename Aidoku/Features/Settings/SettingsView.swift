@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var searchResult: SettingSearchResult?
 
     @EnvironmentObject private var path: NavigationCoordinator
+    @Environment(\.dismiss) private var dismiss
 
     static let settings = Settings.settings
 
@@ -301,6 +302,18 @@ extension SettingsView {
             if #available(iOS 18.0, *) {
                 DictionaryVocabListView().environmentObject(path)
             }
+        } else if key == "History" {
+            HistorySettingsView(path: path, onBack: { dismiss() })
+                .toolbar(.visible, for: .navigationBar)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { NotificationCenter.default.post(name: .init("history.clearRequested"), object: nil) } label: {
+                            Image(systemName: "trash")
+                        }
+                    }
+                }
+        } else if key == "Browse" {
+            BrowseSettingsView()
         } else if key == "Tracking" {
             SettingsTrackingView()
         } else if key == "About" {
@@ -348,6 +361,69 @@ extension SettingsView {
             SettingView(setting: newSetting)
         }
     }
+}
+
+private struct BrowseSettingsView: View {
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        ControllerRepresentable(onBack: { dismiss() })
+            .toolbar(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { NotificationCenter.default.post(name: .init("browse.addSource"), object: nil) } label: {
+                        Image(systemName: "plus")
+                    }
+                    Button { NotificationCenter.default.post(name: .init("browse.migrateSources"), object: nil) } label: {
+                        Image(systemName: "arrow.left.arrow.right")
+                    }
+                }
+            }
+    }
+
+    private struct ControllerRepresentable: UIViewControllerRepresentable {
+        let onBack: () -> Void
+
+        func makeUIViewController(context: Context) -> BrowseViewController {
+            let browseViewController = BrowseViewController()
+            browseViewController.navigationItem.hidesBackButton = true
+            browseViewController.navigationItem.leftBarButtonItem = UIBarButtonItem(
+                title: NSLocalizedString("SETTINGS"),
+                image: UIImage(systemName: "chevron.left"),
+                primaryAction: UIAction { _ in onBack() }
+            )
+            return browseViewController
+        }
+
+        func updateUIViewController(_ uiViewController: BrowseViewController, context: Context) {}
+    }
+}
+
+private struct HistorySettingsView: UIViewControllerRepresentable {
+    let path: NavigationCoordinator
+    let onBack: () -> Void
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        let history = UIHostingController(rootView: HistoryView().environmentObject(path))
+        history.navigationItem.hidesBackButton = true
+        history.navigationItem.leftBarButtonItem = UIBarButtonItem(
+            title: NSLocalizedString("SETTINGS"),
+            image: UIImage(systemName: "chevron.left"),
+            primaryAction: UIAction { _ in
+                onBack()
+            }
+        )
+        history.navigationItem.title = NSLocalizedString("HISTORY")
+        history.navigationItem.rightBarButtonItem = UIBarButtonItem(
+            systemItem: .trash,
+            primaryAction: UIAction { _ in
+                NotificationCenter.default.post(name: .init("history.clearRequested"), object: nil)
+            }
+        )
+
+        return history
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 }
 
 extension SettingsView {

@@ -6,6 +6,7 @@
     {
       "layers" : [
         {
+          "fill" : "automatic",
           "glass" : true,
           "hidden" : false,
           "image-name" : "読.svg",

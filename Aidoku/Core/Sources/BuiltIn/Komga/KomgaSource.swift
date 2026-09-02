@@ -163,6 +163,18 @@ actor KomgaSourceRunner: Runner {
         if needsDetails {
             let series: KomgaSeries = try await helper.request(path: "api/v1/series/\(manga.key)", lastWorkingMirror: &lastWorkingMirrorCopy)
             manga = manga.copy(from: series.intoManga(sourceKey: sourceKey, baseUrl: lastWorkingMirrorCopy ?? baseUrl))
+
+            // Cache collection membership when a series is added or its details
+            // are refreshed. This keeps the library filter local and responsive.
+            if let collections: [KomgaCollection] = try? await helper.request(
+                path: "api/v1/series/\(manga.key)/collections",
+                lastWorkingMirror: &lastWorkingMirrorCopy
+            ) {
+                let membershipKey = "\(sourceKey).collectionMembership"
+                var membership = UserDefaults.standard.dictionary(forKey: membershipKey) as? [String: [String]] ?? [:]
+                membership[manga.key] = collections.map(\.name)
+                UserDefaults.standard.set(membership, forKey: membershipKey)
+            }
         }
 
         if needsChapters {

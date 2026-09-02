@@ -21,6 +21,9 @@ struct LibraryFilter: Codable, Hashable {
         case source
         case contentRating
         case category
+        case favorite
+        case caughtUp
+        case collection
 
         var title: String {
             switch self {
@@ -32,6 +35,9 @@ struct LibraryFilter: Codable, Hashable {
                 case .source: NSLocalizedString("SOURCES")
                 case .contentRating: NSLocalizedString("CONTENT_RATING")
                 case .category: NSLocalizedString("CATEGORY")
+                case .favorite: NSLocalizedString("FAVORITE")
+                case .caughtUp: NSLocalizedString("CAUGHT_UP")
+                case .collection: NSLocalizedString("COLLECTIONS")
             }
         }
 
@@ -43,8 +49,11 @@ struct LibraryFilter: Codable, Hashable {
                 case .started: "clock"
                 case .completed: "checkmark.circle"
                 case .source: "globe"
-                case .contentRating: "exclamationmark.triangle.fill"
+                case .contentRating: "exclamationmark.triangle"
                 case .category: "folder"
+                case .favorite: "star"
+                case .caughtUp: "checkmark.circle"
+                case .collection: "rectangle.stack"
             }
         }
 
@@ -55,7 +64,7 @@ struct LibraryFilter: Codable, Hashable {
         var isAvailable: Bool {
             switch self {
                 case .tracking: TrackerManager.hasAvailableTrackers
-                case .source, .contentRating, .category: false // needs custom handling
+                case .source, .contentRating, .category, .collection: false // needs custom handling
                 default: true
             }
         }

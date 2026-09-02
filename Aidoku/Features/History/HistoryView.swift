@@ -104,11 +104,6 @@ struct HistoryView: View {
                         Image(systemName: locked ? "lock" : "lock.open")
                     }
                 }
-                Button {
-                    showClearHistoryConfirm = true
-                } label: {
-                    Image(systemName: "trash")
-                }
             }
         }
         .confirmationDialogOrAlert(NSLocalizedString("CLEAR_READ_HISTORY"), isPresented: $showClearHistoryConfirm, titleVisibility: .visible) {
@@ -143,6 +138,9 @@ struct HistoryView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
             // lock the view when the app is backgrounded
             locked = UserDefaults.standard.bool(forKey: "History.lockHistoryTab")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .init("history.clearRequested"))) { _ in
+            showClearHistoryConfirm = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .historyTabReselected)) { _ in
             // the history tab was selected while already at the top of the list
@@ -249,7 +247,7 @@ struct HistoryView: View {
 
     // load more history entries if the loading state is idle
     func tryLoadingMore() {
-        loadTask = Task {
+        Task {
             if viewModel.loadingState == .idle {
                 await viewModel.loadMore()
             }
