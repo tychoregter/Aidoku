@@ -329,6 +329,14 @@ class LibraryViewController: OldMangaCollectionViewController {
             }
         }
 
+        addObserver(forName: .favoriteChanged) { [weak self] _ in
+            guard let self, self.viewModel.pinType == .favorites else { return }
+            Task { @MainActor in
+                await self.viewModel.loadLibrary()
+                self.updateDataSource()
+            }
+        }
+
         // refresh badges
         addObserver(forName: AppSettings.library.unreadChapterBadges.key) { [weak self] _ in
             if AppSettings.library.unreadChapterBadges.get() {
@@ -1482,7 +1490,7 @@ extension LibraryViewController {
 
             var bottomMenuChildren: [UIMenuElement] = []
 
-            bottomMenuChildren.append(UIMenu(title: NSLocalizedString("MARK_ALL"), image: nil, children: [
+            bottomMenuChildren.append(UIMenu(title: NSLocalizedString("MARK_ALL"), image: UIImage(systemName: "checkmark.circle"), children: [
                 // read chapters
                 UIAction(title: NSLocalizedString("READ"), image: UIImage(systemName: "checkmark.circle")) { _ in
                     UIApplication.shared.appDelegate?.showLoadingIndicator()

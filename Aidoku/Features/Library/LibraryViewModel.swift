@@ -403,7 +403,7 @@ extension LibraryViewModel {
             if pinType == .started {
                 pinnedManga.sort {
                     if let lhs = $0.lastRead, let rhs = $1.lastRead {
-                        return lhs < rhs
+                        return lhs > rhs
                     }
                     return $0.lastRead != nil
                 }

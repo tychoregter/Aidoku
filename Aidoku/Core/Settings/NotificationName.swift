@@ -29,6 +29,7 @@ extension Notification.Name {
     static let updateCategories = Self("updateCategories")
     static let updateManga = Self("updateManga")
     static let updateMangaCategories = Self("updateMangaCategories")
+    static let favoriteChanged = Self("favoriteChanged")
     static let updateLibraryLock = Self("updateLibraryLock")
     static let mangaUpdatesViewed = Self("mangaUpdatesViewed")
 

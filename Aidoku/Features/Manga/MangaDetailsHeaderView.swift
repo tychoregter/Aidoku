@@ -350,6 +350,7 @@ struct MangaDetailsHeaderView: View {
                     }
                     UserDefaults.standard.set(Array(favoriteIds), forKey: "library.favoriteMangaIdentifiers")
                     isFavorite.toggle()
+                    NotificationCenter.default.post(name: .favoriteChanged, object: manga.identifier)
                 } label: {
                     Image(systemName: isFavorite ? "star.fill" : "star")
                 }
