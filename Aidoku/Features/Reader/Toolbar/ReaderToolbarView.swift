@@ -27,7 +27,7 @@ class ReaderToolbarView: UIView {
     let sliderView = ReaderSliderView()
     private let incognitoModeLabel = UILabel()
     private let currentPageLabel = UILabel()
-    private let pagesLeftLabel = UILabel()
+    private var currentPageLabelCenterYConstraint: NSLayoutConstraint!
 
     private var cancellables: [AnyCancellable] = []
 
@@ -35,6 +35,16 @@ class ReaderToolbarView: UIView {
         super.init(frame: .zero)
         configure()
         constrain()
+        sliderView.onTrackingStateChanged = { [weak self] isTracking in
+            guard let self else { return }
+            if isTracking {
+                UIView.animate(withDuration: 0.2) {
+                    self.currentPageLabel.alpha = 1
+                }
+            } else {
+                self.currentPageLabel.alpha = 0
+            }
+        }
         observe()
     }
 
@@ -51,35 +61,33 @@ class ReaderToolbarView: UIView {
 
         currentPageLabel.font = .systemFont(ofSize: 10)
         currentPageLabel.textAlignment = .center
+        currentPageLabel.alpha = 0
         currentPageLabel.sizeToFit()
         addSubview(currentPageLabel)
 
-        pagesLeftLabel.font = .systemFont(ofSize: 10)
-        pagesLeftLabel.textColor = .secondaryLabel
-        pagesLeftLabel.textAlignment = .right
-        addSubview(pagesLeftLabel)
-
         sliderView.semanticContentAttribute = .playback // for rtl languages
         addSubview(sliderView)
+        bringSubviewToFront(incognitoModeLabel)
+        bringSubviewToFront(currentPageLabel)
     }
 
     func constrain() {
         incognitoModeLabel.translatesAutoresizingMaskIntoConstraints = false
         currentPageLabel.translatesAutoresizingMaskIntoConstraints = false
-        pagesLeftLabel.translatesAutoresizingMaskIntoConstraints = false
         sliderView.translatesAutoresizingMaskIntoConstraints = false
+
+        currentPageLabelCenterYConstraint = currentPageLabel.centerYAnchor.constraint(
+            equalTo: sliderView.centerYAnchor
+        )
 
         NSLayoutConstraint.activate([
             incognitoModeLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            incognitoModeLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            incognitoModeLabel.centerYAnchor.constraint(equalTo: sliderView.centerYAnchor),
 
             currentPageLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
-            currentPageLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
+            currentPageLabelCenterYConstraint,
 
-            pagesLeftLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            pagesLeftLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -4),
-
-            sliderView.heightAnchor.constraint(equalToConstant: 12),
+            sliderView.heightAnchor.constraint(equalTo: heightAnchor),
             sliderView.centerYAnchor.constraint(equalTo: centerYAnchor),
             sliderView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             sliderView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12)
@@ -97,7 +105,7 @@ class ReaderToolbarView: UIView {
     // allow slider thumb to be touched outside bounds
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         for subview in subviews where subview is ReaderSliderView {
-            if subview.subviews.contains(where: { $0.bounds.contains(convert(point, to: $0)) }) {
+            if subview.bounds.contains(convert(point, to: subview)) {
                 return subview
             }
         }
@@ -121,7 +129,6 @@ class ReaderToolbarView: UIView {
     func updatePageLabels() {
         guard var currentPage = currentPage, let totalPages = totalPages else {
             currentPageLabel.text = nil
-            pagesLeftLabel.text = nil
             return
         }
 
@@ -130,15 +137,7 @@ class ReaderToolbarView: UIView {
         } else if currentPage < 1 {
             currentPage = 1
         }
-        let pagesLeft = totalPages - currentPage
         currentPageLabel.text = String(format: NSLocalizedString("%i_OF_%i"), currentPage, totalPages)
-        if pagesLeft < 1 {
-            pagesLeftLabel.text = nil
-        } else {
-            pagesLeftLabel.text = pagesLeft == 1
-                ? NSLocalizedString("ONE_PAGE_LEFT")
-                : String(format: NSLocalizedString("%i_PAGES_LEFT"), pagesLeft)
-        }
         incognitoModeLabel.text = NSLocalizedString("INCOGNITO_MODE")
     }
 
