@@ -25,6 +25,8 @@ class LibraryViewModel {
 
     enum PinType: String, CaseIterable {
         case none
+        case favorites
+        case started
         case unread
         case updatedChapters
 
@@ -33,6 +35,8 @@ class LibraryViewModel {
                 case .none: NSLocalizedString("PIN_DISABLED")
                 case .unread: NSLocalizedString("PIN_UNREAD")
                 case .updatedChapters: NSLocalizedString("PIN_UPDATED_CHAPTERS")
+                case .started: NSLocalizedString("PIN_STARTED")
+                case .favorites: NSLocalizedString("PIN_FAVORITES")
             }
         }
 
@@ -41,6 +45,8 @@ class LibraryViewModel {
                 case .none: false
                 case .unread: false
                 case .updatedChapters: true
+                case .started: true
+                case .favorites: false
             }
         }
     }
@@ -221,6 +227,9 @@ extension LibraryViewModel {
 
     // swiftlint:disable:next cyclomatic_complexity
     func loadLibrary() async {
+        // Favorites can be changed from the manga details screen while this view remains alive.
+        favoriteIds = Set(UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? [])
+
         // handle filter groups
         let filters = self.activeFilters
         let currentCategory = (isInUncategorizedCategory || isInRealCategory) ? self.currentCategory : nil
@@ -275,13 +284,14 @@ extension LibraryViewModel {
 
                 let categories = (libraryObject.categories?.allObjects as? [CategoryObject])?.map { $0.title } ?? []
 
-                let info = MangaInfo(
+                var info = MangaInfo(
                     id: mangaObject.identifier,
                     coverUrl: mangaObject.cover.flatMap { URL(string: $0) },
                     title: mangaObject.title,
                     author: mangaObject.author,
                     url: mangaObject.url.flatMap { URL(string: $0) }
                 )
+                info.lastRead = libraryObject.lastRead
 
                 sourceKeys.insert(mangaObject.sourceId)
 
@@ -375,6 +385,27 @@ extension LibraryViewModel {
                         } else {
                             manga.append(info)
                         }
+                    case .started:
+                        if CoreDataManager.shared.hasHistory(mangaId: info.id, context: context) {
+                            pinnedManga.append(info)
+                        } else {
+                            manga.append(info)
+                        }
+                    case .favorites:
+                        if favoriteIds.contains(info.id.description) {
+                            pinnedManga.append(info)
+                        } else {
+                            manga.append(info)
+                        }
+                }
+            }
+
+            if pinType == .started {
+                pinnedManga.sort {
+                    if let lhs = $0.lastRead, let rhs = $1.lastRead {
+                        return lhs < rhs
+                    }
+                    return $0.lastRead != nil
                 }
             }
 
@@ -659,7 +690,12 @@ extension LibraryViewModel {
             sortMethod = method
             AppSettings.library.sortOption.set(sortMethod.rawValue)
         }
-        await sortLibrary()
+        if pinType == .started {
+            // Started titles always use their own Last Read ordering.
+            await loadLibrary()
+        } else {
+            await sortLibrary()
+        }
     }
 
     func toggleFilter(method: LibraryFilter.FilterMethod, value: String? = nil) async {
@@ -727,17 +763,19 @@ extension LibraryViewModel {
 
         let pinnedIndex = pinnedManga.firstIndex(where: { $0.id == mangaId })
         if let pinnedIndex {
-            if sortMethod == .lastOpened {
+            if pinType.needsUpdateOnContentOpen {
+                await loadLibrary()
+                libraryReloaded = true
+            } else if sortMethod == .lastOpened {
                 let manga = pinnedManga.remove(at: pinnedIndex)
-                if pinType.needsUpdateOnContentOpen {
-                    self.manga.insert(manga, at: 0)
-                } else {
-                    pinnedManga.insert(manga, at: 0)
-                }
+                pinnedManga.insert(manga, at: 0)
             } else {
                 await loadLibrary() // don't know where to put in manga array, just refresh
                 libraryReloaded = true
             }
+        } else if pinType.needsUpdateOnContentOpen {
+            await loadLibrary()
+            libraryReloaded = true
         } else if sortMethod == .lastOpened {
             let index = manga.firstIndex(where: { $0.id == mangaId })
             if let index {
@@ -756,7 +794,7 @@ extension LibraryViewModel {
     }
 
     func mangaRead(mangaId: MangaIdentifier) async {
-        if activeFilters.contains(where: { $0.type == .hasUnread || $0.type == .caughtUp }) {
+        if pinType == .started || activeFilters.contains(where: { $0.type == .hasUnread || $0.type == .caughtUp }) {
             // reload library in case all chapters were read and the manga should be filtered
             await loadLibrary()
             return

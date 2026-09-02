@@ -481,6 +481,8 @@
 "PIN_DISABLED" = "Disabled";
 "PIN_UNREAD" = "Unread";
 "PIN_UPDATED_CHAPTERS" = "Updated Chapters";
+"PIN_STARTED" = "Started";
+"PIN_FAVORITES" = "Favorites";
 "LIBRARY_UPDATING" = "Library Updating";
 "UPDATE_INTERVAL" = "Update Interval";
 "SKIP_TITLES" = "Skip Titles";

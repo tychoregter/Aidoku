@@ -284,6 +284,7 @@ class LibraryViewController: OldMangaCollectionViewController {
             Task { @MainActor in
                 await self.viewModel.loadLibrary()
                 self.updateDataSource()
+                self.updateMoreMenu()
             }
         }
         addObserver(forName: .updateManga) { [weak self] notification in
@@ -310,6 +311,10 @@ class LibraryViewController: OldMangaCollectionViewController {
             guard let self, let id = notification.object as? MangaIdentifier else { return }
             Task {
                 await self.viewModel.mangaOpened(mangaId: id)
+                if self.viewModel.pinType == .started {
+                    try? await Task.sleep(nanoseconds: 150_000_000)
+                    await self.viewModel.loadLibrary()
+                }
                 self.updateDataSource()
             }
         }
@@ -320,6 +325,7 @@ class LibraryViewController: OldMangaCollectionViewController {
             Task { @MainActor in
                 await self.viewModel.loadLibrary()
                 self.updateDataSource()
+                self.updateMoreMenu()
             }
         }
 
@@ -357,6 +363,9 @@ class LibraryViewController: OldMangaCollectionViewController {
             Task { @MainActor in
                 let manga = Array(Set(chapters.map { MangaInfo(id: $0.mangaIdentifier) }))
                 await self.viewModel.updateHistory(for: manga, read: true)
+                if self.viewModel.pinType == .started {
+                    await self.viewModel.loadLibrary()
+                }
                 self.updateDataSource()
             }
         }
@@ -370,6 +379,9 @@ class LibraryViewController: OldMangaCollectionViewController {
                     manga = [MangaInfo(id: mangaId)]
                 }
                 await self.viewModel.updateHistory(for: manga, read: false)
+                if self.viewModel.pinType == .started {
+                    await self.viewModel.loadLibrary()
+                }
                 self.updateDataSource()
             }
         }
@@ -705,14 +717,8 @@ extension LibraryViewController {
         var snapshot = NSDiffableDataSourceSnapshot<Section, MangaInfo>()
 
         if !locked {
-            if !viewModel.pinnedManga.isEmpty {
-                snapshot.appendSections(Section.allCases)
-                snapshot.appendItems(viewModel.pinnedManga, toSection: .pinned)
-            } else {
-                snapshot.appendSections([.regular])
-            }
-
-            snapshot.appendItems(viewModel.manga, toSection: .regular)
+            snapshot.appendSections([.regular])
+            snapshot.appendItems(viewModel.pinnedManga + viewModel.manga, toSection: .regular)
         }
 
         dataSource.apply(snapshot)
@@ -991,14 +997,22 @@ extension LibraryViewController {
                 })
             }
 
-            return menu.replacingChildren(menu.children.map { updateElement($0) })
+            var children = menu.children.map { updateElement($0) }
+            if !self.viewModel.filters.isEmpty,
+               !children.contains(where: { $0.title == NSLocalizedString("REMOVE_FILTER") }) {
+                children.append(self.removeFilterAction())
+            } else if self.viewModel.filters.isEmpty,
+                      children.last?.title == NSLocalizedString("REMOVE_FILTER") {
+                children.removeLast()
+            }
+            return menu.replacingChildren(children)
         }
 
         contextMenuInteraction.updateVisibleMenu { menu in
             if menu.title == NSLocalizedString("BUTTON_FILTER") {
-                updateFilterSubmenu(menu)
+                return updateFilterSubmenu(menu)
             } else if menu.title == LibraryFilter.FilterMethod.contentRating.title {
-                menu.replacingChildren(MangaContentRating.allCases.map { rating in
+                return menu.replacingChildren(MangaContentRating.allCases.map { rating in
                     UIAction(
                         title: rating.title,
                         attributes: .keepsMenuPresented,
@@ -1008,7 +1022,7 @@ extension LibraryViewController {
                     }
                 })
             } else if menu.title == LibraryFilter.FilterMethod.category.title {
-                menu.replacingChildren(self.viewModel.categories.map { category in
+                return menu.replacingChildren(self.viewModel.categories.map { category in
                     UIAction(
                         title: category,
                         attributes: .keepsMenuPresented,
@@ -1018,7 +1032,7 @@ extension LibraryViewController {
                     }
                 })
             } else if menu.title == LibraryFilter.FilterMethod.collection.title {
-                menu.replacingChildren(self.viewModel.collections.map { collection in
+                return menu.replacingChildren(self.viewModel.collections.map { collection in
                     UIAction(
                         title: collection,
                         attributes: .keepsMenuPresented,
@@ -1028,12 +1042,9 @@ extension LibraryViewController {
                     }
                 })
             } else {
-                menu.replacingChildren(menu.children.map { element in
+                var rootChildren = menu.children.map { element in
                     guard let menu = element as? UIMenu else { return element }
                     if menu.children.first?.title == NSLocalizedString("SORT_BY") {
-                        let shouldShowRemoveFilter = !self.viewModel.filters.isEmpty
-                        let isShowingRemoveFilter = menu.children.last?.title == NSLocalizedString("REMOVE_FILTER")
-
                         let updatedChildren = menu.children.map { element in
                             if element.title == NSLocalizedString("BUTTON_FILTER"), let menu = element as? UIMenu {
                                 updateFilterSubmenu(menu) as UIMenuElement
@@ -1042,14 +1053,12 @@ extension LibraryViewController {
                             }
                         }
 
-                        if shouldShowRemoveFilter && !isShowingRemoveFilter {
-                            return menu.replacingChildren(updatedChildren + [removeFilterAction()])
-                        } else if !shouldShowRemoveFilter && isShowingRemoveFilter {
-                            return menu.replacingChildren(updatedChildren.dropLast())
-                        }
+                        return menu.replacingChildren(updatedChildren)
                     }
                     return element
-                })
+                }
+                rootChildren.removeAll { $0.title == NSLocalizedString("REMOVE_FILTER") }
+                return menu.replacingChildren(rootChildren)
             }
         }
 
@@ -1127,7 +1136,7 @@ extension LibraryViewController {
             } else {
                 []
             }
-            let filters = UIMenu(
+            var filters = UIMenu(
                 title: NSLocalizedString("BUTTON_FILTER"),
                 subtitle: self.filtersSubtitle(),
                 image: UIImage(systemName: "line.3.horizontal.decrease"),
@@ -1186,11 +1195,30 @@ extension LibraryViewController {
                     )
                 ]
             )
-            if self.viewModel.filters.isEmpty {
-                completion([filters])
-            } else {
-                completion([filters, self.removeFilterAction()])
+            let pinTitlesMenu = UIMenu(
+                title: NSLocalizedString("PIN_TITLES"),
+                subtitle: self.viewModel.pinType == .none ? nil : self.viewModel.pinType.title,
+                image: UIImage(systemName: "pin"),
+                children: LibraryViewModel.PinType.allCases.map { pinType in
+                    UIAction(
+                        title: pinType.title,
+                        state: self.viewModel.pinType == pinType ? .on : .off
+                    ) { [weak self] _ in
+                        AppSettings.library.pinTitles.set(pinType.rawValue)
+                        guard let self else { return }
+                        self.viewModel.pinType = pinType
+                        Task { @MainActor in
+                            await self.viewModel.loadLibrary()
+                            self.updateDataSource()
+                            self.updateMoreMenu()
+                        }
+                    }
+                }
+            )
+            if !self.viewModel.filters.isEmpty {
+                filters = filters.replacingChildren(filters.children + [self.removeFilterAction()])
             }
+            completion([filters, pinTitlesMenu])
         }
 
         moreBarButton.menu = UIMenu(
@@ -1355,11 +1383,7 @@ extension LibraryViewController {
     }
 
     private func mangaInfo(at path: IndexPath) -> MangaInfo {
-        let manga: [MangaInfo] = if path.section == 0 && !viewModel.pinnedManga.isEmpty {
-            viewModel.pinnedManga
-        } else {
-            viewModel.manga
-        }
+        let manga = viewModel.pinnedManga + viewModel.manga
 
         return manga[path.row]
     }
