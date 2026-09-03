@@ -50,7 +50,7 @@ class ReaderToolbarView: UIView {
         addSubview(incognitoModeLabel)
 
         currentPageLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        currentPageLabel.textColor = UIColor.white.withAlphaComponent(0.35)
+        currentPageLabel.textColor = UIColor.label.withAlphaComponent(0.35)
         currentPageLabel.textAlignment = .right
         currentPageLabel.setContentHuggingPriority(.required, for: .horizontal)
         currentPageLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -113,7 +113,7 @@ class ReaderToolbarView: UIView {
         } else if page < 1 {
             page = 1
         }
-        currentPageLabel.text = String(format: "%i/%i", page, totalPages)
+        currentPageLabel.text = String(format: "%i / %i", page, totalPages)
         currentPageValue = page
     }
 
@@ -128,7 +128,7 @@ class ReaderToolbarView: UIView {
         } else if currentPage < 1 {
             currentPage = 1
         }
-        currentPageLabel.text = String(format: "%i/%i", currentPage, totalPages)
+        currentPageLabel.text = String(format: "%i / %i", currentPage, totalPages)
         incognitoModeLabel.text = NSLocalizedString("INCOGNITO_MODE")
     }
 

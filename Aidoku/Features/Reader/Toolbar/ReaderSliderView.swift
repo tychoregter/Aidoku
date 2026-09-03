@@ -34,8 +34,16 @@ class ReaderSliderView: UIControl {
     }
 
     private lazy var trackView = {
-        let trackView = UIView()
-        trackView.backgroundColor = .systemGray3
+        let trackView: UIView
+        if #available(iOS 26.0, *) {
+            let glassTrack = LiquidLensView(frame: .zero)
+            glassTrack.restingBackgroundColor = .systemGray4
+            trackView = glassTrack
+        } else {
+            let fallbackTrack = UIView()
+            fallbackTrack.backgroundColor = .systemGray3
+            trackView = fallbackTrack
+        }
         trackView.layer.cornerRadius = 4
         trackView.layer.cornerCurve = .continuous
         trackView.clipsToBounds = true
@@ -44,7 +52,7 @@ class ReaderSliderView: UIControl {
     }()
     private lazy var progressedTrackView = {
         let progressedTrackView = UIView()
-        progressedTrackView.backgroundColor = .white
+        progressedTrackView.backgroundColor = .label
         progressedTrackView.isUserInteractionEnabled = true
         return progressedTrackView
     }()
@@ -106,7 +114,7 @@ class ReaderSliderView: UIControl {
     }
 
     override func tintColorDidChange() {
-        progressedTrackView.backgroundColor = .white
+        progressedTrackView.backgroundColor = .label
     }
 
     private func updateLayerFrames() {
