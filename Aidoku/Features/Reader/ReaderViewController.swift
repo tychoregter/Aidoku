@@ -219,7 +219,7 @@ class ReaderViewController: BaseObservingViewController {
         if #available(iOS 26.0, *) {
             toolbarButtonItemView.customView?.heightAnchor.constraint(equalToConstant: 30).isActive = true
             toolbarViewWidthConstraint = toolbarButtonItemView.customView?.widthAnchor.constraint(
-                equalToConstant: view.bounds.width - 42
+                equalToConstant: view.bounds.width - 66
             )
             toolbarButtonItemView.customView?.transform = CGAffineTransform(translationX: 0, y: 1)
         } else {
@@ -432,7 +432,7 @@ class ReaderViewController: BaseObservingViewController {
 
         coordinator.animate(alongsideTransition: nil) { _ in
             if #available(iOS 26.0, *) {
-                self.toolbarViewWidthConstraint?.constant = size.width - 42
+                self.toolbarViewWidthConstraint?.constant = size.width - 66
             } else {
                 self.toolbarViewWidthConstraint?.constant = size.width
             }

@@ -8,8 +8,6 @@
 import UIKit
 
 class ReaderSliderView: UIControl {
-    var onTrackingStateChanged: ((Bool) -> Void)?
-
     enum SliderDirection {
         case forward
         case backward
@@ -37,7 +35,7 @@ class ReaderSliderView: UIControl {
 
     private lazy var trackView = {
         let trackView = UIView()
-        trackView.backgroundColor = .secondarySystemFill
+        trackView.backgroundColor = .systemGray3
         trackView.layer.cornerRadius = 4
         trackView.layer.cornerCurve = .continuous
         trackView.clipsToBounds = true
@@ -46,7 +44,7 @@ class ReaderSliderView: UIControl {
     }()
     private lazy var progressedTrackView = {
         let progressedTrackView = UIView()
-        progressedTrackView.backgroundColor = tintColor
+        progressedTrackView.backgroundColor = .white
         progressedTrackView.isUserInteractionEnabled = true
         return progressedTrackView
     }()
@@ -108,7 +106,7 @@ class ReaderSliderView: UIControl {
     }
 
     override func tintColorDidChange() {
-        progressedTrackView.backgroundColor = tintColor
+        progressedTrackView.backgroundColor = .white
     }
 
     private func updateLayerFrames() {
@@ -132,7 +130,6 @@ extension ReaderSliderView {
         previousLocation = touch.location(in: self)
 
         tag = 1
-        onTrackingStateChanged?(true)
         UIView.animate(withDuration: 0.2) {
             self.trackHeightConstraint?.constant = 16
             self.progressedTrackHeightConstraint?.constant = 16
@@ -172,7 +169,6 @@ extension ReaderSliderView {
 
     override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
         tag = 0
-        onTrackingStateChanged?(false)
         UIView.animate(withDuration: 0.2) {
             self.trackHeightConstraint?.constant = 8
             self.progressedTrackHeightConstraint?.constant = 8

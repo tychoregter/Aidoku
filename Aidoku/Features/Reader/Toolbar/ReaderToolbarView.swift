@@ -35,16 +35,6 @@ class ReaderToolbarView: UIView {
         super.init(frame: .zero)
         configure()
         constrain()
-        sliderView.onTrackingStateChanged = { [weak self] isTracking in
-            guard let self else { return }
-            if isTracking {
-                UIView.animate(withDuration: 0.2) {
-                    self.currentPageLabel.alpha = 1
-                }
-            } else {
-                self.currentPageLabel.alpha = 0
-            }
-        }
         observe()
     }
 
@@ -59,9 +49,11 @@ class ReaderToolbarView: UIView {
         incognitoModeLabel.isHidden = !AppSettings.general.incognitoMode.get()
         addSubview(incognitoModeLabel)
 
-        currentPageLabel.font = .systemFont(ofSize: 10)
-        currentPageLabel.textAlignment = .center
-        currentPageLabel.alpha = 0
+        currentPageLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        currentPageLabel.textColor = UIColor.white.withAlphaComponent(0.35)
+        currentPageLabel.textAlignment = .right
+        currentPageLabel.setContentHuggingPriority(.required, for: .horizontal)
+        currentPageLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         currentPageLabel.sizeToFit()
         addSubview(currentPageLabel)
 
@@ -76,20 +68,19 @@ class ReaderToolbarView: UIView {
         currentPageLabel.translatesAutoresizingMaskIntoConstraints = false
         sliderView.translatesAutoresizingMaskIntoConstraints = false
 
-        currentPageLabelCenterYConstraint = currentPageLabel.centerYAnchor.constraint(
-            equalTo: sliderView.centerYAnchor
-        )
+        currentPageLabelCenterYConstraint = currentPageLabel.centerYAnchor.constraint(equalTo: sliderView.centerYAnchor)
 
         NSLayoutConstraint.activate([
             incognitoModeLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             incognitoModeLabel.centerYAnchor.constraint(equalTo: sliderView.centerYAnchor),
 
-            currentPageLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            currentPageLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            currentPageLabel.widthAnchor.constraint(equalToConstant: 46),
             currentPageLabelCenterYConstraint,
 
             sliderView.heightAnchor.constraint(equalTo: heightAnchor),
             sliderView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            sliderView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            sliderView.leadingAnchor.constraint(equalTo: currentPageLabel.trailingAnchor, constant: 8),
             sliderView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12)
         ])
     }
@@ -122,7 +113,7 @@ class ReaderToolbarView: UIView {
         } else if page < 1 {
             page = 1
         }
-        currentPageLabel.text = String(format: NSLocalizedString("%i_OF_%i"), page, totalPages)
+        currentPageLabel.text = String(format: "%i/%i", page, totalPages)
         currentPageValue = page
     }
 
@@ -137,7 +128,7 @@ class ReaderToolbarView: UIView {
         } else if currentPage < 1 {
             currentPage = 1
         }
-        currentPageLabel.text = String(format: NSLocalizedString("%i_OF_%i"), currentPage, totalPages)
+        currentPageLabel.text = String(format: "%i/%i", currentPage, totalPages)
         incognitoModeLabel.text = NSLocalizedString("INCOGNITO_MODE")
     }
 
