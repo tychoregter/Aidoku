@@ -1,0 +1,2 @@
+# Keep the fork-specific tab layout when merging upstream changes.
+Aidoku/App/Root/TabBarController.swift merge=ours
