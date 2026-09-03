@@ -341,7 +341,7 @@ extension TabBarController: UITabBarControllerDelegate {
         }
         if let navigationController = viewController as? UINavigationController,
            navigationController.viewControllers.first === libraryViewController {
-            libraryViewController.scrollToTop()
+            libraryViewController?.scrollToTop()
         } else if viewController === settingsPath?.rootViewController || viewController === settingsPath?.navigationController {
             popSettingsToRoot()
             scrollSettingsToTop()
