@@ -222,9 +222,14 @@ struct SourceHomeContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .init("select-all-source-items"))) { _ in
             guard selectionMode else { return }
-            for manga in entries {
+            let allSelected = !entries.isEmpty && entries.allSatisfy { selectedItems.contains($0.key) }
+            for manga in entries where selectedItems.contains(manga.key) == allSelected {
                 onToggleSelection?(manga)
             }
+            publishSelectionState(allSelected: !allSelected)
+        }
+        .onChange(of: selectedItems) { _ in
+            publishSelectionState()
         }
         .task {
             guard !hasLoaded else { return }
@@ -232,6 +237,15 @@ struct SourceHomeContentView: View {
             await reload(initial: true)
         }
         .environmentObject(path)
+    }
+
+    private func publishSelectionState(allSelected: Bool? = nil) {
+        let isAllSelected = allSelected ?? (!entries.isEmpty && entries.allSatisfy { selectedItems.contains($0.key) })
+        NotificationCenter.default.post(
+            name: .init("source-selection-state-changed"),
+            object: nil,
+            userInfo: ["allSelected": isAllSelected]
+        )
     }
 
     @ViewBuilder

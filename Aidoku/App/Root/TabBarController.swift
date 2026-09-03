@@ -319,6 +319,7 @@ extension TabBarController: UITabBarControllerDelegate {
     }
 
     private func popSettingsToRoot() {
+        NotificationCenter.default.post(name: .init("settings.navigation.reset"), object: nil)
         settingsPath?.navigationController?.popToRootViewController(animated: true)
     }
 

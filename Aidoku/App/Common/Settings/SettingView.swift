@@ -221,6 +221,12 @@ struct SettingView: View {
                     self.requiresFalse = Self.parseRequires(value: requiresFalse, namespace: namespace).result
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .init("settings.browse.dismissed"))) { _ in
+                pageIsActive = false
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .init("settings.navigation.reset"))) { _ in
+                pageIsActive = false
+            }
     }
 
     @ViewBuilder

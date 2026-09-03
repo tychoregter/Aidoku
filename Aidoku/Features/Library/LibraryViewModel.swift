@@ -650,13 +650,17 @@ extension LibraryViewModel {
 
             case .unreadChapters:
                 if sortAscending {
-                    pinnedManga.sort {
-                        if $0.unread == 0 {
-                            false
-                        } else if $1.unread == 0 {
-                            true
-                        } else {
-                            $0.unread < $1.unread
+                    // Recently Read pins have their own chronological ordering,
+                    // independent of the library's selected sort method.
+                    if pinType != .started {
+                        pinnedManga.sort {
+                            if $0.unread == 0 {
+                                false
+                            } else if $1.unread == 0 {
+                                true
+                            } else {
+                                $0.unread < $1.unread
+                            }
                         }
                     }
                     manga.sort {
@@ -669,7 +673,9 @@ extension LibraryViewModel {
                         }
                     }
                 } else {
-                    pinnedManga.sort { $0.unread > $1.unread }
+                    if pinType != .started {
+                        pinnedManga.sort { $0.unread > $1.unread }
+                    }
                     manga.sort { $0.unread > $1.unread }
                 }
 

@@ -22,6 +22,7 @@ class NewSourceViewController: UIViewController {
     private var originalNavbarEdgeAppearance: UINavigationBarAppearance?
 
     private var cancellable: AnyCancellable?
+    private var selectionStateCancellable: AnyCancellable?
 
     private lazy var searchOverlayView = {
         let scrollView = UIView()
@@ -51,6 +52,7 @@ class NewSourceViewController: UIViewController {
     private var selectionMode = false {
         didSet { updateHostingControllers(); loadNavbarButtons() }
     }
+    private var allSourceItemsSelected = false
     private var selectedItems: Set<String> = []
     private var selectedManga: [String: AidokuRunner.Manga] = [:]
     private var searchText: String {
@@ -244,6 +246,16 @@ class NewSourceViewController: UIViewController {
     func configure() {
         title = source.name
         view.backgroundColor = .systemBackground
+
+        selectionStateCancellable = NotificationCenter.default.publisher(
+            for: .init("source-selection-state-changed")
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] notification in
+            guard let allSelected = notification.userInfo?["allSelected"] as? Bool else { return }
+            self?.allSourceItemsSelected = allSelected
+            self?.loadNavbarButtons()
+        }
 
         loadNavbarButtons()
 
@@ -595,11 +607,41 @@ extension NewSourceViewController {
     // - hide website button when source doesn't have a url
     // - put website and settings buttons into a menu button if we have all three
     private func loadNavbarButtons() {
+        // Selection mode uses rightBarButtonItem while normal mode uses
+        // rightBarButtonItems. Clear both first so UIKit cannot retain the
+        // selection menu after bulk adding items to the library.
+        navigationItem.rightBarButtonItem = nil
+        navigationItem.rightBarButtonItems = nil
+
         if selectionMode {
             navigationItem.leftBarButtonItem = UIBarButtonItem(title: NSLocalizedString("CANCEL"), style: .plain, target: self, action: #selector(cancelSelection))
-            navigationItem.rightBarButtonItem = UIBarButtonItem(title: NSLocalizedString("ADD_TO_LIBRARY"), style: .done, target: self, action: #selector(addSelectedItems))
+            let addToLibraryAction = UIAction(
+                title: NSLocalizedString("ADD_TO_LIBRARY"),
+                image: UIImage(systemName: "folder.badge.plus")
+            ) { [weak self] _ in
+                self?.addSelectedItems()
+            }
+            let selectAllAction = UIAction(
+                title: NSLocalizedString(allSourceItemsSelected ? "DESELECT_ALL" : "SELECT_ALL"),
+                image: UIImage(systemName: "checkmark.circle")
+            ) { [weak self] _ in
+                guard self != nil else { return }
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .init("select-all-source-items"), object: nil)
+                }
+            }
+            navigationItem.rightBarButtonItem = UIBarButtonItem(
+                title: NSLocalizedString("MORE_BARBUTTON"),
+                image: UIImage(systemName: "ellipsis"),
+                primaryAction: nil,
+                menu: UIMenu(children: [addToLibraryAction, selectAllAction])
+            )
             return
         }
+        // Remove the selection-mode Cancel button before restoring the normal
+        // navigation controls. This also prevents it from surviving when the
+        // source view is reopened after adding selected items.
+        navigationItem.leftBarButtonItem = nil
         let settingsAction = UIAction(title: NSLocalizedString("SETTINGS"), image: UIImage(systemName: "gear")) { [weak self] _ in
             guard let self else { return }
 
@@ -651,13 +693,6 @@ extension NewSourceViewController {
                 primaryAction: nil,
                 menu: UIMenu(children: [
                     UIAction(title: NSLocalizedString("SELECT"), image: UIImage(systemName: "checkmark.circle")) { [weak self] _ in self?.beginSelection() },
-                    UIAction(title: NSLocalizedString("SELECT_ALL"), image: UIImage(systemName: "checkmark.circle.fill")) { [weak self] _ in
-                        guard let self else { return }
-                        self.beginSelection()
-                        DispatchQueue.main.async {
-                            NotificationCenter.default.post(name: .init("select-all-source-items"), object: nil)
-                        }
-                    },
                     settingsAction,
                     safariAction
                 ])
@@ -701,8 +736,18 @@ extension NewSourceViewController {
         navigationItem.rightBarButtonItems = rightBarButtonItems
     }
 
-    private func beginSelection() { selectedItems.removeAll(); selectedManga.removeAll(); selectionMode = true }
-    @objc private func cancelSelection() { selectedItems.removeAll(); selectedManga.removeAll(); selectionMode = false }
+    private func beginSelection() {
+        selectedItems.removeAll()
+        selectedManga.removeAll()
+        allSourceItemsSelected = false
+        selectionMode = true
+    }
+    @objc private func cancelSelection() {
+        selectedItems.removeAll()
+        selectedManga.removeAll()
+        allSourceItemsSelected = false
+        selectionMode = false
+    }
     private func toggleSelection(_ manga: AidokuRunner.Manga) {
         if selectedItems.contains(manga.key) {
             selectedItems.remove(manga.key)
@@ -718,6 +763,7 @@ extension NewSourceViewController {
         let manga = Array(selectedManga.values)
         selectedItems.removeAll()
         selectedManga.removeAll()
+        allSourceItemsSelected = false
         selectionMode = false
         Task {
             for item in manga {

@@ -365,8 +365,12 @@ extension SettingsView {
 
 private struct BrowseSettingsView: View {
     @Environment(\.dismiss) private var dismiss
+
     var body: some View {
-        ControllerRepresentable(onBack: { dismiss() })
+        ControllerRepresentable(onBack: {
+            NotificationCenter.default.post(name: .init("settings.browse.dismissed"), object: nil)
+            dismiss()
+        })
             .toolbar(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
