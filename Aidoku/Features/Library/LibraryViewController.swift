@@ -1154,24 +1154,25 @@ extension LibraryViewController {
             } else {
                 []
             }
+            func filterAction(for method: LibraryFilter.FilterMethod) -> UIAction {
+                UIAction(
+                    title: method.title,
+                    image: method.image,
+                    attributes: attributes,
+                    state: self.filterState(for: method)
+                ) { [weak self] _ in
+                    self?.toggleFilter(method: method)
+                }
+            }
             var filters = UIMenu(
                 title: NSLocalizedString("BUTTON_FILTER"),
                 subtitle: self.filtersSubtitle(),
                 image: UIImage(systemName: "line.3.horizontal.decrease"),
-                children: LibraryFilter.FilterMethod.allCases.compactMap { method in
-                    guard method.isAvailable,
-                          method != .downloaded,
-                          method != .hasUnread,
-                          method != .completed else { return nil }
-                    return UIAction(
-                        title: method.title,
-                        image: method.image,
-                        attributes: attributes,
-                        state: self.filterState(for: method)
-                    ) { [weak self] _ in
-                        self?.toggleFilter(method: method)
-                    }
-                } + [
+                children: [
+                    filterAction(for: .favorite),
+                    filterAction(for: .started),
+                    filterAction(for: .caughtUp),
+                    filterAction(for: .completed),
                     UIMenu(
                         title: LibraryFilter.FilterMethod.contentRating.title,
                         image: LibraryFilter.FilterMethod.contentRating.image,
@@ -1182,6 +1183,19 @@ extension LibraryViewController {
                                 state: self.filterState(for: .contentRating, value: rating.stringValue)
                             ) { [weak self] _ in
                                 self?.toggleFilter(method: .contentRating, value: rating.stringValue)
+                            }
+                        }
+                    ),
+                    UIMenu(
+                        title: LibraryFilter.FilterMethod.collection.title,
+                        image: LibraryFilter.FilterMethod.collection.image,
+                        children: self.viewModel.collections.map { collection in
+                            UIAction(
+                                title: collection,
+                                attributes: attributes,
+                                state: self.filterState(for: .collection, value: collection)
+                            ) { [weak self] _ in
+                                self?.toggleFilter(method: .collection, value: collection)
                             }
                         }
                     ),
@@ -1198,19 +1212,7 @@ extension LibraryViewController {
                             }
                         }
                     ),
-                    UIMenu(
-                        title: LibraryFilter.FilterMethod.collection.title,
-                        image: LibraryFilter.FilterMethod.collection.image,
-                        children: self.viewModel.collections.map { collection in
-                            UIAction(
-                                title: collection,
-                                attributes: attributes,
-                                state: self.filterState(for: .collection, value: collection)
-                            ) { [weak self] _ in
-                                self?.toggleFilter(method: .collection, value: collection)
-                            }
-                        }
-                    )
+                    filterAction(for: .downloaded)
                 ]
             )
             let pinTitlesMenu = UIMenu(
