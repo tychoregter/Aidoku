@@ -12,6 +12,59 @@ struct LibraryFilter: Codable, Hashable {
     var value: String?
     var exclude: Bool
 
+    enum Genre: String, CaseIterable, Hashable {
+        case action = "Action"
+        case adventure = "Adventure"
+        case comedy = "Comedy"
+        case crime = "Crime"
+        case drama = "Drama"
+        case ecchi = "Ecchi"
+        case fantasy = "Fantasy"
+        case hentai = "Hentai"
+        case harem = "Harem"
+        case historical = "Historical"
+        case horror = "Horror"
+        case martialArts = "Martial Arts"
+        case mature = "Mature"
+        case mecha = "Mecha"
+        case military = "Military"
+        case mystery = "Mystery"
+        case psychological = "Psychological"
+        case romance = "Romance"
+        case schoolLife = "School Life"
+        case sciFi = "Sci-Fi"
+        case sliceOfLife = "Slice of Life"
+        case sports = "Sports"
+        case supernatural = "Supernatural"
+        case thriller = "Thriller"
+        case tragedy = "Tragedy"
+        case yuri = "Yuri"
+
+        var title: String { rawValue }
+
+        var aliases: [String] {
+            switch self {
+                case .hentai: [rawValue, "Erotica"]
+                case .yuri: [rawValue, "Girls' Love", "Girls’ Love"]
+                default: [rawValue]
+            }
+        }
+
+        func matches(_ value: String) -> Bool {
+            let normalizedValue = Self.normalize(value)
+            return aliases.contains { Self.normalize($0) == normalizedValue }
+        }
+
+        static func normalize(_ value: String) -> String {
+            value
+                .folding(options: .diacriticInsensitive, locale: .current)
+                .replacingOccurrences(of: "’", with: "'")
+                .split(whereSeparator: { $0.isWhitespace })
+                .joined(separator: " ")
+                .lowercased()
+        }
+    }
+
     enum FilterMethod: Int, Codable, CaseIterable {
         case downloaded
         case tracking
@@ -24,6 +77,7 @@ struct LibraryFilter: Codable, Hashable {
         case favorite
         case caughtUp
         case collection
+        case genre
 
         var title: String {
             switch self {
@@ -38,6 +92,7 @@ struct LibraryFilter: Codable, Hashable {
                 case .favorite: NSLocalizedString("FAVORITE")
                 case .caughtUp: NSLocalizedString("CAUGHT_UP")
                 case .collection: NSLocalizedString("COLLECTIONS")
+                case .genre: NSLocalizedString("GENRE")
             }
         }
 
@@ -54,6 +109,7 @@ struct LibraryFilter: Codable, Hashable {
                 case .favorite: "star"
                 case .caughtUp: "arrow.right.circle"
                 case .collection: "rectangle.stack"
+                case .genre: "tag"
             }
         }
 
@@ -64,7 +120,7 @@ struct LibraryFilter: Codable, Hashable {
         var isAvailable: Bool {
             switch self {
                 case .tracking: TrackerManager.hasAvailableTrackers
-                case .source, .contentRating, .category, .collection: false // needs custom handling
+                case .source, .contentRating, .category, .collection, .genre: false // needs custom handling
                 default: true
             }
         }

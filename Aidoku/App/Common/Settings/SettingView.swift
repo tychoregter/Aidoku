@@ -24,6 +24,7 @@ struct SettingView: View {
 
     @Environment(\.settingPageContent) private var pageContentHandler
     @Environment(\.settingCustomContent) private var customContentHandler
+    @Environment(\.openBrowseSettings) private var openBrowseSettings
 
     @Binding private var stringListBinding: [String]
     @Binding private var stringBinding: String
@@ -1216,55 +1217,85 @@ extension SettingView {
 extension SettingView {
     @ViewBuilder
     func pageView(value: PageSetting) -> some View {
-        Button {
-            if value.authToOpen ?? false {
-                Task {
-                    let success = await auth()
-                    if success {
-                        pageIsActive = true
+        if setting.key == "Browse", let openBrowseSettings {
+            Button(action: openBrowseSettings) {
+                HStack(spacing: 15) {
+                    if let icon = value.icon {
+                        SettingHeaderView.iconView(
+                            source: source,
+                            icon: SettingHeaderView.Icon.from(icon),
+                            size: 29
+                        )
                     }
-                }
-            } else {
-                pageIsActive = true
-            }
-        } label: {
-            NavigationLink(
-                destination: SettingPageDestination(
-                    source: source,
-                    setting: setting,
-                    namespace: namespace,
-                    onChange: onChange,
-                    value: value
-                )
-                .environment(\.settingPageContent, pageContentHandler)
-                .environment(\.settingCustomContent, customContentHandler),
-                isActive: $pageIsActive
-            ) {
-                if let icon = value.icon {
-                    HStack(spacing: 15) {
-                        SettingHeaderView.iconView(source: source, icon: SettingHeaderView.Icon.from(icon), size: 29)
 
-                        Text(setting.title)
-                            .lineLimit(1)
-
-                        Spacer()
-                    }
-                } else {
                     Text(setting.title)
                         .lineLimit(1)
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.tertiary)
                 }
+                .contentShape(Rectangle())
             }
-            .environment(\.isEnabled, true) // remove double disabled effect
+            .buttonStyle(.plain)
+            .foregroundStyle(.primary)
+            .disabled(disabled)
+            .opacity(disabledOpacityIfNeeded)
+        } else {
+            Button {
+                if value.authToOpen ?? false {
+                    Task {
+                        let success = await auth()
+                        if success {
+                            pageIsActive = true
+                        }
+                    }
+                } else {
+                    pageIsActive = true
+                }
+            } label: {
+                NavigationLink(
+                    destination: SettingPageDestination(
+                        source: source,
+                        setting: setting,
+                        namespace: namespace,
+                        onChange: onChange,
+                        value: value
+                    )
+                    .environment(\.settingPageContent, pageContentHandler)
+                    .environment(\.settingCustomContent, customContentHandler),
+                    isActive: $pageIsActive
+                ) {
+                    if let icon = value.icon {
+                        HStack(spacing: 15) {
+                            SettingHeaderView.iconView(source: source, icon: SettingHeaderView.Icon.from(icon), size: 29)
+
+                            Text(setting.title)
+                                .lineLimit(1)
+
+                            Spacer()
+                        }
+                    } else {
+                        Text(setting.title)
+                            .lineLimit(1)
+                    }
+                }
+                .environment(\.isEnabled, true) // remove double disabled effect
+            }
+            .foregroundStyle(.primary)
+            .disabled(disabled)
+            .opacity(disabledOpacityIfNeeded)
         }
-        .foregroundStyle(.primary)
-        .disabled(disabled)
-        .opacity({
-            if #available(iOS 26.0, *) {
-                1
-            } else {
-                disabled ? disabledOpacity : 1
-            }
-        }())
+    }
+
+    private var disabledOpacityIfNeeded: Double {
+        if #available(iOS 26.0, *) {
+            1
+        } else {
+            disabled ? disabledOpacity : 1
+        }
     }
 }
 

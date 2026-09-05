@@ -170,6 +170,9 @@ class LibraryViewController: OldMangaCollectionViewController {
         ]
 
         // pull to refresh
+        // Keep the system's default indicator color, but ensure the control
+        // itself is not dimmed by the surrounding hierarchy.
+        refreshControl.alpha = 1
         refreshControl.addTarget(self, action: #selector(updateLibraryRefresh(refreshControl:)), for: .valueChanged)
         collectionView.refreshControl = refreshControl
 
@@ -978,7 +981,7 @@ extension LibraryViewController {
 
             // Show each selected value for submenu filters, but keep the other
             // filter types collapsed to one entry (for example, multiple sources).
-            let filtersToShow = if filterMethod == .contentRating || filterMethod == .category || filterMethod == .collection {
+            let filtersToShow = if filterMethod == .contentRating || filterMethod == .category || filterMethod == .collection || filterMethod == .genre {
                 methodFilters
             } else {
                 Array(methodFilters.prefix(1))
@@ -991,7 +994,7 @@ extension LibraryViewController {
                     break
                 }
                 if filter.exclude {
-                    let hiddenTitle = if (filterMethod == .contentRating || filterMethod == .category || filterMethod == .collection),
+                    let hiddenTitle = if (filterMethod == .contentRating || filterMethod == .category || filterMethod == .collection || filterMethod == .genre),
                                          let value = filter.value,
                                          !value.isEmpty {
                         if filterMethod == .contentRating {
@@ -1004,7 +1007,14 @@ extension LibraryViewController {
                     }
                     options.append(String(format: NSLocalizedString("NOT_%@"), hiddenTitle))
                 } else {
-                    options.append(filterMethod.title)
+                    let includedTitle = if filterMethod == .genre,
+                                           let value = filter.value,
+                                           !value.isEmpty {
+                        value
+                    } else {
+                        filterMethod.title
+                    }
+                    options.append(includedTitle)
                 }
             }
 
@@ -1039,6 +1049,7 @@ extension LibraryViewController {
                     case LibraryFilter.FilterMethod.contentRating.title: .contentRating
                     case LibraryFilter.FilterMethod.category.title: .category
                     case LibraryFilter.FilterMethod.collection.title: .collection
+                    case LibraryFilter.FilterMethod.genre.title: .genre
                     default: nil
                 }
                 return submenu.replacingChildren(submenu.children.map {
@@ -1088,6 +1099,16 @@ extension LibraryViewController {
                         state: self.filterState(for: .collection, value: collection)
                     ) { [weak self] _ in
                         self?.toggleFilter(method: .collection, value: collection)
+                    }
+                })
+            } else if menu.title == LibraryFilter.FilterMethod.genre.title {
+                return menu.replacingChildren(self.viewModel.availableGenres.map { genre in
+                    UIAction(
+                        title: genre.title,
+                        attributes: .keepsMenuPresented,
+                        state: self.filterState(for: .genre, value: genre.rawValue)
+                    ) { [weak self] _ in
+                        self?.toggleFilter(method: .genre, value: genre.rawValue)
                     }
                 })
             } else {
@@ -1195,56 +1216,76 @@ extension LibraryViewController {
                     self?.toggleFilter(method: method)
                 }
             }
+            var filterChildren: [UIMenuElement] = [
+                filterAction(for: .favorite),
+                filterAction(for: .started),
+                filterAction(for: .caughtUp),
+                filterAction(for: .completed),
+                UIMenu(
+                    title: LibraryFilter.FilterMethod.contentRating.title,
+                    image: LibraryFilter.FilterMethod.contentRating.image,
+                    children: MangaContentRating.allCases.map { rating in
+                        UIAction(
+                            title: rating.title,
+                            attributes: attributes,
+                            state: self.filterState(for: .contentRating, value: rating.stringValue)
+                        ) { [weak self] _ in
+                            self?.toggleFilter(method: .contentRating, value: rating.stringValue)
+                        }
+                    }
+                ),
+                UIMenu(
+                    title: LibraryFilter.FilterMethod.collection.title,
+                    image: LibraryFilter.FilterMethod.collection.image,
+                    children: self.viewModel.collections.map { collection in
+                        UIAction(
+                            title: collection,
+                            attributes: attributes,
+                            state: self.filterState(for: .collection, value: collection)
+                        ) { [weak self] _ in
+                            self?.toggleFilter(method: .collection, value: collection)
+                        }
+                    }
+                ),
+                UIMenu(
+                    title: LibraryFilter.FilterMethod.category.title,
+                    image: LibraryFilter.FilterMethod.category.image,
+                    children: self.viewModel.categories.map { category in
+                        UIAction(
+                            title: category,
+                            attributes: attributes,
+                            state: self.filterState(for: .category, value: category)
+                        ) { [weak self] _ in
+                            self?.toggleFilter(method: .category, value: category)
+                        }
+                    }
+                )
+            ]
+            if !self.viewModel.availableGenres.isEmpty {
+                filterChildren.insert(
+                    UIMenu(
+                        title: LibraryFilter.FilterMethod.genre.title,
+                        image: LibraryFilter.FilterMethod.genre.image,
+                        children: self.viewModel.availableGenres.map { genre in
+                            UIAction(
+                                title: genre.title,
+                                attributes: attributes,
+                                state: self.filterState(for: .genre, value: genre.rawValue)
+                            ) { [weak self] _ in
+                                self?.toggleFilter(method: .genre, value: genre.rawValue)
+                            }
+                        }
+                    ),
+                    at: 4
+                )
+            }
+            filterChildren.append(filterAction(for: .downloaded))
+
             var filters = UIMenu(
                 title: NSLocalizedString("BUTTON_FILTER"),
                 subtitle: self.filtersSubtitle(),
                 image: UIImage(systemName: "line.3.horizontal.decrease"),
-                children: [
-                    filterAction(for: .favorite),
-                    filterAction(for: .started),
-                    filterAction(for: .caughtUp),
-                    filterAction(for: .completed),
-                    UIMenu(
-                        title: LibraryFilter.FilterMethod.contentRating.title,
-                        image: LibraryFilter.FilterMethod.contentRating.image,
-                        children: MangaContentRating.allCases.map { rating in
-                            UIAction(
-                                title: rating.title,
-                                attributes: attributes,
-                                state: self.filterState(for: .contentRating, value: rating.stringValue)
-                            ) { [weak self] _ in
-                                self?.toggleFilter(method: .contentRating, value: rating.stringValue)
-                            }
-                        }
-                    ),
-                    UIMenu(
-                        title: LibraryFilter.FilterMethod.collection.title,
-                        image: LibraryFilter.FilterMethod.collection.image,
-                        children: self.viewModel.collections.map { collection in
-                            UIAction(
-                                title: collection,
-                                attributes: attributes,
-                                state: self.filterState(for: .collection, value: collection)
-                            ) { [weak self] _ in
-                                self?.toggleFilter(method: .collection, value: collection)
-                            }
-                        }
-                    ),
-                    UIMenu(
-                        title: LibraryFilter.FilterMethod.category.title,
-                        image: LibraryFilter.FilterMethod.category.image,
-                        children: self.viewModel.categories.map { category in
-                            UIAction(
-                                title: category,
-                                attributes: attributes,
-                                state: self.filterState(for: .category, value: category)
-                            ) { [weak self] _ in
-                                self?.toggleFilter(method: .category, value: category)
-                            }
-                        }
-                    ),
-                    filterAction(for: .downloaded)
-                ]
+                children: filterChildren
             )
             let pinTitlesMenu = UIMenu(
                 title: NSLocalizedString("PIN_TITLES"),

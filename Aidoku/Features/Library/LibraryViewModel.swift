@@ -154,6 +154,7 @@ class LibraryViewModel {
 
     var categories: [String] = []
     var filterGroups: [FilterGroup] = []
+    var availableGenres: [LibraryFilter.Genre] = []
     lazy var currentCategory: String? = AppSettings.library.currentCategory.get() {
         didSet {
             AppSettings.library.currentCategory.set(currentCategory)
@@ -243,7 +244,8 @@ extension LibraryViewModel {
             pinnedManga,
             manga,
             sourceKeys,
-            unappliedFilters
+            unappliedFilters,
+            availableGenres
         ) = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [sortMethod, sortAscending, pinType, favoriteIds] context in
             var pinnedManga: [MangaInfo] = []
             var manga: [MangaInfo] = []
@@ -269,10 +271,15 @@ extension LibraryViewModel {
                 ]
             }
             guard let libraryObjects = try? context.fetch(request) else {
-                return (false, true, pinnedManga, manga, sourceKeys, unappliedFilters)
+                return (false, true, pinnedManga, manga, sourceKeys, unappliedFilters, [LibraryFilter.Genre]())
             }
 
             let actuallyEmpty = libraryObjects.isEmpty
+            let availableGenres = LibraryFilter.Genre.allCases.filter { genre in
+                libraryObjects.contains { libraryObject in
+                    libraryObject.manga?.tags?.contains(where: genre.matches) == true
+                }
+            }
 
             var ids = Set<MangaIdentifier>()
 
@@ -302,6 +309,7 @@ extension LibraryViewModel {
                 var filteredSourceKeys: Set<String> = []
                 var filteredContentRatings: Set<Int16> = []
                 var filteredCategories: Set<String> = []
+                var filteredGenres: Set<LibraryFilter.Genre> = []
                 for filter in filters {
                     let condition: Bool
                     switch filter.type {
@@ -359,6 +367,14 @@ extension LibraryViewModel {
                             guard let collection = filter.value else { continue }
                             let memberships = (UserDefaults.standard.dictionary(forKey: "\(info.id.sourceKey).collectionMembership") as? [String: [String]] ?? [:])[info.id.mangaKey] ?? []
                             condition = memberships.contains(collection)
+                        case .genre:
+                            guard let value = filter.value, let genre = LibraryFilter.Genre(rawValue: value) else { continue }
+                            if filter.exclude {
+                                condition = mangaObject.tags?.contains(where: genre.matches) == true
+                            } else {
+                                filteredGenres.insert(genre)
+                                continue
+                            }
 
                     }
                     let shouldSkip = filter.exclude ? condition : !condition
@@ -373,6 +389,11 @@ extension LibraryViewModel {
                     continue main
                 }
                 if !filteredCategories.isEmpty && !filteredCategories.contains(where: { categories.contains($0) }) {
+                    continue main
+                }
+                if !filteredGenres.isEmpty && !filteredGenres.contains(where: { genre in
+                    mangaObject.tags?.contains(where: genre.matches) == true
+                }) {
                     continue main
                 }
 
@@ -418,7 +439,7 @@ extension LibraryViewModel {
                 }
             }
 
-            return (true, actuallyEmpty, pinnedManga, manga, sourceKeys, unappliedFilters)
+            return (true, actuallyEmpty, pinnedManga, manga, sourceKeys, unappliedFilters, availableGenres)
         }
 
         guard success else { return }
@@ -428,6 +449,7 @@ extension LibraryViewModel {
         self.storedPinnedManga = nil
         self.storedManga = nil
         self.sourceKeys = sourceKeys.sorted()
+        self.availableGenres = availableGenres
         self.collections = sourceKeys.flatMap { sourceKey in
             (UserDefaults.standard.dictionary(forKey: "\(sourceKey).collectionMembership") as? [String: [String]] ?? [:]).values.flatMap { $0 }
         }.sorted().reduce(into: []) { result, value in
@@ -718,9 +740,14 @@ extension LibraryViewModel {
         if let filterIndex {
             if filters[filterIndex].exclude {
                 filters.remove(at: filterIndex)
+            } else if method == .genre {
+                filters[filterIndex].exclude = true
             } else {
                 filters[filterIndex].exclude = true
             }
+        } else if method == .genre {
+            // Genre options cycle through default (no filter), include, and exclude.
+            filters.append(LibraryFilter(type: method, value: value, exclude: false))
         } else if method == .contentRating || method == .category || method == .collection {
             filters.append(LibraryFilter(type: method, value: value, exclude: true))
         } else {

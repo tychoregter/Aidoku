@@ -132,6 +132,9 @@ extension SettingsView {
                 await updateCategories()
             }
         }
+        .environment(\.openBrowseSettings) {
+            path.push(BrowseViewController())
+        }
     }
 }
 
