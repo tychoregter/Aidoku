@@ -71,6 +71,9 @@ class ReaderViewController: BaseObservingViewController {
     private lazy var activityIndicator = UIActivityIndicatorView(style: .medium)
     private lazy var toolbarView = ReaderToolbarView()
     private var toolbarViewWidthConstraint: NSLayoutConstraint?
+    private lazy var readerToolbar = UIView()
+    @available(iOS 26.0, *)
+    private lazy var readerToolbarEffectView = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
 
     private var squeezeTimer: Timer?
     private var longSqueezeTimer: Timer?
@@ -157,6 +160,7 @@ class ReaderViewController: BaseObservingViewController {
     }
 
     deinit {
+        readerToolbar.removeFromSuperview()
         Task { [temporaryPageStore] in
             await temporaryPageStore.removeAll()
         }
@@ -217,11 +221,35 @@ class ReaderViewController: BaseObservingViewController {
         toolbarView.translatesAutoresizingMaskIntoConstraints = false
         let toolbarButtonItemView = UIBarButtonItem(customView: toolbarView)
         if #available(iOS 26.0, *) {
-            toolbarButtonItemView.customView?.heightAnchor.constraint(equalToConstant: 30).isActive = true
-            toolbarViewWidthConstraint = toolbarButtonItemView.customView?.widthAnchor.constraint(
-                equalToConstant: view.bounds.width - 66
-            )
-            toolbarButtonItemView.customView?.transform = CGAffineTransform(translationX: 0, y: 1)
+            guard let overlayHost = navigationController?.view ?? view else { return }
+            readerToolbar.translatesAutoresizingMaskIntoConstraints = false
+            readerToolbar.layer.cornerRadius = 22
+            readerToolbar.layer.cornerCurve = .continuous
+            readerToolbar.clipsToBounds = false
+            overlayHost.addSubview(readerToolbar)
+
+            readerToolbarEffectView.translatesAutoresizingMaskIntoConstraints = false
+            readerToolbarEffectView.isUserInteractionEnabled = false
+            readerToolbarEffectView.layer.cornerRadius = 22
+            readerToolbarEffectView.layer.cornerCurve = .continuous
+            readerToolbarEffectView.clipsToBounds = true
+            readerToolbar.addSubview(readerToolbarEffectView)
+            readerToolbar.addSubview(toolbarView)
+
+            NSLayoutConstraint.activate([
+                readerToolbar.leadingAnchor.constraint(equalTo: overlayHost.leadingAnchor, constant: 21),
+                readerToolbar.trailingAnchor.constraint(equalTo: overlayHost.trailingAnchor, constant: -21),
+                readerToolbar.heightAnchor.constraint(equalToConstant: 44),
+                readerToolbar.bottomAnchor.constraint(equalTo: overlayHost.safeAreaLayoutGuide.bottomAnchor),
+                readerToolbarEffectView.leadingAnchor.constraint(equalTo: readerToolbar.leadingAnchor),
+                readerToolbarEffectView.trailingAnchor.constraint(equalTo: readerToolbar.trailingAnchor),
+                readerToolbarEffectView.topAnchor.constraint(equalTo: readerToolbar.topAnchor),
+                readerToolbarEffectView.bottomAnchor.constraint(equalTo: readerToolbar.bottomAnchor),
+                toolbarView.leadingAnchor.constraint(equalTo: readerToolbar.leadingAnchor),
+                toolbarView.trailingAnchor.constraint(equalTo: readerToolbar.trailingAnchor),
+                toolbarView.topAnchor.constraint(equalTo: readerToolbar.topAnchor),
+                toolbarView.bottomAnchor.constraint(equalTo: readerToolbar.bottomAnchor)
+            ])
         } else {
             toolbarButtonItemView.customView?.heightAnchor.constraint(equalToConstant: 40).isActive = true
             toolbarViewWidthConstraint = toolbarButtonItemView.customView?.widthAnchor.constraint(equalToConstant: view.bounds.width)
@@ -231,9 +259,13 @@ class ReaderViewController: BaseObservingViewController {
         add(child: descriptionButtonController)
         view.addSubview(autoScrollButton)
 
-        toolbarItems = [toolbarButtonItemView]
-        navigationController?.isToolbarHidden = false
-        navigationController?.toolbar.fitContentViewToToolbar()
+        if #available(iOS 26.0, *) {
+            navigationController?.isToolbarHidden = true
+        } else {
+            toolbarItems = [toolbarButtonItemView]
+            navigationController?.isToolbarHidden = false
+            navigationController?.toolbar.fitContentViewToToolbar()
+        }
 
         // loading indicator
         activityIndicator.startAnimating()
@@ -431,13 +463,19 @@ class ReaderViewController: BaseObservingViewController {
         super.viewWillTransition(to: size, with: coordinator)
 
         coordinator.animate(alongsideTransition: nil) { _ in
-            if #available(iOS 26.0, *) {
-                self.toolbarViewWidthConstraint?.constant = size.width - 66
-            } else {
+            if #unavailable(iOS 26.0) {
                 self.toolbarViewWidthConstraint?.constant = size.width
             }
         }
     }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if #available(iOS 26.0, *) {
+            readerToolbar.superview?.bringSubviewToFront(readerToolbar)
+        }
+    }
+
 }
 
 extension ReaderViewController {
@@ -1493,10 +1531,9 @@ extension ReaderViewController {
 
             UIView.setAnimationsEnabled(false)
             if #available(iOS 26.0, *) {
-                if navigationController.isToolbarHidden {
-                    (navigationController.value(forKey: "_floatingBarContainerView") as? UIView)?.alpha = 0
-                    navigationController.isToolbarHidden = false
-                }
+                self.readerToolbar.alpha = 0
+                self.readerToolbar.isHidden = false
+                self.readerToolbar.superview?.bringSubviewToFront(self.readerToolbar)
             } else {
                 if navigationController.toolbar.isHidden {
                     navigationController.toolbar.alpha = 0
@@ -1507,9 +1544,10 @@ extension ReaderViewController {
             UIView.setAnimationsEnabled(true)
             UIView.animate(withDuration: CATransaction.animationDuration()) {
                 navigationController.navigationBar.alpha = 1
-                navigationController.toolbar.alpha = 1
                 if #available(iOS 26.0, *) {
-                    (navigationController.value(forKey: "_floatingBarContainerView") as? UIView)?.alpha = 1
+                    self.readerToolbar.alpha = 1
+                } else {
+                    navigationController.toolbar.alpha = 1
                 }
                 self.node.backgroundColor = if AppSettings.appearance.useSystemAppearance.get() {
                     .systemBackground
@@ -1537,10 +1575,11 @@ extension ReaderViewController {
 
             UIView.animate(withDuration: CATransaction.animationDuration()) {
                 navigationController.navigationBar.alpha = 0
-                navigationController.toolbar.alpha = 0
 
                 if #available(iOS 26.0, *) {
-                    (navigationController.value(forKey: "_floatingBarContainerView") as? UIView)?.alpha = 0
+                    self.readerToolbar.alpha = 0
+                } else {
+                    navigationController.toolbar.alpha = 0
                 }
 
                 self.node.backgroundColor = switch UserDefaults.standard.string(forKey: "Reader.backgroundColor") {
@@ -1559,7 +1598,7 @@ extension ReaderViewController {
                     navigationController.navigationBar.isHidden = true
                 }
                 if #available(iOS 26.0, *) {
-                    navigationController.isToolbarHidden = true
+                    self.readerToolbar.isHidden = true
                 } else {
                     navigationController.toolbar.isHidden = true
                 }
