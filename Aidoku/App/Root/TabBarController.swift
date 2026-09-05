@@ -245,15 +245,34 @@ extension TabBarController: UITabBarControllerDelegate {
     private func scrollSettingsToTop() {
         guard let root = settingsPath?.rootViewController else { return }
         func findScrollView(in view: UIView) -> UIScrollView? {
-            if let scrollView = view as? UIScrollView { return scrollView }
+            if let scrollView = view as? UIScrollView,
+               scrollView.scrollsToTop,
+               !scrollView.isHidden,
+               scrollView.alpha > 0 {
+                return scrollView
+            }
             for child in view.subviews {
                 if let scrollView = findScrollView(in: child) { return scrollView }
             }
             return nil
         }
+        let navigationController = settingsPath?.navigationController
+        navigationController?.navigationBar.prefersLargeTitles = true
+        navigationController?.viewControllers.first?.navigationItem.largeTitleDisplayMode = .always
+
         if let scrollView = findScrollView(in: root.view) {
+            // SwiftUI's adjusted inset only reflects the currently visible part
+            // of the navigation bar. Its intrinsic height also includes the
+            // hidden large title and search field, giving us the true top edge.
+            let hiddenNavigationBarHeight = navigationController.map {
+                max(0, $0.navigationBar.intrinsicContentSize.height - $0.navigationBar.bounds.height)
+            } ?? 0
+            let expandedTopInset = scrollView.adjustedContentInset.top + hiddenNavigationBarHeight
             scrollView.setContentOffset(
-                CGPoint(x: -scrollView.adjustedContentInset.left, y: -scrollView.adjustedContentInset.top),
+                CGPoint(
+                    x: -scrollView.adjustedContentInset.left,
+                    y: -expandedTopInset
+                ),
                 animated: true
             )
         }

@@ -14,11 +14,20 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     func scrollToTop(animated: Bool = true) {
         guard isViewLoaded else { return }
+        navigationController?.navigationBar.prefersLargeTitles = true
         navigationItem.largeTitleDisplayMode = .always
-        // Match UIKit's status-bar scroll-to-top destination exactly.
+
+        // The adjusted inset only contains the navigation bar's current height.
+        // Add the system-reported hidden portion of the bar so the destination
+        // is the same fully expanded scroll edge used by a status-bar tap.
+        let navigationBar = navigationController?.navigationBar
+        let hiddenNavigationBarHeight = navigationBar.map {
+            max(0, $0.intrinsicContentSize.height - $0.bounds.height)
+        } ?? 0
+        let expandedTopInset = collectionView.adjustedContentInset.top + hiddenNavigationBarHeight
         collectionView.setContentOffset(
             CGPoint(x: -collectionView.adjustedContentInset.left,
-            y: -collectionView.adjustedContentInset.top),
+                    y: -expandedTopInset),
             animated: animated
         )
     }
