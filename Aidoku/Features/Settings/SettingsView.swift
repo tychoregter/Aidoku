@@ -303,17 +303,11 @@ extension SettingsView {
                 DictionaryVocabListView().environmentObject(path)
             }
         } else if key == "History" {
-            HistorySettingsView(path: path, onBack: { dismiss() })
-                .toolbar(.visible, for: .navigationBar)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { NotificationCenter.default.post(name: .init("history.clearRequested"), object: nil) } label: {
-                            Image(systemName: "trash")
-                        }
-                    }
-                }
+            HistorySettingsView(path: path)
         } else if key == "Browse" {
             BrowseSettingsView()
+        } else if key == "MangaUpdates" {
+            MangaUpdatesView().environmentObject(path)
         } else if key == "Tracking" {
             SettingsTrackingView()
         } else if key == "About" {
@@ -364,37 +358,13 @@ extension SettingsView {
 }
 
 private struct BrowseSettingsView: View {
-    @Environment(\.dismiss) private var dismiss
-
     var body: some View {
-        ControllerRepresentable(onBack: {
-            NotificationCenter.default.post(name: .init("settings.browse.dismissed"), object: nil)
-            dismiss()
-        })
-            .toolbar(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { NotificationCenter.default.post(name: .init("browse.addSource"), object: nil) } label: {
-                        Image(systemName: "plus")
-                    }
-                    Button { NotificationCenter.default.post(name: .init("browse.migrateSources"), object: nil) } label: {
-                        Image(systemName: "arrow.left.arrow.right")
-                    }
-                }
-            }
+        ControllerRepresentable()
     }
 
     private struct ControllerRepresentable: UIViewControllerRepresentable {
-        let onBack: () -> Void
-
         func makeUIViewController(context: Context) -> BrowseViewController {
             let browseViewController = BrowseViewController()
-            browseViewController.navigationItem.hidesBackButton = true
-            browseViewController.navigationItem.leftBarButtonItem = UIBarButtonItem(
-                title: NSLocalizedString("SETTINGS"),
-                image: UIImage(systemName: "chevron.left"),
-                primaryAction: UIAction { _ in onBack() }
-            )
             return browseViewController
         }
 
@@ -404,25 +374,21 @@ private struct BrowseSettingsView: View {
 
 private struct HistorySettingsView: UIViewControllerRepresentable {
     let path: NavigationCoordinator
-    let onBack: () -> Void
 
     func makeUIViewController(context: Context) -> UIViewController {
         let history = UIHostingController(rootView: HistoryView().environmentObject(path))
-        history.navigationItem.hidesBackButton = true
-        history.navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: NSLocalizedString("SETTINGS"),
-            image: UIImage(systemName: "chevron.left"),
-            primaryAction: UIAction { _ in
-                onBack()
-            }
-        )
+        history.navigationItem.largeTitleDisplayMode = .never
         history.navigationItem.title = NSLocalizedString("HISTORY")
-        history.navigationItem.rightBarButtonItem = UIBarButtonItem(
+        let clearButton = UIBarButtonItem(
             systemItem: .trash,
             primaryAction: UIAction { _ in
                 NotificationCenter.default.post(name: .init("history.clearRequested"), object: nil)
             }
         )
+        if #available(iOS 26.0, *) {
+            clearButton.sharesBackground = false
+        }
+        history.navigationItem.rightBarButtonItem = clearButton
 
         return history
     }

@@ -28,6 +28,7 @@ class LibraryViewModel {
         case favorites
         case started
         case unread
+        case completed
         case updatedChapters
 
         var title: String {
@@ -37,6 +38,7 @@ class LibraryViewModel {
                 case .updatedChapters: NSLocalizedString("PIN_UPDATED_CHAPTERS")
                 case .started: NSLocalizedString("PIN_STARTED")
                 case .favorites: NSLocalizedString("PIN_FAVORITES")
+                case .completed: NSLocalizedString("STATUS_COMPLETED")
             }
         }
 
@@ -47,6 +49,7 @@ class LibraryViewModel {
                 case .updatedChapters: true
                 case .started: true
                 case .favorites: false
+                case .completed: false
             }
         }
     }
@@ -393,6 +396,12 @@ extension LibraryViewModel {
                         }
                     case .favorites:
                         if favoriteIds.contains(info.id.description) {
+                            pinnedManga.append(info)
+                        } else {
+                            manga.append(info)
+                        }
+                    case .completed:
+                        if mangaObject.status == AidokuRunner.PublishingStatus.completed.rawValue {
                             pinnedManga.append(info)
                         } else {
                             manga.append(info)

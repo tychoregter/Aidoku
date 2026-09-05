@@ -55,7 +55,16 @@ enum Settings {
                 value: .page(.init(
                     items: [],
                     inlineTitle: true,
-                    icon: .system(name: "globe", color: "green")
+                    icon: .system(name: "globe", color: "blue")
+                ))
+            ),
+            .init(
+                key: "MangaUpdates",
+                title: NSLocalizedString("MANGA_UPDATES"),
+                value: .page(.init(
+                    items: [],
+                    inlineTitle: true,
+                    icon: .system(name: "bell", color: "green")
                 ))
             ),
             .init(

@@ -52,7 +52,7 @@ struct LibraryFilter: Codable, Hashable {
                 case .contentRating: "exclamationmark.triangle"
                 case .category: "folder"
                 case .favorite: "star"
-                case .caughtUp: "checkmark.circle"
+                case .caughtUp: "arrow.right.circle"
                 case .collection: "rectangle.stack"
             }
         }

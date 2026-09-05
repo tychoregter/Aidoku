@@ -480,8 +480,8 @@
 "PIN_TITLES" = "Pin Titles";
 "PIN_DISABLED" = "Disabled";
 "PIN_UNREAD" = "Unread";
-"PIN_UPDATED_CHAPTERS" = "Updated Chapters";
-"PIN_STARTED" = "Recently Read";
+"PIN_UPDATED_CHAPTERS" = "Updated";
+"PIN_STARTED" = "Reading";
 "PIN_FAVORITES" = "Favorites";
 "LIBRARY_UPDATING" = "Library Updating";
 "UPDATE_INTERVAL" = "Update Interval";

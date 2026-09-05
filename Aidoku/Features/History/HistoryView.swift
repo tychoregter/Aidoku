@@ -88,7 +88,7 @@ struct HistoryView: View {
         }
         .animation(.default, value: viewModel.filteredHistory)
         .navigationTitle(NSLocalizedString("HISTORY"))
-        .navigationBarTitleDisplayMode(.automatic)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if UserDefaults.standard.bool(forKey: "History.lockHistoryTab") {

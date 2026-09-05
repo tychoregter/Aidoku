@@ -18,7 +18,7 @@ class LibraryViewController: OldMangaCollectionViewController {
         // Match UIKit's status-bar scroll-to-top destination exactly.
         collectionView.setContentOffset(
             CGPoint(x: -collectionView.adjustedContentInset.left,
-                    y: -collectionView.adjustedContentInset.top),
+            y: -collectionView.adjustedContentInset.top),
             animated: animated
         )
     }
@@ -40,12 +40,6 @@ class LibraryViewController: OldMangaCollectionViewController {
         systemName: "ellipsis",
         action: nil,
         titleKey: "MORE_BARBUTTON",
-        sharesBackground: false
-    )
-    private lazy var mangaUpdatesButton = makeBarButton(
-        systemName: "bell",
-        action: #selector(openMangaUpdates),
-        titleKey: "MANGA_UPDATES",
         sharesBackground: false
     )
     private lazy var categoryBarButton = makeBarButton(
@@ -74,6 +68,9 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     private lazy var locked = viewModel.isCategoryLocked()
     private var ignoreOptionChange = false
+    private var shouldHideRefreshAfterDrag = false
+    private var shouldRestoreLargeTitleAfterRefresh = false
+    private let refreshDismissalDistance: CGFloat = 44
 
     private let libraryUndoManager = UndoManager()
     override var undoManager: UndoManager { libraryUndoManager }
@@ -95,6 +92,15 @@ class LibraryViewController: OldMangaCollectionViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.isToolbarHidden = true
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // Leaving the tab should hide the pull-to-refresh UI without cancelling
+        // the refresh task itself.
+        refreshControl.endRefreshing()
+        shouldHideRefreshAfterDrag = false
+        shouldRestoreLargeTitleAfterRefresh = false
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -254,6 +260,10 @@ class LibraryViewController: OldMangaCollectionViewController {
                 await self.viewModel.loadLibrary()
                 self.updateEmptyStack()
                 self.updateDataSource()
+                if self.shouldRestoreLargeTitleAfterRefresh {
+                    self.shouldRestoreLargeTitleAfterRefresh = false
+                    self.scrollToTop(animated: true)
+                }
             }
         }
         addObserver(forName: .updateLibraryLock) { [weak self] _ in
@@ -483,7 +493,7 @@ extension LibraryViewController {
             )]
         } else {
             updateCategoryMenu()
-            var items: [UIBarButtonItem] = [moreBarButton, mangaUpdatesButton]
+            var items: [UIBarButtonItem] = [moreBarButton]
             if viewModel.isCategoryLocked() {
                 items.append(lockBarButton)
             }
@@ -615,37 +625,58 @@ extension LibraryViewController {
 
     @objc func updateLibraryRefresh(refreshControl: UIRefreshControl? = nil) {
         let isBlockedByNoWifi = AppSettings.library.updateOnlyOnWifi.get() && Reachability.getConnectionType() != .wifi
-
-        Task {
-            // delay hiding refresh control to avoid buggy animation
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+        guard !isBlockedByNoWifi else {
             refreshControl?.endRefreshing()
-
-            if isBlockedByNoWifi {
-                self.presentAlert(
-                    title: NSLocalizedString("REFRESH_NO_WIFI"),
-                    message: NSLocalizedString("REFRESH_NO_WIFI_TEXT"),
-                    actions: [
-                        UIAlertAction(title: NSLocalizedString("OK"), style: .cancel),
-                        UIAlertAction(title: NSLocalizedString("REFRESH_ANYWAYS"), style: .default) { _ in
-                            Task {
-                                await MangaManager.shared.backgroundRefreshLibrary(
-                                    category: self.viewModel.isInRealCategory ? self.viewModel.currentCategory : nil,
-                                    skipReachabilityCheck: true
-                                )
-                            }
+            shouldHideRefreshAfterDrag = false
+            presentAlert(
+                title: NSLocalizedString("REFRESH_NO_WIFI"),
+                message: NSLocalizedString("REFRESH_NO_WIFI_TEXT"),
+                actions: [
+                    UIAlertAction(title: NSLocalizedString("OK"), style: .cancel),
+                    UIAlertAction(title: NSLocalizedString("REFRESH_ANYWAYS"), style: .default) { _ in
+                        Task {
+                            await MangaManager.shared.backgroundRefreshLibrary(
+                                category: self.viewModel.isInRealCategory ? self.viewModel.currentCategory : nil,
+                                skipReachabilityCheck: true
+                            )
                         }
-                    ]
-                )
-            }
+                    }
+                ]
+            )
+            return
         }
 
-        // trigger library refresh
-        guard !isBlockedByNoWifi else { return }
+        shouldRestoreLargeTitleAfterRefresh = true
         Task {
             await MangaManager.shared.backgroundRefreshLibrary(
                 category: viewModel.isInRealCategory ? viewModel.currentCategory : nil
             )
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                refreshControl?.endRefreshing()
+                self.shouldHideRefreshAfterDrag = false
+            }
+        }
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard refreshControl.isRefreshing else { return }
+        let top = -scrollView.adjustedContentInset.top
+        if scrollView.contentOffset.y > top + refreshDismissalDistance {
+            shouldHideRefreshAfterDrag = true
+        }
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        guard shouldHideRefreshAfterDrag else { return }
+        shouldHideRefreshAfterDrag = false
+
+        let offset = scrollView.contentOffset
+        refreshControl.endRefreshing()
+        UIView.animate(withDuration: 0.25, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
+            scrollView.setContentOffset(offset, animated: false)
+        } completion: { _ in
+            scrollView.setContentOffset(offset, animated: false)
         }
     }
 
@@ -661,15 +692,6 @@ extension LibraryViewController {
         viewController.modalPresentationStyle = .pageSheet
         present(viewController, animated: true)
     }
-
-    @objc func openMangaUpdates() {
-        let path = NavigationCoordinator(rootViewController: self)
-        let viewController = UIHostingController(rootView: MangaUpdatesView().environmentObject(path))
-        viewController.navigationItem.largeTitleDisplayMode = .never
-        viewController.navigationItem.title = NSLocalizedString("MANGA_UPDATES")
-        navigationController?.pushViewController(viewController, animated: true)
-    }
-
 
     @objc func removeSelectedFromLibrary() {
         let inCategory = viewModel.isInRealCategory
