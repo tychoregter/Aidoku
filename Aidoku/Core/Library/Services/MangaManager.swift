@@ -420,8 +420,6 @@ extension MangaManager {
         forceAll: Bool = false,
         task: (ProgressReporting & Sendable)? = nil
     ) async {
-        let tabController = await UIApplication.shared.firstKeyWindow?.rootViewController as? TabBarController
-
         if libraryRefreshTask != nil {
             // wait for already running library refresh
             await libraryRefreshTask?.value
@@ -435,10 +433,7 @@ extension MangaManager {
                     forceAll: forceAll,
                     task: task,
                     refreshStarted: {
-                        await tabController?.showLibraryRefreshView()
-
                         self.onLibraryRefreshProgress = { progress in
-                            tabController?.setLibraryRefreshProgress(Float(progress.fractionCompleted))
                             task?.progress.totalUnitCount = progress.totalUnitCount
                             task?.progress.completedUnitCount = progress.completedUnitCount
                             if #available(iOS 26.0, *), let task = task as? BGContinuedProcessingTask {
@@ -456,12 +451,10 @@ extension MangaManager {
             await libraryRefreshTask?.value
         }
 
+        onLibraryRefreshProgress = nil
+
         self.targetCategory = nil
         self.skipReachabilityCheck = false
-
-        // wait 0.5s for final progress animation to complete
-        try? await Task.sleep(nanoseconds: 500_000_000)
-        await tabController?.hideAccessoryView()
 
         NotificationCenter.default.post(name: .updateLibrary, object: nil)
 

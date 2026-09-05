@@ -222,9 +222,6 @@ struct SettingView: View {
                     self.requiresFalse = Self.parseRequires(value: requiresFalse, namespace: namespace).result
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .init("settings.browse.dismissed"))) { _ in
-                pageIsActive = false
-            }
             .onReceive(NotificationCenter.default.publisher(for: .init("settings.navigation.reset"))) { _ in
                 pageIsActive = false
             }
@@ -1219,25 +1216,7 @@ extension SettingView {
     func pageView(value: PageSetting) -> some View {
         if setting.key == "Browse", let openBrowseSettings {
             Button(action: openBrowseSettings) {
-                HStack(spacing: 15) {
-                    if let icon = value.icon {
-                        SettingHeaderView.iconView(
-                            source: source,
-                            icon: SettingHeaderView.Icon.from(icon),
-                            size: 29
-                        )
-                    }
-
-                    Text(setting.title)
-                        .lineLimit(1)
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
-                .contentShape(Rectangle())
+                pageLabel(value: value, showsDisclosureIndicator: true)
             }
             .buttonStyle(.plain)
             .foregroundStyle(.primary)
@@ -1268,19 +1247,7 @@ extension SettingView {
                     .environment(\.settingCustomContent, customContentHandler),
                     isActive: $pageIsActive
                 ) {
-                    if let icon = value.icon {
-                        HStack(spacing: 15) {
-                            SettingHeaderView.iconView(source: source, icon: SettingHeaderView.Icon.from(icon), size: 29)
-
-                            Text(setting.title)
-                                .lineLimit(1)
-
-                            Spacer()
-                        }
-                    } else {
-                        Text(setting.title)
-                            .lineLimit(1)
-                    }
+                    pageLabel(value: value)
                 }
                 .environment(\.isEnabled, true) // remove double disabled effect
             }
@@ -1296,6 +1263,30 @@ extension SettingView {
         } else {
             disabled ? disabledOpacity : 1
         }
+    }
+
+    private func pageLabel(value: PageSetting, showsDisclosureIndicator: Bool = false) -> some View {
+        HStack(spacing: 15) {
+            if let icon = value.icon {
+                SettingHeaderView.iconView(
+                    source: source,
+                    icon: SettingHeaderView.Icon.from(icon),
+                    size: 29
+                )
+            }
+
+            Text(setting.title)
+                .lineLimit(1)
+
+            Spacer()
+
+            if showsDisclosureIndicator {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .contentShape(Rectangle())
     }
 }
 

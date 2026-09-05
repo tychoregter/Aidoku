@@ -8,6 +8,13 @@
 import UIKit
 
 class ReaderSliderView: UIControl {
+    private enum Metrics {
+        static let restingTrackHeight: CGFloat = 8
+        static let activeTrackHeight: CGFloat = 16
+        static let horizontalInset: CGFloat = 5
+        static let animationDuration: TimeInterval = 0.2
+    }
+
     enum SliderDirection {
         case forward
         case backward
@@ -72,6 +79,7 @@ class ReaderSliderView: UIControl {
     private var progressedTrackHeightConstraint: NSLayoutConstraint?
 
     private var previousLocation = CGPoint()
+    private var isScrubbing = false
 
     override var frame: CGRect {
         didSet {
@@ -102,12 +110,14 @@ class ReaderSliderView: UIControl {
         trackWidthConstraint?.isActive = true
         trackPositionConstraint = progressedTrackView.leadingAnchor.constraint(equalTo: trackView.leadingAnchor)
         trackPositionConstraint?.isActive = true
-        trackHeightConstraint = trackView.heightAnchor.constraint(equalToConstant: 8)
-        progressedTrackHeightConstraint = progressedTrackView.heightAnchor.constraint(equalToConstant: 8)
+        trackHeightConstraint = trackView.heightAnchor.constraint(equalToConstant: Metrics.restingTrackHeight)
+        progressedTrackHeightConstraint = progressedTrackView.heightAnchor.constraint(
+            equalToConstant: Metrics.restingTrackHeight
+        )
 
         NSLayoutConstraint.activate([
-            trackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 5),
-            trackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -5),
+            trackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Metrics.horizontalInset),
+            trackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Metrics.horizontalInset),
             trackView.centerYAnchor.constraint(equalTo: centerYAnchor),
             trackHeightConstraint!,
 
@@ -120,10 +130,6 @@ class ReaderSliderView: UIControl {
         super.layoutSubviews()
         updateLayerFrames()
         trackView.layer.cornerRadius = trackView.bounds.height / 2
-    }
-
-    override func tintColorDidChange() {
-        progressedTrackView.backgroundColor = .label
     }
 
     private func updateLayerFrames() {
@@ -146,10 +152,10 @@ extension ReaderSliderView {
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         previousLocation = touch.location(in: self)
 
-        tag = 1
-        UIView.animate(withDuration: 0.2) {
-            self.trackHeightConstraint?.constant = 16
-            self.progressedTrackHeightConstraint?.constant = 16
+        isScrubbing = true
+        UIView.animate(withDuration: Metrics.animationDuration) {
+            self.trackHeightConstraint?.constant = Metrics.activeTrackHeight
+            self.progressedTrackHeightConstraint?.constant = Metrics.activeTrackHeight
             self.layoutIfNeeded()
         }
         return true
@@ -163,7 +169,7 @@ extension ReaderSliderView {
 
         previousLocation = location
 
-        if tag == 1 {
+        if isScrubbing {
             if direction == .forward {
                 currentValue += deltaValue
             } else {
@@ -184,10 +190,10 @@ extension ReaderSliderView {
     }
 
     override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
-        tag = 0
-        UIView.animate(withDuration: 0.2) {
-            self.trackHeightConstraint?.constant = 8
-            self.progressedTrackHeightConstraint?.constant = 8
+        isScrubbing = false
+        UIView.animate(withDuration: Metrics.animationDuration) {
+            self.trackHeightConstraint?.constant = Metrics.restingTrackHeight
+            self.progressedTrackHeightConstraint?.constant = Metrics.restingTrackHeight
             self.layoutIfNeeded()
         }
         sendActions(for: .editingDidEnd)

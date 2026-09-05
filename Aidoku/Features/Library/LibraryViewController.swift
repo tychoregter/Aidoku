@@ -17,6 +17,10 @@ class LibraryViewController: OldMangaCollectionViewController {
         navigationController?.navigationBar.prefersLargeTitles = true
         navigationItem.largeTitleDisplayMode = .always
 
+        if collectionView.performSystemScrollToTop(animated: animated) {
+            return
+        }
+
         // The adjusted inset only contains the navigation bar's current height.
         // Add the system-reported hidden portion of the bar so the destination
         // is the same fully expanded scroll edge used by a status-bar tap.
@@ -25,11 +29,11 @@ class LibraryViewController: OldMangaCollectionViewController {
             max(0, $0.intrinsicContentSize.height - $0.bounds.height)
         } ?? 0
         let expandedTopInset = collectionView.adjustedContentInset.top + hiddenNavigationBarHeight
-        collectionView.setContentOffset(
-            CGPoint(x: -collectionView.adjustedContentInset.left,
-                    y: -expandedTopInset),
-            animated: animated
+        let offset = CGPoint(
+            x: -collectionView.adjustedContentInset.left,
+            y: -expandedTopInset
         )
+        collectionView.setContentOffset(offset, animated: animated)
     }
     let viewModel = LibraryViewModel()
 
@@ -83,7 +87,6 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     private let libraryUndoManager = UndoManager()
     override var undoManager: UndoManager { libraryUndoManager }
-    override var canBecomeFirstResponder: Bool { true }
 
     override var usesListLayout: Bool {
         get {
@@ -118,7 +121,10 @@ class LibraryViewController: OldMangaCollectionViewController {
         // fix refresh control snapping height
         refreshControl.didMoveToSuperview()
 
-        becomeFirstResponder()
+        // The Library has no text input. Clear any responder retained by the
+        // system search tab so opening a menu cannot restore its keyboard.
+        view.window?.endEditing(true)
+
     }
 
     override func viewDidLoad() {
@@ -137,7 +143,6 @@ class LibraryViewController: OldMangaCollectionViewController {
         title = NSLocalizedString("LIBRARY")
 
         navigationController?.navigationBar.prefersLargeTitles = true
-        collectionView.keyboardDismissMode = .onDrag
         collectionView.contentInset.top = 8
 
         // navbar buttons
@@ -953,7 +958,7 @@ extension LibraryViewController {
         if let filter = viewModel.filters.first(where: { $0.type == method && $0.value == value }) {
             filter.exclude ? .mixed : .on
         } else {
-            (method == .contentRating || method == .category || method == .collection) ? .on : .off
+            method.defaultsToExcluded ? .on : .off
         }
     }
 
@@ -981,7 +986,7 @@ extension LibraryViewController {
 
             // Show each selected value for submenu filters, but keep the other
             // filter types collapsed to one entry (for example, multiple sources).
-            let filtersToShow = if filterMethod == .contentRating || filterMethod == .category || filterMethod == .collection || filterMethod == .genre {
+            let filtersToShow = if filterMethod.usesValueInSubtitle {
                 methodFilters
             } else {
                 Array(methodFilters.prefix(1))
@@ -994,7 +999,7 @@ extension LibraryViewController {
                     break
                 }
                 if filter.exclude {
-                    let hiddenTitle = if (filterMethod == .contentRating || filterMethod == .category || filterMethod == .collection || filterMethod == .genre),
+                    let hiddenTitle = if filterMethod.usesValueInSubtitle,
                                          let value = filter.value,
                                          !value.isEmpty {
                         if filterMethod == .contentRating {

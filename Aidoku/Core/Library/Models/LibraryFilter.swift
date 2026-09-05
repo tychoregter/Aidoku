@@ -124,6 +124,20 @@ struct LibraryFilter: Codable, Hashable {
                 default: true
             }
         }
+
+        var usesValueInSubtitle: Bool {
+            switch self {
+                case .contentRating, .category, .collection, .genre: true
+                default: false
+            }
+        }
+
+        var defaultsToExcluded: Bool {
+            switch self {
+                case .contentRating, .category, .collection: true
+                default: false
+            }
+        }
     }
 
 }

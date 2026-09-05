@@ -330,8 +330,6 @@ extension SettingsView {
                         }
                     }
                 }
-        } else if key == "Browse" {
-            BrowseSettingsView()
         } else if key == "MangaUpdates" {
             MangaUpdatesView().environmentObject(path)
         } else if key == "Tracking" {
@@ -360,45 +358,6 @@ extension SettingsView {
         } else if setting.key == AppSettings.library.excludedUpdateCategories.key {
             CategoryMultiSelectSettingView(setting: setting, categories: $categoriesOnly, authToOpen: false)
         }
-    }
-}
-
-private struct BrowseSettingsView: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        ControllerRepresentable(onBack: {
-            NotificationCenter.default.post(name: .init("settings.browse.dismissed"), object: nil)
-            dismiss()
-        })
-            .toolbar(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { NotificationCenter.default.post(name: .init("browse.addSource"), object: nil) } label: {
-                        Image(systemName: "plus")
-                    }
-                    Button { NotificationCenter.default.post(name: .init("browse.migrateSources"), object: nil) } label: {
-                        Image(systemName: "arrow.left.arrow.right")
-                    }
-                }
-            }
-    }
-
-    private struct ControllerRepresentable: UIViewControllerRepresentable {
-        let onBack: () -> Void
-
-        func makeUIViewController(context: Context) -> BrowseViewController {
-            let browseViewController = BrowseViewController()
-            browseViewController.navigationItem.hidesBackButton = true
-            browseViewController.navigationItem.leftBarButtonItem = UIBarButtonItem(
-                title: NSLocalizedString("SETTINGS"),
-                image: UIImage(systemName: "chevron.left"),
-                primaryAction: UIAction { _ in onBack() }
-            )
-            return browseViewController
-        }
-
-        func updateUIViewController(_ uiViewController: BrowseViewController, context: Context) {}
     }
 }
 

@@ -117,8 +117,6 @@ class BrowseViewController: BaseTableViewController {
     }
 
     override func observe() {
-        addObserver(forName: .init("browse.addSource")) { [weak self] _ in self?.openAddSourcePage() }
-        addObserver(forName: .init("browse.migrateSources")) { [weak self] _ in self?.openMigrateSourcePage() }
         // source installed/imported/pinned
         addObserver(forName: .updateSourceList) { [weak self] _ in
             guard let self = self else { return }

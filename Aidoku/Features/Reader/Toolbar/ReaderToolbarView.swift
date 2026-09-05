@@ -27,7 +27,6 @@ class ReaderToolbarView: UIView {
     let sliderView = ReaderSliderView()
     private let incognitoModeLabel = UILabel()
     private let currentPageLabel = UILabel()
-    private var currentPageLabelCenterYConstraint: NSLayoutConstraint!
 
     private var cancellables: [AnyCancellable] = []
 
@@ -54,7 +53,6 @@ class ReaderToolbarView: UIView {
         currentPageLabel.textAlignment = .right
         currentPageLabel.setContentHuggingPriority(.required, for: .horizontal)
         currentPageLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-        currentPageLabel.sizeToFit()
         addSubview(currentPageLabel)
 
         sliderView.semanticContentAttribute = .playback // for rtl languages
@@ -68,15 +66,13 @@ class ReaderToolbarView: UIView {
         currentPageLabel.translatesAutoresizingMaskIntoConstraints = false
         sliderView.translatesAutoresizingMaskIntoConstraints = false
 
-        currentPageLabelCenterYConstraint = currentPageLabel.centerYAnchor.constraint(equalTo: sliderView.centerYAnchor)
-
         NSLayoutConstraint.activate([
             incognitoModeLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             incognitoModeLabel.centerYAnchor.constraint(equalTo: sliderView.centerYAnchor),
 
             currentPageLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             currentPageLabel.widthAnchor.constraint(equalToConstant: 46),
-            currentPageLabelCenterYConstraint,
+            currentPageLabel.centerYAnchor.constraint(equalTo: sliderView.centerYAnchor),
 
             sliderView.heightAnchor.constraint(equalTo: heightAnchor),
             sliderView.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -107,29 +103,23 @@ class ReaderToolbarView: UIView {
         guard let totalPages = totalPages else {
             return
         }
-        var page = page
-        if page > totalPages {
-            page = totalPages
-        } else if page < 1 {
-            page = 1
-        }
-        currentPageLabel.text = String(format: "%i / %i", page, totalPages)
-        currentPageValue = page
+        let boundedPage = min(max(page, 1), totalPages)
+        updatePageLabel(page: boundedPage, totalPages: totalPages)
+        currentPageValue = boundedPage
     }
 
     func updatePageLabels() {
-        guard var currentPage = currentPage, let totalPages = totalPages else {
+        guard let currentPage, let totalPages else {
             currentPageLabel.text = nil
             return
         }
 
-        if currentPage > totalPages {
-            currentPage = totalPages
-        } else if currentPage < 1 {
-            currentPage = 1
-        }
-        currentPageLabel.text = String(format: "%i / %i", currentPage, totalPages)
+        updatePageLabel(page: min(max(currentPage, 1), totalPages), totalPages: totalPages)
         incognitoModeLabel.text = NSLocalizedString("INCOGNITO_MODE")
+    }
+
+    private func updatePageLabel(page: Int, totalPages: Int) {
+        currentPageLabel.text = "\(page) / \(totalPages)"
     }
 
     func updateSliderPosition() {

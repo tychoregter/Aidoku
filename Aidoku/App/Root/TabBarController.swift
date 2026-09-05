@@ -9,6 +9,20 @@ import Combine
 import SwiftUI
 import SwiftUIIntrospect
 
+extension UIScrollView {
+    /// Invokes the same private UIKit path used by the status-bar scroll-to-top gesture.
+    /// Returns false when the selector is unavailable or UIKit declines the scroll.
+    @discardableResult
+    func performSystemScrollToTop(animated: Bool) -> Bool {
+        let selector = NSSelectorFromString("_scrollToTopIfPossible:")
+        guard responds(to: selector) else { return false }
+
+        typealias Implementation = @convention(c) (AnyObject, Selector, Bool) -> Bool
+        let implementation = unsafeBitCast(method(for: selector), to: Implementation.self)
+        return implementation(self, selector, animated)
+    }
+}
+
 class TabBarController: UITabBarController {
     private var originalFrame: CGRect = .zero
     private var shrunkFrame: CGRect = .zero
@@ -155,18 +169,6 @@ extension TabBarController {
         }
     }
 
-    func showLibraryRefreshView() {
-        // Background refreshes intentionally do not show the pull-to-refresh spinner.
-    }
-
-    func setLibraryRefreshProgress(_ progress: Float) {
-        // Progress is used by background tasks only.
-    }
-
-    func hideAccessoryView() {
-        // Background refreshes intentionally do not show an accessory.
-    }
-
     override func viewDidLayoutSubviews() {
         updateFrame()
     }
@@ -261,6 +263,10 @@ extension TabBarController: UITabBarControllerDelegate {
         navigationController?.viewControllers.first?.navigationItem.largeTitleDisplayMode = .always
 
         if let scrollView = findScrollView(in: root.view) {
+            if scrollView.performSystemScrollToTop(animated: true) {
+                return
+            }
+
             // SwiftUI's adjusted inset only reflects the currently visible part
             // of the navigation bar. Its intrinsic height also includes the
             // hidden large title and search field, giving us the true top edge.
@@ -268,13 +274,11 @@ extension TabBarController: UITabBarControllerDelegate {
                 max(0, $0.navigationBar.intrinsicContentSize.height - $0.navigationBar.bounds.height)
             } ?? 0
             let expandedTopInset = scrollView.adjustedContentInset.top + hiddenNavigationBarHeight
-            scrollView.setContentOffset(
-                CGPoint(
-                    x: -scrollView.adjustedContentInset.left,
-                    y: -expandedTopInset
-                ),
-                animated: true
+            let offset = CGPoint(
+                x: -scrollView.adjustedContentInset.left,
+                y: -expandedTopInset
             )
+            scrollView.setContentOffset(offset, animated: true)
         }
     }
 }

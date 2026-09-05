@@ -18,11 +18,6 @@ class LibraryViewModel {
     var sourceKeys: [String] = []
     var collections: [String] = []
 
-    // temporary storage when searching
-    private var searchQuery: String = ""
-    private var storedManga: [MangaInfo]?
-    private var storedPinnedManga: [MangaInfo]?
-
     enum PinType: String, CaseIterable {
         case none
         case favorites
@@ -275,10 +270,13 @@ extension LibraryViewModel {
             }
 
             let actuallyEmpty = libraryObjects.isEmpty
+            let normalizedGenres = Set(
+                libraryObjects
+                    .flatMap { $0.manga?.tags ?? [] }
+                    .map(LibraryFilter.Genre.normalize)
+            )
             let availableGenres = LibraryFilter.Genre.allCases.filter { genre in
-                libraryObjects.contains { libraryObject in
-                    libraryObject.manga?.tags?.contains(where: genre.matches) == true
-                }
+                genre.aliases.contains { normalizedGenres.contains(LibraryFilter.Genre.normalize($0)) }
             }
 
             var ids = Set<MangaIdentifier>()
@@ -446,8 +444,6 @@ extension LibraryViewModel {
 
         self.pinnedManga = pinnedManga
         self.manga = manga
-        self.storedPinnedManga = nil
-        self.storedManga = nil
         self.sourceKeys = sourceKeys.sorted()
         self.availableGenres = availableGenres
         self.collections = sourceKeys.flatMap { sourceKey in
@@ -498,9 +494,6 @@ extension LibraryViewModel {
             await sortLibrary()
         }
 
-        if !searchQuery.isEmpty {
-            await search(query: searchQuery)
-        }
     }
 
     // updates unread counts and manga sort order for history change
@@ -740,15 +733,13 @@ extension LibraryViewModel {
         if let filterIndex {
             if filters[filterIndex].exclude {
                 filters.remove(at: filterIndex)
-            } else if method == .genre {
-                filters[filterIndex].exclude = true
             } else {
                 filters[filterIndex].exclude = true
             }
         } else if method == .genre {
             // Genre options cycle through default (no filter), include, and exclude.
             filters.append(LibraryFilter(type: method, value: value, exclude: false))
-        } else if method == .contentRating || method == .category || method == .collection {
+        } else if method.defaultsToExcluded {
             filters.append(LibraryFilter(type: method, value: value, exclude: true))
         } else {
             filters.append(LibraryFilter(type: method, value: value, exclude: false))
@@ -761,39 +752,6 @@ extension LibraryViewModel {
         if let filtersData {
             AppSettings.library.filtersData.set(filtersData)
         }
-    }
-
-    func search(query: String) async {
-        searchQuery = query
-
-        guard !query.isEmpty else {
-            var shouldResort = false
-            if let storedManga {
-                manga = storedManga
-                self.storedManga = nil
-                shouldResort = true
-            }
-            if let storedPinnedManga {
-                pinnedManga = storedPinnedManga
-                self.storedPinnedManga = nil
-                shouldResort = true
-            }
-            if shouldResort {
-                await sortLibrary()
-            }
-            return
-        }
-        if storedManga == nil {
-            storedManga = manga
-            storedPinnedManga = pinnedManga
-        }
-        guard let storedManga, let storedPinnedManga else {
-            return
-        }
-
-        let query = query.lowercased()
-        pinnedManga = storedPinnedManga.filter { $0.title?.lowercased().contains(query) ?? false }
-        manga = storedManga.filter { $0.title?.lowercased().fuzzyMatch(query) ?? false || $0.author?.lowercased().fuzzyMatch(query) ?? false }
     }
 
     // returns true if library was reloaded
