@@ -9,6 +9,15 @@ import Combine
 import UIKit
 
 class ReaderToolbarView: UIView {
+    private static let minimumPageLabelWidth: CGFloat = 46
+    private static let maximumPageLabelWidth: CGFloat = 88
+    private static let pageLabelWidthPadding: CGFloat = 4
+
+    private static let timestampColor = UIColor { traits in
+        let base: UIColor = traits.userInterfaceStyle == .dark ? .white : .black
+        return base.withAlphaComponent(0.50)
+    }
+
     var currentPageValue: Int? {
         didSet {
             if oldValue != currentPageValue {
@@ -27,6 +36,7 @@ class ReaderToolbarView: UIView {
     let sliderView = ReaderSliderView()
     private let incognitoModeLabel = UILabel()
     private let currentPageLabel = UILabel()
+    private var currentPageLabelWidthConstraint: NSLayoutConstraint?
 
     private var cancellables: [AnyCancellable] = []
 
@@ -48,9 +58,11 @@ class ReaderToolbarView: UIView {
         incognitoModeLabel.isHidden = !AppSettings.general.incognitoMode.get()
         addSubview(incognitoModeLabel)
 
-        currentPageLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        currentPageLabel.textColor = UIColor.label.withAlphaComponent(0.35)
+        currentPageLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+        currentPageLabel.textColor = Self.timestampColor
         currentPageLabel.textAlignment = .right
+        currentPageLabel.adjustsFontSizeToFitWidth = true
+        currentPageLabel.minimumScaleFactor = 0.8
         currentPageLabel.setContentHuggingPriority(.required, for: .horizontal)
         currentPageLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         addSubview(currentPageLabel)
@@ -66,12 +78,17 @@ class ReaderToolbarView: UIView {
         currentPageLabel.translatesAutoresizingMaskIntoConstraints = false
         sliderView.translatesAutoresizingMaskIntoConstraints = false
 
+        let currentPageLabelWidthConstraint = currentPageLabel.widthAnchor.constraint(
+            equalToConstant: Self.minimumPageLabelWidth
+        )
+        self.currentPageLabelWidthConstraint = currentPageLabelWidthConstraint
+
         NSLayoutConstraint.activate([
             incognitoModeLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             incognitoModeLabel.centerYAnchor.constraint(equalTo: sliderView.centerYAnchor),
 
-            currentPageLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            currentPageLabel.widthAnchor.constraint(equalToConstant: 46),
+            currentPageLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            currentPageLabelWidthConstraint,
             currentPageLabel.centerYAnchor.constraint(equalTo: sliderView.centerYAnchor),
 
             sliderView.heightAnchor.constraint(equalTo: heightAnchor),
@@ -120,6 +137,16 @@ class ReaderToolbarView: UIView {
 
     private func updatePageLabel(page: Int, totalPages: Int) {
         currentPageLabel.text = "\(page) / \(totalPages)"
+
+        // Reserve enough room for the widest value this title can display so
+        // advancing between pages never shifts the progress bar.
+        let maximumText = "\(totalPages) / \(totalPages)" as NSString
+        let measuredWidth = ceil(maximumText.size(withAttributes: [.font: currentPageLabel.font as Any]).width)
+            + Self.pageLabelWidthPadding
+        currentPageLabelWidthConstraint?.constant = min(
+            max(measuredWidth, Self.minimumPageLabelWidth),
+            Self.maximumPageLabelWidth
+        )
     }
 
     func updateSliderPosition() {
