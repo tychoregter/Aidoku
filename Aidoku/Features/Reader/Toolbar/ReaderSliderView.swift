@@ -15,6 +15,16 @@ class ReaderSliderView: UIControl {
         static let animationDuration: TimeInterval = 0.2
     }
 
+    private static let progressColor = UIColor { traits in
+        let base: UIColor = traits.userInterfaceStyle == .dark ? .white : .black
+        return base.withAlphaComponent(0.85)
+    }
+
+    private static let remainingTrackColor = UIColor { traits in
+        let base: UIColor = traits.userInterfaceStyle == .dark ? .white : .black
+        return base.withAlphaComponent(0.30)
+    }
+
     enum SliderDirection {
         case forward
         case backward
@@ -53,7 +63,7 @@ class ReaderSliderView: UIControl {
         let trackView: UIView
         if #available(iOS 26.0, *) {
             let glassTrack = LiquidLensView(frame: .zero)
-            glassTrack.restingBackgroundColor = .systemGray4
+            glassTrack.restingBackgroundColor = Self.remainingTrackColor
             trackView = glassTrack
         } else {
             let fallbackTrack = UIView()
@@ -68,7 +78,7 @@ class ReaderSliderView: UIControl {
     }()
     private lazy var progressedTrackView = {
         let progressedTrackView = UIView()
-        progressedTrackView.backgroundColor = .label
+        progressedTrackView.backgroundColor = Self.progressColor
         progressedTrackView.isUserInteractionEnabled = true
         return progressedTrackView
     }()
