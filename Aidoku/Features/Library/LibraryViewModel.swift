@@ -171,8 +171,18 @@ class LibraryViewModel {
         favoriteIds = Set(UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? [])
         let filtersData = AppSettings.library.filtersData.get()
         if let filtersData {
-            let filters = try? JSONDecoder().decode([LibraryFilter].self, from: filtersData)
-            self.filters = filters ?? []
+            let decodedFilters = (try? JSONDecoder().decode([LibraryFilter].self, from: filtersData)) ?? []
+            var retainedGenre = false
+            let filters = decodedFilters.filter { filter in
+                guard filter.type == .genre else { return true }
+                guard !filter.exclude, !retainedGenre else { return false }
+                retainedGenre = true
+                return true
+            }
+            self.filters = filters
+            if filters != decodedFilters, let migratedFiltersData = try? JSONEncoder().encode(filters) {
+                AppSettings.library.filtersData.set(migratedFiltersData)
+            }
         } else {
             self.filters = []
         }
@@ -730,15 +740,18 @@ extension LibraryViewModel {
 
     func toggleFilter(method: LibraryFilter.FilterMethod, value: String? = nil) async {
         let filterIndex = filters.firstIndex(where: { $0.type == method && $0.value == value })
-        if let filterIndex {
+        if method == .genre {
+            let wasSelected = filterIndex.map { !filters[$0].exclude } ?? false
+            filters.removeAll { $0.type == .genre }
+            if !wasSelected {
+                filters.append(LibraryFilter(type: method, value: value, exclude: false))
+            }
+        } else if let filterIndex {
             if filters[filterIndex].exclude {
                 filters.remove(at: filterIndex)
             } else {
                 filters[filterIndex].exclude = true
             }
-        } else if method == .genre {
-            // Genre options cycle through default (no filter), include, and exclude.
-            filters.append(LibraryFilter(type: method, value: value, exclude: false))
         } else if method.defaultsToExcluded {
             filters.append(LibraryFilter(type: method, value: value, exclude: true))
         } else {

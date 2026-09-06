@@ -85,7 +85,7 @@ struct LibraryFilter: Codable, Hashable {
                 case .tracking: NSLocalizedString("IS_TRACKING")
                 case .hasUnread: NSLocalizedString("FILTER_HAS_UNREAD")
                 case .started: NSLocalizedString("FILTER_STARTED")
-                case .completed: NSLocalizedString("STATUS_COMPLETED")
+                case .completed: NSLocalizedString("FILTER_ENDED", value: "Ended", comment: "Library filter for series that have ended")
                 case .source: NSLocalizedString("SOURCES")
                 case .contentRating: NSLocalizedString("CONTENT_RATING")
                 case .category: NSLocalizedString("CATEGORY")

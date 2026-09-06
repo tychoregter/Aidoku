@@ -206,6 +206,8 @@ extension TabBarController: UITabBarControllerDelegate {
 
     @available(iOS 18.0, *)
     func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
+        guard selectedTab?.identifier == tab.identifier else { return true }
+
         if tab.identifier == "0", let libraryViewController {
             libraryViewController.scrollToTop()
         } else if tab.identifier == "2" {
@@ -216,6 +218,8 @@ extension TabBarController: UITabBarControllerDelegate {
     }
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
+        guard viewController === selectedViewController else { return true }
+
         if let navigationController = viewController as? UINavigationController,
            navigationController.viewControllers.first === libraryViewController {
             libraryViewController?.scrollToTop()

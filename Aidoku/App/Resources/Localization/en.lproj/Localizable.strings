@@ -342,6 +342,7 @@
 "STATUS_ONGOING" = "Ongoing";
 "STATUS_CANCELLED" = "Canceled";
 "STATUS_COMPLETED" = "Completed";
+"FILTER_ENDED" = "Ended";
 "STATUS_HIATUS" = "Hiatus";
 "SUGGESTIVE" = "Suggestive";
 "NSFW" = "NSFW";

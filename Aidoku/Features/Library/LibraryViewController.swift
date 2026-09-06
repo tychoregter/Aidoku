@@ -124,7 +124,6 @@ class LibraryViewController: OldMangaCollectionViewController {
         // The Library has no text input. Clear any responder retained by the
         // system search tab so opening a menu cannot restore its keyboard.
         view.window?.endEditing(true)
-
     }
 
     override func viewDidLoad() {
@@ -962,6 +961,17 @@ extension LibraryViewController {
         }
     }
 
+    func filterValue(for method: LibraryFilter.FilterMethod, title: String) -> String {
+        switch method {
+            case .contentRating:
+                MangaContentRating.allCases.first { $0.title == title }?.stringValue ?? title
+            case .genre:
+                LibraryFilter.Genre.allCases.first { $0.title == title }?.rawValue ?? title
+            default:
+                title
+        }
+    }
+
     func removeFilterAction() -> UIAction {
         UIAction(
             title: NSLocalizedString("REMOVE_FILTER"),
@@ -980,8 +990,20 @@ extension LibraryViewController {
     func filtersSubtitle() -> String? {
         guard !viewModel.filters.isEmpty else { return nil }
         var options: [String] = []
-        for filterMethod in LibraryFilter.FilterMethod.allCases {
-            let methodFilters = viewModel.filters.filter { $0.type == filterMethod }
+        let menuOrder: [LibraryFilter.FilterMethod] = [
+            .favorite,
+            .started,
+            .caughtUp,
+            .completed,
+            .genre,
+            .contentRating,
+            .collection,
+            .category,
+            .downloaded
+        ]
+        let filterMethods = menuOrder + LibraryFilter.FilterMethod.allCases.filter { !menuOrder.contains($0) }
+        for filterMethod in filterMethods {
+            let methodFilters = orderedFilters(for: filterMethod)
             guard !methodFilters.isEmpty else { continue }
 
             // Show each selected value for submenu filters, but keep the other
@@ -1030,6 +1052,65 @@ extension LibraryViewController {
         return options.joined(separator: NSLocalizedString("FILTER_SEPARATOR"))
     }
 
+    func filterSubmenuValues(for method: LibraryFilter.FilterMethod) -> [String] {
+        switch method {
+            case .contentRating:
+                MangaContentRating.allCases.map(\.stringValue)
+            case .collection:
+                viewModel.collections
+            case .category:
+                viewModel.categories
+            case .genre:
+                viewModel.availableGenres.map(\.rawValue)
+            default:
+                []
+        }
+    }
+
+    func orderedFilters(for method: LibraryFilter.FilterMethod) -> [LibraryFilter] {
+        let positions = Dictionary(
+            uniqueKeysWithValues: filterSubmenuValues(for: method).enumerated().map { ($0.element, $0.offset) }
+        )
+        return viewModel.filters
+            .enumerated()
+            .filter { $0.element.type == method }
+            .sorted {
+                let lhsPosition = positions[$0.element.value ?? ""] ?? .max
+                let rhsPosition = positions[$1.element.value ?? ""] ?? .max
+                return lhsPosition == rhsPosition ? $0.offset < $1.offset : lhsPosition < rhsPosition
+            }
+            .map(\.element)
+    }
+
+    func filterSubmenuSubtitle(for method: LibraryFilter.FilterMethod) -> String? {
+        let filters = orderedFilters(for: method)
+        guard !filters.isEmpty else { return nil }
+
+        var options: [String] = []
+        for filter in filters {
+            guard options.count < 3 else {
+                options.removeLast()
+                options.append(NSLocalizedString("AND_MORE"))
+                break
+            }
+
+            let title: String
+            if let value = filter.value, !value.isEmpty {
+                if method == .contentRating {
+                    title = MangaContentRating(stringValue: value)?.title ?? value
+                } else if method == .genre {
+                    title = LibraryFilter.Genre(rawValue: value)?.title ?? value
+                } else {
+                    title = value
+                }
+            } else {
+                title = method.title
+            }
+            options.append(filter.exclude ? String(format: NSLocalizedString("NOT_%@"), title) : title)
+        }
+        return options.joined(separator: NSLocalizedString("FILTER_SEPARATOR"))
+    }
+
     @available(iOS 26.0, *)
     func updateFilterMenuState() {
         // _contextMenuInteraction only exists on ios 26+
@@ -1043,7 +1124,7 @@ extension LibraryViewController {
             func updateElement(_ element: UIMenuElement, method: LibraryFilter.FilterMethod? = nil) -> UIMenuElement {
                 if let action = element as? UIAction {
                     if let method {
-                        action.state = filterState(for: method, value: action.title)
+                        action.state = filterState(for: method, value: filterValue(for: method, title: action.title))
                     } else if let method = LibraryFilter.FilterMethod.allCases.first(where: { $0.title == action.title }) {
                         action.state = filterState(for: method)
                     }
@@ -1056,6 +1137,9 @@ extension LibraryViewController {
                     case LibraryFilter.FilterMethod.collection.title: .collection
                     case LibraryFilter.FilterMethod.genre.title: .genre
                     default: nil
+                }
+                if let submenuMethod {
+                    submenu.subtitle = self.filterSubmenuSubtitle(for: submenuMethod)
                 }
                 return submenu.replacingChildren(submenu.children.map {
                     updateElement($0, method: submenuMethod)
@@ -1077,6 +1161,7 @@ extension LibraryViewController {
             if menu.title == NSLocalizedString("BUTTON_FILTER") {
                 return updateFilterSubmenu(menu)
             } else if menu.title == LibraryFilter.FilterMethod.contentRating.title {
+                menu.subtitle = self.filterSubmenuSubtitle(for: .contentRating)
                 return menu.replacingChildren(MangaContentRating.allCases.map { rating in
                     UIAction(
                         title: rating.title,
@@ -1087,6 +1172,7 @@ extension LibraryViewController {
                     }
                 })
             } else if menu.title == LibraryFilter.FilterMethod.category.title {
+                menu.subtitle = self.filterSubmenuSubtitle(for: .category)
                 return menu.replacingChildren(self.viewModel.categories.map { category in
                     UIAction(
                         title: category,
@@ -1097,6 +1183,7 @@ extension LibraryViewController {
                     }
                 })
             } else if menu.title == LibraryFilter.FilterMethod.collection.title {
+                menu.subtitle = self.filterSubmenuSubtitle(for: .collection)
                 return menu.replacingChildren(self.viewModel.collections.map { collection in
                     UIAction(
                         title: collection,
@@ -1107,6 +1194,7 @@ extension LibraryViewController {
                     }
                 })
             } else if menu.title == LibraryFilter.FilterMethod.genre.title {
+                menu.subtitle = self.filterSubmenuSubtitle(for: .genre)
                 return menu.replacingChildren(self.viewModel.availableGenres.map { genre in
                     UIAction(
                         title: genre.title,
@@ -1206,6 +1294,7 @@ extension LibraryViewController {
                 completion([])
                 return
             }
+
             let attributes: UIMenuElement.Attributes = if #available(iOS 16.0, *) {
                 .keepsMenuPresented
             } else {
@@ -1228,6 +1317,7 @@ extension LibraryViewController {
                 filterAction(for: .completed),
                 UIMenu(
                     title: LibraryFilter.FilterMethod.contentRating.title,
+                    subtitle: self.filterSubmenuSubtitle(for: .contentRating),
                     image: LibraryFilter.FilterMethod.contentRating.image,
                     children: MangaContentRating.allCases.map { rating in
                         UIAction(
@@ -1241,6 +1331,7 @@ extension LibraryViewController {
                 ),
                 UIMenu(
                     title: LibraryFilter.FilterMethod.collection.title,
+                    subtitle: self.filterSubmenuSubtitle(for: .collection),
                     image: LibraryFilter.FilterMethod.collection.image,
                     children: self.viewModel.collections.map { collection in
                         UIAction(
@@ -1254,6 +1345,7 @@ extension LibraryViewController {
                 ),
                 UIMenu(
                     title: LibraryFilter.FilterMethod.category.title,
+                    subtitle: self.filterSubmenuSubtitle(for: .category),
                     image: LibraryFilter.FilterMethod.category.image,
                     children: self.viewModel.categories.map { category in
                         UIAction(
@@ -1270,6 +1362,7 @@ extension LibraryViewController {
                 filterChildren.insert(
                     UIMenu(
                         title: LibraryFilter.FilterMethod.genre.title,
+                        subtitle: self.filterSubmenuSubtitle(for: .genre),
                         image: LibraryFilter.FilterMethod.genre.image,
                         children: self.viewModel.availableGenres.map { genre in
                             UIAction(
@@ -1286,36 +1379,41 @@ extension LibraryViewController {
             }
             filterChildren.append(filterAction(for: .downloaded))
 
-            var filters = UIMenu(
+            var filterMenu = UIMenu(
                 title: NSLocalizedString("BUTTON_FILTER"),
                 subtitle: self.filtersSubtitle(),
                 image: UIImage(systemName: "line.3.horizontal.decrease"),
                 children: filterChildren
             )
+            if !self.viewModel.filters.isEmpty {
+                filterMenu = filterMenu.replacingChildren(filterMenu.children + [self.removeFilterAction()])
+            }
+
             let pinTitlesMenu = UIMenu(
                 title: NSLocalizedString("PIN_TITLES"),
                 subtitle: self.viewModel.pinType == .none ? nil : self.viewModel.pinType.title,
                 image: UIImage(systemName: "pin"),
-                children: LibraryViewModel.PinType.allCases.map { pinType in
-                    UIAction(
-                        title: pinType.title,
-                        state: self.viewModel.pinType == pinType ? .on : .off
-                    ) { [weak self] _ in
-                        AppSettings.library.pinTitles.set(pinType.rawValue)
-                        guard let self else { return }
-                        self.viewModel.pinType = pinType
-                        Task { @MainActor in
-                            await self.viewModel.loadLibrary()
-                            self.updateDataSource()
-                            self.updateMoreMenu()
+                children: LibraryViewModel.PinType.allCases
+                    .filter { $0 != .none }
+                    .map { pinType in
+                        UIAction(
+                            title: pinType.title,
+                            state: self.viewModel.pinType == pinType ? .on : .off
+                        ) { [weak self] _ in
+                            guard let self else { return }
+                            let selectedPinType: LibraryViewModel.PinType = self.viewModel.pinType == pinType ? .none : pinType
+                            AppSettings.library.pinTitles.set(selectedPinType.rawValue)
+                            self.viewModel.pinType = selectedPinType
+                            Task { @MainActor in
+                                await self.viewModel.loadLibrary()
+                                self.updateDataSource()
+                                self.updateMoreMenu()
+                            }
                         }
                     }
-                }
             )
-            if !self.viewModel.filters.isEmpty {
-                filters = filters.replacingChildren(filters.children + [self.removeFilterAction()])
-            }
-            completion([filters, pinTitlesMenu])
+
+            completion([filterMenu, pinTitlesMenu])
         }
 
         moreBarButton.menu = UIMenu(
