@@ -9,6 +9,7 @@ import AidokuRunner
 import Nuke
 import SwiftUI
 import WebKit
+import UIKit
 
 struct SettingsView: View {
     @State private var categoriesOnly: [String] = []
@@ -19,7 +20,6 @@ struct SettingsView: View {
     @State private var searchResult: SettingSearchResult?
 
     @EnvironmentObject private var path: NavigationCoordinator
-    @Environment(\.dismiss) private var dismiss
 
     static let settings = Settings.settings
 }
@@ -132,8 +132,29 @@ extension SettingsView {
                 await updateCategories()
             }
         }
-        .environment(\.openBrowseSettings) {
-            path.push(BrowseViewController())
+        .environment(\.openSettingsPage) { key in
+            switch key {
+                case "Browse":
+                    path.push(BrowseViewController())
+                case "MangaUpdates":
+                    path.push(MangaUpdatesView())
+                case "History":
+                    let history = UIHostingController(rootView: HistoryView().environmentObject(path))
+                    history.navigationItem.largeTitleDisplayMode = .never
+                    history.navigationItem.title = NSLocalizedString("HISTORY")
+                    history.navigationItem.rightBarButtonItem = UIBarButtonItem(
+                        systemItem: .trash,
+                        primaryAction: UIAction { _ in
+                            NotificationCenter.default.post(name: .init("history.clearRequested"), object: nil)
+                        }
+                    )
+                    if #available(iOS 26.0, *) {
+                        history.navigationItem.rightBarButtonItem?.sharesBackground = false
+                    }
+                    path.push(history)
+                default:
+                    break
+            }
         }
     }
 }
@@ -320,16 +341,6 @@ extension SettingsView {
             if #available(iOS 18.0, *) {
                 DictionaryVocabListView().environmentObject(path)
             }
-        } else if key == "History" {
-            HistorySettingsView(path: path, onBack: { dismiss() })
-                .toolbar(.visible, for: .navigationBar)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { NotificationCenter.default.post(name: .init("history.clearRequested"), object: nil) } label: {
-                            Image(systemName: "trash")
-                        }
-                    }
-                }
         } else if key == "MangaUpdates" {
             MangaUpdatesView().environmentObject(path)
         } else if key == "Tracking" {
@@ -359,39 +370,6 @@ extension SettingsView {
             CategoryMultiSelectSettingView(setting: setting, categories: $categoriesOnly, authToOpen: false)
         }
     }
-}
-
-private struct HistorySettingsView: UIViewControllerRepresentable {
-    let path: NavigationCoordinator
-    let onBack: () -> Void
-
-    func makeUIViewController(context: Context) -> UIViewController {
-        let history = UIHostingController(rootView: HistoryView().environmentObject(path))
-        history.navigationItem.hidesBackButton = true
-        history.navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: NSLocalizedString("SETTINGS"),
-            image: UIImage(systemName: "chevron.left"),
-            primaryAction: UIAction { _ in
-                onBack()
-            }
-        )
-        history.navigationItem.largeTitleDisplayMode = .never
-        history.navigationItem.title = NSLocalizedString("HISTORY")
-        let clearButton = UIBarButtonItem(
-            systemItem: .trash,
-            primaryAction: UIAction { _ in
-                NotificationCenter.default.post(name: .init("history.clearRequested"), object: nil)
-            }
-        )
-        if #available(iOS 26.0, *) {
-            clearButton.sharesBackground = false
-        }
-        history.navigationItem.rightBarButtonItem = clearButton
-
-        return history
-    }
-
-    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {}
 }
 
 extension SettingsView {

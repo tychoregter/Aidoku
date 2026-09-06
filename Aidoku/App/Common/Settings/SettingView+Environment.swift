@@ -16,8 +16,8 @@ struct SettingCustomContentKey: EnvironmentKey {
     static var defaultValue: ((Setting) -> AnyView)? { nil }
 }
 
-struct OpenBrowseSettingsKey: EnvironmentKey {
-    static var defaultValue: (() -> Void)? { nil }
+struct OpenSettingsPageKey: EnvironmentKey {
+    static var defaultValue: ((String) -> Void)? { nil }
 }
 
 extension EnvironmentValues {
@@ -31,9 +31,9 @@ extension EnvironmentValues {
         set { self[SettingCustomContentKey.self] = newValue }
     }
 
-    var openBrowseSettings: (() -> Void)? {
-        get { self[OpenBrowseSettingsKey.self] }
-        set { self[OpenBrowseSettingsKey.self] = newValue }
+    var openSettingsPage: ((String) -> Void)? {
+        get { self[OpenSettingsPageKey.self] }
+        set { self[OpenSettingsPageKey.self] = newValue }
     }
 }
 

@@ -24,7 +24,7 @@ struct SettingView: View {
 
     @Environment(\.settingPageContent) private var pageContentHandler
     @Environment(\.settingCustomContent) private var customContentHandler
-    @Environment(\.openBrowseSettings) private var openBrowseSettings
+    @Environment(\.openSettingsPage) private var openSettingsPage
 
     @Binding private var stringListBinding: [String]
     @Binding private var stringBinding: String
@@ -1214,8 +1214,8 @@ extension SettingView {
 extension SettingView {
     @ViewBuilder
     func pageView(value: PageSetting) -> some View {
-        if setting.key == "Browse", let openBrowseSettings {
-            Button(action: openBrowseSettings) {
+        if ["Browse", "MangaUpdates", "History"].contains(setting.key), let openSettingsPage {
+            Button { openSettingsPage(setting.key) } label: {
                 pageLabel(value: value, showsDisclosureIndicator: true)
             }
             .buttonStyle(.plain)
