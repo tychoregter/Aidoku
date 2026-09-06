@@ -8,6 +8,31 @@
 import AidokuRunner
 import Foundation
 
+enum KomgaGenreStore {
+    private static let lock = NSLock()
+
+    static func genres(sourceKey: String, mangaKey: String) -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        let values = UserDefaults.standard.dictionary(forKey: storageKey(sourceKey)) as? [String: [String]]
+        return values?[mangaKey] ?? []
+    }
+
+    static func store(_ genres: [String], sourceKey: String, mangaKey: String) {
+        let genres = genres.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        lock.lock()
+        defer { lock.unlock() }
+        let key = storageKey(sourceKey)
+        var values = UserDefaults.standard.dictionary(forKey: key) as? [String: [String]] ?? [:]
+        values[mangaKey] = genres
+        UserDefaults.standard.set(values, forKey: key)
+    }
+
+    private static func storageKey(_ sourceKey: String) -> String {
+        "\(sourceKey).genreMetadata"
+    }
+}
+
 struct KomgaError: Codable, Sendable {
     let error: String
     let message: String?
@@ -323,6 +348,8 @@ struct KomgaSeries: Codable, Sendable {
 
 extension KomgaSeries {
     func intoManga(sourceKey: String, baseUrl: URL) -> AidokuRunner.Manga {
+        KomgaGenreStore.store(metadata.genres, sourceKey: sourceKey, mangaKey: id)
+
         let status: AidokuRunner.PublishingStatus = switch metadata.status {
             case .ended: .completed
             case .ongoing: .ongoing

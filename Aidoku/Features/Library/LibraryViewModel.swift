@@ -15,6 +15,9 @@ class LibraryViewModel {
 
     var manga: [MangaInfo] = []
     var pinnedManga: [MangaInfo] = []
+    /// Pinned titles that also match the active Library filters. This is used
+    /// for the optional duplicate copies in the regular Library section.
+    var libraryPinnedManga: [MangaInfo] = []
     var sourceKeys: [String] = []
     var collections: [String] = []
 
@@ -33,7 +36,11 @@ class LibraryViewModel {
                 case .updatedChapters: NSLocalizedString("PIN_UPDATED_CHAPTERS")
                 case .started: NSLocalizedString("PIN_STARTED")
                 case .favorites: NSLocalizedString("PIN_FAVORITES")
-                case .completed: NSLocalizedString("STATUS_COMPLETED")
+                case .completed: NSLocalizedString(
+                    "FILTER_ENDED",
+                    value: "Ended",
+                    comment: "Pin Titles option for series that have ended"
+                )
             }
         }
 
@@ -242,18 +249,28 @@ extension LibraryViewModel {
         // handle filter groups
         let filters = self.activeFilters
         let currentCategory = (isInUncategorizedCategory || isInRealCategory) ? self.currentCategory : nil
+        let pinTitlesIgnoreFilters = AppSettings.library.pinTitlesIgnoreFilters.get()
+        let ignoredPinFilterMethods = Set(
+            AppSettings.library.pinTitlesIgnoredFilters.get().compactMap(
+                LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethod(for:)
+            )
+        )
 
         let (
             success,
             actuallyEmpty,
             pinnedManga,
+            libraryPinnedManga,
             manga,
+            ignoredFilterPinnedManga,
             sourceKeys,
             unappliedFilters,
             availableGenres
-        ) = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [sortMethod, sortAscending, pinType, favoriteIds] context in
+        ) = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [sortMethod, sortAscending, pinType, favoriteIds, pinTitlesIgnoreFilters, ignoredPinFilterMethods] context in
             var pinnedManga: [MangaInfo] = []
+            var libraryPinnedManga: [MangaInfo] = []
             var manga: [MangaInfo] = []
+            var ignoredFilterPinnedManga: [MangaInfo] = []
             var sourceKeys: Set<String> = []
             var unappliedFilters: [LibraryFilter] = []
 
@@ -276,18 +293,22 @@ extension LibraryViewModel {
                 ]
             }
             guard let libraryObjects = try? context.fetch(request) else {
-                return (false, true, pinnedManga, manga, sourceKeys, unappliedFilters, [LibraryFilter.Genre]())
+                return (false, true, pinnedManga, libraryPinnedManga, manga, ignoredFilterPinnedManga, sourceKeys, unappliedFilters, [LibraryFilter.Genre]())
             }
 
             let actuallyEmpty = libraryObjects.isEmpty
-            let normalizedGenres = Set(
-                libraryObjects
-                    .flatMap { $0.manga?.tags ?? [] }
-                    .map(LibraryFilter.Genre.normalize)
+            let genreConfiguration = LibraryGenreFilterSettings.load()
+            let availableGenres = LibraryGenreFilterSettings.availableFilterGenres(
+                from: libraryObjects.reduce(into: [String]()) { values, libraryObject in
+                    guard let manga = libraryObject.manga else { return }
+                    if manga.sourceId.hasPrefix(KomgaSourceRunner.sourceKeyPrefix) {
+                        values.append(contentsOf: KomgaGenreStore.genres(sourceKey: manga.sourceId, mangaKey: manga.id))
+                    } else {
+                        values.append(contentsOf: manga.tags ?? [])
+                    }
+                },
+                configuration: genreConfiguration
             )
-            let availableGenres = LibraryFilter.Genre.allCases.filter { genre in
-                genre.aliases.contains { normalizedGenres.contains(LibraryFilter.Genre.normalize($0)) }
-            }
 
             var ids = Set<MangaIdentifier>()
 
@@ -312,6 +333,27 @@ extension LibraryViewModel {
                 info.lastRead = libraryObject.lastRead
 
                 sourceKeys.insert(mangaObject.sourceId)
+
+                let isPinnedIgnoringFilters = switch pinType {
+                    case .none: false
+                    case .unread: true
+                    case .updatedChapters: libraryObject.lastUpdatedChapters > libraryObject.lastOpened
+                    case .started: CoreDataManager.shared.hasHistory(mangaId: info.id, context: context)
+                    case .favorites: favoriteIds.contains(info.id.description)
+                    case .completed: mangaObject.status == AidokuRunner.PublishingStatus.completed.rawValue
+                }
+                func appendIgnoringFiltersIfNeeded(for method: LibraryFilter.FilterMethod) {
+                    guard
+                        pinTitlesIgnoreFilters,
+                        ignoredPinFilterMethods.contains(method),
+                        isPinnedIgnoringFilters
+                    else { return }
+                    if pinType == .unread {
+                        ignoredFilterPinnedManga.append(info)
+                    } else {
+                        pinnedManga.append(info)
+                    }
+                }
 
                 // process filters
                 var filteredSourceKeys: Set<String> = []
@@ -376,9 +418,20 @@ extension LibraryViewModel {
                             let memberships = (UserDefaults.standard.dictionary(forKey: "\(info.id.sourceKey).collectionMembership") as? [String: [String]] ?? [:])[info.id.mangaKey] ?? []
                             condition = memberships.contains(collection)
                         case .genre:
-                            guard let value = filter.value, let genre = LibraryFilter.Genre(rawValue: value) else { continue }
+                            guard let value = filter.value,
+                                  let genre = LibraryGenreFilterSettings.matchingGenre(
+                                    for: value,
+                                    in: availableGenres,
+                                    configuration: genreConfiguration
+                                  )
+                            else { continue }
+                            let mangaGenres = if mangaObject.sourceId.hasPrefix(KomgaSourceRunner.sourceKeyPrefix) {
+                                KomgaGenreStore.genres(sourceKey: mangaObject.sourceId, mangaKey: mangaObject.id)
+                            } else {
+                                mangaObject.tags ?? []
+                            }
                             if filter.exclude {
-                                condition = mangaObject.tags?.contains(where: genre.matches) == true
+                                condition = mangaGenres.contains(where: genre.matches)
                             } else {
                                 filteredGenres.insert(genre)
                                 continue
@@ -387,21 +440,31 @@ extension LibraryViewModel {
                     }
                     let shouldSkip = filter.exclude ? condition : !condition
                     if shouldSkip {
+                        appendIgnoringFiltersIfNeeded(for: filter.type)
                         continue main
                     }
                 }
                 if !filteredSourceKeys.isEmpty && !filteredSourceKeys.contains(info.id.sourceKey) {
+                    appendIgnoringFiltersIfNeeded(for: .source)
                     continue main
                 }
                 if !filteredContentRatings.isEmpty && !filteredContentRatings.contains(mangaObject.nsfw) {
+                    appendIgnoringFiltersIfNeeded(for: .contentRating)
                     continue main
                 }
                 if !filteredCategories.isEmpty && !filteredCategories.contains(where: { categories.contains($0) }) {
+                    appendIgnoringFiltersIfNeeded(for: .category)
                     continue main
                 }
                 if !filteredGenres.isEmpty && !filteredGenres.contains(where: { genre in
-                    mangaObject.tags?.contains(where: genre.matches) == true
+                    let mangaGenres = if mangaObject.sourceId.hasPrefix(KomgaSourceRunner.sourceKeyPrefix) {
+                        KomgaGenreStore.genres(sourceKey: mangaObject.sourceId, mangaKey: mangaObject.id)
+                    } else {
+                        mangaObject.tags ?? []
+                    }
+                    return mangaGenres.contains(where: genre.matches)
                 }) {
+                    appendIgnoringFiltersIfNeeded(for: .genre)
                     continue main
                 }
 
@@ -414,24 +477,28 @@ extension LibraryViewModel {
                     case .updatedChapters:
                         if libraryObject.lastUpdatedChapters > libraryObject.lastOpened {
                             pinnedManga.append(info)
+                            libraryPinnedManga.append(info)
                         } else {
                             manga.append(info)
                         }
                     case .started:
                         if CoreDataManager.shared.hasHistory(mangaId: info.id, context: context) {
                             pinnedManga.append(info)
+                            libraryPinnedManga.append(info)
                         } else {
                             manga.append(info)
                         }
                     case .favorites:
                         if favoriteIds.contains(info.id.description) {
                             pinnedManga.append(info)
+                            libraryPinnedManga.append(info)
                         } else {
                             manga.append(info)
                         }
                     case .completed:
                         if mangaObject.status == AidokuRunner.PublishingStatus.completed.rawValue {
                             pinnedManga.append(info)
+                            libraryPinnedManga.append(info)
                         } else {
                             manga.append(info)
                         }
@@ -447,13 +514,17 @@ extension LibraryViewModel {
                 }
             }
 
-            return (true, actuallyEmpty, pinnedManga, manga, sourceKeys, unappliedFilters, availableGenres)
+            return (true, actuallyEmpty, pinnedManga, libraryPinnedManga, manga, ignoredFilterPinnedManga, sourceKeys, unappliedFilters, availableGenres)
         }
 
         guard success else { return }
 
         self.pinnedManga = pinnedManga
+        self.libraryPinnedManga = libraryPinnedManga
         self.manga = manga
+        if pinType == .unread {
+            self.pinnedManga.append(contentsOf: ignoredFilterPinnedManga)
+        }
         self.sourceKeys = sourceKeys.sorted()
         self.availableGenres = availableGenres
         self.collections = sourceKeys.flatMap { sourceKey in
@@ -466,9 +537,23 @@ extension LibraryViewModel {
         await fetchUnreads(skipSortCheck: true)
         await fetchDownloadCounts()
 
+        // Keep the duplicate Library-section copies in sync with the resolved
+        // unread/download counts used by late-applied filters such as Caught Up.
+        // The identifier set still ensures titles bypassing an earlier filter
+        // remain exclusive to the Pinned section.
+        if pinType != .unread {
+            let libraryPinnedIDs = Set(self.libraryPinnedManga.map(\.id))
+            self.libraryPinnedManga = self.pinnedManga.filter {
+                libraryPinnedIDs.contains($0.id)
+            }
+        }
+
         if !unappliedFilters.isEmpty {
-            let filter: (MangaInfo) -> Bool = { info in
+            let filter: (MangaInfo, Bool) -> Bool = { info, ignoresSelectedFilters in
                 for filter in unappliedFilters {
+                    if ignoresSelectedFilters && ignoredPinFilterMethods.contains(filter.type) {
+                        continue
+                    }
                     let condition: Bool
                     switch filter.type {
                         case .downloaded: condition = info.downloads > 0
@@ -481,22 +566,26 @@ extension LibraryViewModel {
                 }
                 return true
             }
-            self.pinnedManga = self.pinnedManga.filter(filter)
-            self.manga = self.manga.filter(filter)
+            self.pinnedManga = self.pinnedManga.filter { filter($0, pinTitlesIgnoreFilters) }
+            self.libraryPinnedManga = self.libraryPinnedManga.filter { filter($0, false) }
+            self.manga = self.manga.filter { filter($0, false) }
         }
 
         if pinType == .unread {
+            let libraryPinnedIDs = Set(self.manga.filter { $0.unread > 0 }.map(\.id))
             let currentManga = self.manga + self.pinnedManga
             var pinnedManga: [MangaInfo] = []
             var manga: [MangaInfo] = []
+            let ignoredFilterPinnedIds = Set(ignoredFilterPinnedManga.map(\.id))
             for item in currentManga {
                 if item.unread > 0 {
                     pinnedManga.append(item)
-                } else {
+                } else if !ignoredFilterPinnedIds.contains(item.id) {
                     manga.append(item)
                 }
             }
             self.pinnedManga = pinnedManga
+            self.libraryPinnedManga = self.pinnedManga.filter { libraryPinnedIDs.contains($0.id) }
             self.manga = manga
         }
 

@@ -84,6 +84,13 @@ class LibraryViewController: OldMangaCollectionViewController {
     private var shouldHideRefreshAfterDrag = false
     private var shouldRestoreLargeTitleAfterRefresh = false
     private let refreshDismissalDistance: CGFloat = 44
+    private var usesSeparatedPinnedSections = false
+    private var showsPinnedSectionTitles: Bool {
+        usesSeparatedPinnedSections && AppSettings.appearance.showPinnedSectionTitles.get()
+    }
+    private var keepsPinnedTitlesInLibrary: Bool {
+        usesSeparatedPinnedSections && AppSettings.appearance.keepPinnedTitlesInLibrary.get()
+    }
 
     private let libraryUndoManager = UndoManager()
     override var undoManager: UndoManager { libraryUndoManager }
@@ -182,6 +189,35 @@ class LibraryViewController: OldMangaCollectionViewController {
 
         collectionView.allowsMultipleSelection = !ProcessInfo.processInfo.isMacCatalystApp
         collectionView.allowsSelectionDuringEditing = true
+        collectionView.register(
+            LibrarySectionHeader.self,
+            forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
+            withReuseIdentifier: LibrarySectionHeader.reuseIdentifier
+        )
+        dataSource.supplementaryViewProvider = { [weak self] collectionView, kind, indexPath in
+            guard
+                kind == UICollectionView.elementKindSectionHeader,
+                let self,
+                let section = self.dataSource.snapshot().sectionIdentifiers[safe: indexPath.section]
+            else {
+                return nil
+            }
+            let header = collectionView.dequeueReusableSupplementaryView(
+                ofKind: kind,
+                withReuseIdentifier: LibrarySectionHeader.reuseIdentifier,
+                for: indexPath
+            ) as? LibrarySectionHeader
+            switch section {
+                case .pinned:
+                    header?.configure(
+                        title: self.pinnedSectionTitle,
+                        menu: self.makePinTitlesMenu(forSectionHeader: true)
+                    )
+                case .regular:
+                    header?.configure(title: NSLocalizedString("LIBRARY"))
+            }
+            return header
+        }
 
         // empty text view
         emptyStackView.isHidden = true
@@ -282,6 +318,18 @@ class LibraryViewController: OldMangaCollectionViewController {
                 }
             }
         }
+        addObserver(forName: .genreFilterSettingsChanged) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.viewModel.loadLibrary()
+                let availableValues = Set(self.viewModel.availableGenres.map(\.rawValue))
+                self.viewModel.filters.removeAll {
+                    $0.type == .genre && !availableValues.contains($0.value ?? "")
+                }
+                self.updateDataSource()
+                self.updateMoreMenu()
+            }
+        }
         addObserver(forName: .updateLibraryLock) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
@@ -352,6 +400,37 @@ class LibraryViewController: OldMangaCollectionViewController {
                 await self.viewModel.loadLibrary()
                 self.updateDataSource()
                 self.updateMoreMenu()
+            }
+        }
+        addObserver(forName: AppSettings.library.pinTitlesIgnoreFilters.key) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.viewModel.loadLibrary()
+                self.updateDataSource()
+            }
+        }
+        addObserver(forName: AppSettings.library.pinTitlesIgnoredFilters.key) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.viewModel.loadLibrary()
+                self.updateDataSource()
+            }
+        }
+        addObserver(forName: AppSettings.appearance.separatePinnedTitles.key) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateDataSource()
+            }
+        }
+        addObserver(forName: AppSettings.appearance.showPinnedSectionTitles.key) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.collectionView.setCollectionViewLayout(self.makeCollectionViewLayout(), animated: false)
+                self.updateDataSource()
+            }
+        }
+        addObserver(forName: AppSettings.appearance.keepPinnedTitlesInLibrary.key) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateDataSource()
             }
         }
 
@@ -439,11 +518,34 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     // collection view layout with header
     override func makeCollectionViewLayout() -> UICollectionViewLayout {
-        let layout = super.makeCollectionViewLayout()
-        guard let layout = layout as? UICollectionViewCompositionalLayout else { return layout }
-
+        let layout = UICollectionViewCompositionalLayout { [weak self] _, environment in
+            guard let self else { return nil }
+            let section = if self.usesListLayout {
+                Self.makeListLayoutSection(environment: environment)
+            } else {
+                Self.makeGridLayoutSection(environment: environment)
+            }
+            if self.showsPinnedSectionTitles {
+                let header = NSCollectionLayoutBoundarySupplementaryItem(
+                    layoutSize: NSCollectionLayoutSize(
+                        widthDimension: .fractionalWidth(1),
+                        heightDimension: .absolute(48)
+                    ),
+                    elementKind: UICollectionView.elementKindSectionHeader,
+                    alignment: .top
+                )
+                section.boundarySupplementaryItems = [header]
+            }
+            return section
+        }
         let config = UICollectionViewCompositionalLayoutConfiguration()
-        config.interSectionSpacing = layout.configuration.interSectionSpacing
+        config.interSectionSpacing = if showsPinnedSectionTitles {
+            20
+        } else if usesSeparatedPinnedSections {
+            24
+        } else {
+            Self.itemSpacing + Self.sectionSpacing
+        }
         layout.configuration = config
 
         return layout
@@ -760,14 +862,42 @@ extension LibraryViewController {
     }
 
     func updateDataSource() {
+        let shouldSeparate = AppSettings.appearance.separatePinnedTitles.get()
+            && viewModel.pinType != .none
+            && !viewModel.pinnedManga.isEmpty
+        if usesSeparatedPinnedSections != shouldSeparate {
+            usesSeparatedPinnedSections = shouldSeparate
+            collectionView.setCollectionViewLayout(makeCollectionViewLayout(), animated: false)
+        }
+
         var snapshot = NSDiffableDataSourceSnapshot<Section, MangaInfo>()
 
         if !locked {
-            snapshot.appendSections([.regular])
-            snapshot.appendItems(viewModel.pinnedManga + viewModel.manga, toSection: .regular)
+            if usesSeparatedPinnedSections {
+                snapshot.appendSections([.pinned])
+                snapshot.appendItems(viewModel.pinnedManga, toSection: .pinned)
+                let libraryManga = if keepsPinnedTitlesInLibrary {
+                    viewModel.libraryPinnedManga.map { manga in
+                        var manga = manga
+                        manga.displayVariant = "library"
+                        return manga
+                    } + viewModel.manga
+                } else {
+                    viewModel.manga
+                }
+                if !libraryManga.isEmpty {
+                    snapshot.appendSections([.regular])
+                    snapshot.appendItems(libraryManga, toSection: .regular)
+                }
+            } else {
+                snapshot.appendSections([.regular])
+                snapshot.appendItems(viewModel.pinnedManga + viewModel.manga, toSection: .regular)
+            }
         }
 
-        dataSource.apply(snapshot)
+        dataSource.apply(snapshot) { [weak self] in
+            self?.updateVisibleSectionHeaders()
+        }
 
         // handle empty library or category
         emptyStackView.isHidden = !snapshot.itemIdentifiers.isEmpty
@@ -775,10 +905,112 @@ extension LibraryViewController {
         collectionView.refreshControl = collectionView.isScrollEnabled ? refreshControl : nil
     }
 
+    private func updateVisibleSectionHeaders() {
+        let sections = dataSource.snapshot().sectionIdentifiers
+        for indexPath in collectionView.indexPathsForVisibleSupplementaryElements(
+            ofKind: UICollectionView.elementKindSectionHeader
+        ) {
+            guard
+                let section = sections[safe: indexPath.section],
+                let header = collectionView.supplementaryView(
+                    forElementKind: UICollectionView.elementKindSectionHeader,
+                    at: indexPath
+                ) as? LibrarySectionHeader
+            else {
+                continue
+            }
+            switch section {
+                case .pinned:
+                    header.configure(
+                        title: pinnedSectionTitle,
+                        menu: makePinTitlesMenu(forSectionHeader: true),
+                        animated: true
+                    )
+                case .regular:
+                    header.configure(title: NSLocalizedString("LIBRARY"))
+            }
+        }
+    }
+
+    private var pinnedSectionTitle: String {
+        viewModel.pinType == .started
+            ? NSLocalizedString("CONTINUE_READING")
+            : viewModel.pinType.title
+    }
+
     func reloadItems() {
         var snapshot = dataSource.snapshot()
         snapshot.reconfigureItems(snapshot.itemIdentifiers)
         dataSource.apply(snapshot)
+    }
+}
+
+private final class LibrarySectionHeader: UICollectionReusableView {
+    static let reuseIdentifier = "LibrarySectionHeader"
+
+    private let titleButton = UIButton(type: .system)
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        var configuration = UIButton.Configuration.plain()
+        configuration.baseForegroundColor = .label
+        configuration.contentInsets = .zero
+        configuration.imagePadding = 6
+        configuration.imagePlacement = .trailing
+        configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var attributes = attributes
+            attributes.font = UIFontMetrics(forTextStyle: .title3).scaledFont(
+                for: .systemFont(ofSize: 20, weight: .semibold)
+            )
+            return attributes
+        }
+        titleButton.configuration = configuration
+        titleButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        titleButton.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(titleButton)
+        NSLayoutConstraint.activate([
+            titleButton.leadingAnchor.constraint(equalTo: leadingAnchor),
+            titleButton.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -18),
+            titleButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)
+        ])
+    }
+
+    func configure(title: String, menu: UIMenu? = nil, animated: Bool = false) {
+        let titleChanged = titleButton.configuration?.title != title
+        var configuration = titleButton.configuration
+        configuration?.title = title
+        let chevronConfiguration = UIImage.SymbolConfiguration(
+            pointSize: 10,
+            weight: .bold
+        )
+        configuration?.image = menu == nil
+            ? nil
+            : UIImage(
+                systemName: "chevron.up.chevron.down",
+                withConfiguration: chevronConfiguration
+            )?.withTintColor(
+                UIColor.secondaryLabel.withAlphaComponent(0.7),
+                renderingMode: .alwaysOriginal
+            )
+        let updatedConfiguration = configuration
+        if animated && titleChanged {
+            UIView.transition(
+                with: titleButton,
+                duration: 0.2,
+                options: [.transitionCrossDissolve, .beginFromCurrentState, .allowAnimatedContent]
+            ) {
+                self.titleButton.configuration = updatedConfiguration
+            }
+        } else {
+            titleButton.configuration = updatedConfiguration
+        }
+        titleButton.menu = menu
+        titleButton.showsMenuAsPrimaryAction = menu != nil
+        titleButton.isUserInteractionEnabled = menu != nil
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }
 
@@ -963,12 +1195,37 @@ extension LibraryViewController {
 
     func filterValue(for method: LibraryFilter.FilterMethod, title: String) -> String {
         switch method {
+            case .source:
+                sourceFilterKeys.first { sourceTitle(for: $0) == title } ?? title
             case .contentRating:
                 MangaContentRating.allCases.first { $0.title == title }?.stringValue ?? title
             case .genre:
-                LibraryFilter.Genre.allCases.first { $0.title == title }?.rawValue ?? title
+                viewModel.availableGenres.first { $0.title == title }?.rawValue ?? title
             default:
                 title
+        }
+    }
+
+    func sourceTitle(for sourceKey: String) -> String {
+        SourceManager.shared.store.source(for: sourceKey)?.name ?? sourceKey
+    }
+
+    var sourceFilterKeys: [String] {
+        viewModel.sourceKeys.sorted {
+            sourceTitle(for: $0).localizedCaseInsensitiveCompare(sourceTitle(for: $1)) == .orderedAscending
+        }
+    }
+
+    func filterDisplayTitle(for method: LibraryFilter.FilterMethod, value: String) -> String {
+        switch method {
+            case .source:
+                sourceTitle(for: value)
+            case .contentRating:
+                MangaContentRating(stringValue: value)?.title ?? value
+            case .genre:
+                viewModel.availableGenres.first { $0.rawValue == value }?.title ?? value
+            default:
+                value
         }
     }
 
@@ -999,6 +1256,7 @@ extension LibraryViewController {
             .contentRating,
             .collection,
             .category,
+            .source,
             .downloaded
         ]
         let filterMethods = menuOrder + LibraryFilter.FilterMethod.allCases.filter { !menuOrder.contains($0) }
@@ -1024,20 +1282,16 @@ extension LibraryViewController {
                     let hiddenTitle = if filterMethod.usesValueInSubtitle,
                                          let value = filter.value,
                                          !value.isEmpty {
-                        if filterMethod == .contentRating {
-                            MangaContentRating(stringValue: value)?.title ?? value
-                        } else {
-                            value
-                        }
+                        filterDisplayTitle(for: filterMethod, value: value)
                     } else {
                         filterMethod.title
                     }
                     options.append(String(format: NSLocalizedString("NOT_%@"), hiddenTitle))
                 } else {
-                    let includedTitle = if filterMethod == .genre,
+                    let includedTitle = if filterMethod.usesValueInSubtitle,
                                            let value = filter.value,
                                            !value.isEmpty {
-                        value
+                        filterDisplayTitle(for: filterMethod, value: value)
                     } else {
                         filterMethod.title
                     }
@@ -1060,6 +1314,8 @@ extension LibraryViewController {
                 viewModel.collections
             case .category:
                 viewModel.categories
+            case .source:
+                sourceFilterKeys
             case .genre:
                 viewModel.availableGenres.map(\.rawValue)
             default:
@@ -1096,13 +1352,7 @@ extension LibraryViewController {
 
             let title: String
             if let value = filter.value, !value.isEmpty {
-                if method == .contentRating {
-                    title = MangaContentRating(stringValue: value)?.title ?? value
-                } else if method == .genre {
-                    title = LibraryFilter.Genre(rawValue: value)?.title ?? value
-                } else {
-                    title = value
-                }
+                title = filterDisplayTitle(for: method, value: value)
             } else {
                 title = method.title
             }
@@ -1134,6 +1384,7 @@ extension LibraryViewController {
                 let submenuMethod: LibraryFilter.FilterMethod? = switch submenu.title {
                     case LibraryFilter.FilterMethod.contentRating.title: .contentRating
                     case LibraryFilter.FilterMethod.category.title: .category
+                    case LibraryFilter.FilterMethod.source.title: .source
                     case LibraryFilter.FilterMethod.collection.title: .collection
                     case LibraryFilter.FilterMethod.genre.title: .genre
                     default: nil
@@ -1182,6 +1433,17 @@ extension LibraryViewController {
                         self?.toggleFilter(method: .category, value: category)
                     }
                 })
+            } else if menu.title == LibraryFilter.FilterMethod.source.title {
+                menu.subtitle = self.filterSubmenuSubtitle(for: .source)
+                return menu.replacingChildren(self.sourceFilterKeys.map { sourceKey in
+                    UIAction(
+                        title: self.sourceTitle(for: sourceKey),
+                        attributes: .keepsMenuPresented,
+                        state: self.filterState(for: .source, value: sourceKey)
+                    ) { [weak self] _ in
+                        self?.toggleFilter(method: .source, value: sourceKey)
+                    }
+                })
             } else if menu.title == LibraryFilter.FilterMethod.collection.title {
                 menu.subtitle = self.filterSubmenuSubtitle(for: .collection)
                 return menu.replacingChildren(self.viewModel.collections.map { collection in
@@ -1228,6 +1490,47 @@ extension LibraryViewController {
         // Keep the single Library menu control on the filter icon.
         moreBarButton.isSelected = false
         moreBarButton.image = UIImage(systemName: "line.3.horizontal.decrease")
+    }
+
+    func makePinTitlesMenu(forSectionHeader: Bool = false) -> UIMenu {
+        func image(for pinType: LibraryViewModel.PinType) -> UIImage? {
+            guard forSectionHeader else { return nil }
+            let systemName = switch pinType {
+                case .none: "pin.slash"
+                case .favorites: "star"
+                case .started: "clock"
+                case .unread: "eye.slash"
+                case .completed: "checkmark.circle"
+                case .updatedChapters: "clock.arrow.circlepath"
+            }
+            return UIImage(systemName: systemName)
+        }
+
+        return UIMenu(
+            title: forSectionHeader ? "" : NSLocalizedString("PIN_TITLES"),
+            subtitle: forSectionHeader || viewModel.pinType == .none ? nil : viewModel.pinType.title,
+            image: forSectionHeader ? nil : UIImage(systemName: "pin"),
+            children: LibraryViewModel.PinType.allCases
+                .filter { $0 != .none }
+                .map { pinType in
+                    UIAction(
+                        title: pinType.title,
+                        image: image(for: pinType),
+                        state: viewModel.pinType == pinType ? .on : .off
+                    ) { [weak self] _ in
+                        guard let self else { return }
+                        let selectedPinType: LibraryViewModel.PinType = self.viewModel.pinType == pinType ? .none : pinType
+                        self.viewModel.pinType = selectedPinType
+                        self.updateVisibleSectionHeaders()
+                        AppSettings.library.pinTitles.set(selectedPinType.rawValue)
+                        Task { @MainActor in
+                            await self.viewModel.loadLibrary()
+                            self.updateDataSource()
+                            self.updateMoreMenu()
+                        }
+                    }
+                }
+        )
     }
 
     func updateMoreMenu() {
@@ -1358,6 +1661,24 @@ extension LibraryViewController {
                     }
                 )
             ]
+            if self.sourceFilterKeys.count > 1 {
+                filterChildren.append(
+                    UIMenu(
+                        title: LibraryFilter.FilterMethod.source.title,
+                        subtitle: self.filterSubmenuSubtitle(for: .source),
+                        image: LibraryFilter.FilterMethod.source.image,
+                        children: self.sourceFilterKeys.map { sourceKey in
+                            UIAction(
+                                title: self.sourceTitle(for: sourceKey),
+                                attributes: attributes,
+                                state: self.filterState(for: .source, value: sourceKey)
+                            ) { [weak self] _ in
+                                self?.toggleFilter(method: .source, value: sourceKey)
+                            }
+                        }
+                    )
+                )
+            }
             if !self.viewModel.availableGenres.isEmpty {
                 filterChildren.insert(
                     UIMenu(
@@ -1389,29 +1710,7 @@ extension LibraryViewController {
                 filterMenu = filterMenu.replacingChildren(filterMenu.children + [self.removeFilterAction()])
             }
 
-            let pinTitlesMenu = UIMenu(
-                title: NSLocalizedString("PIN_TITLES"),
-                subtitle: self.viewModel.pinType == .none ? nil : self.viewModel.pinType.title,
-                image: UIImage(systemName: "pin"),
-                children: LibraryViewModel.PinType.allCases
-                    .filter { $0 != .none }
-                    .map { pinType in
-                        UIAction(
-                            title: pinType.title,
-                            state: self.viewModel.pinType == pinType ? .on : .off
-                        ) { [weak self] _ in
-                            guard let self else { return }
-                            let selectedPinType: LibraryViewModel.PinType = self.viewModel.pinType == pinType ? .none : pinType
-                            AppSettings.library.pinTitles.set(selectedPinType.rawValue)
-                            self.viewModel.pinType = selectedPinType
-                            Task { @MainActor in
-                                await self.viewModel.loadLibrary()
-                                self.updateDataSource()
-                                self.updateMoreMenu()
-                            }
-                        }
-                    }
-            )
+            let pinTitlesMenu = self.makePinTitlesMenu()
 
             completion([filterMenu, pinTitlesMenu])
         }
@@ -1577,21 +1876,19 @@ extension LibraryViewController {
         super.collectionView(collectionView, didHighlightItemAt: indexPath)
     }
 
-    private func mangaInfo(at path: IndexPath) -> MangaInfo {
-        let manga = viewModel.pinnedManga + viewModel.manga
-
-        return manga[path.row]
-    }
-
     func collectionView(
         _ collectionView: UICollectionView,
         contextMenuConfigurationForItemsAt indexPaths: [IndexPath],
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
-        guard let indexPath = indexPaths.first else { return nil }
+        guard
+            let indexPath = indexPaths.first,
+            let manga = dataSource.itemIdentifier(for: indexPath)
+        else {
+            return nil
+        }
 
-        let manga = mangaInfo(at: indexPath)
-        let mangaInfo = indexPaths.map(mangaInfo(at:))
+        let mangaInfo = indexPaths.compactMap { dataSource.itemIdentifier(for: $0) }
 
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ -> UIMenu? in
             var actions: [UIMenuElement] = []

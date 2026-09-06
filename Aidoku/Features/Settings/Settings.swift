@@ -211,6 +211,47 @@ extension Settings {
                     key: AppSettings.appearance.layout.key,
                     title: NSLocalizedString("LAYOUT"),
                     value: .custom
+                ),
+                .init(
+                    key: AppSettings.appearance.separatePinnedTitles.key,
+                    title: Bundle.main.localizedString(
+                        forKey: "SEPARATE_PINNED_TITLES",
+                        value: "Separate Pinned Titles",
+                        table: nil
+                    ),
+                    value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                        forKey: "SEPARATE_PINNED_TITLES_TEXT",
+                        value: "Show pinned and other library titles in labeled sections.",
+                        table: nil
+                    )))
+                ),
+                .init(
+                    key: AppSettings.appearance.showPinnedSectionTitles.key,
+                    title: Bundle.main.localizedString(
+                        forKey: "SHOW_PINNED_SECTION_TITLES",
+                        value: "Show Section Titles",
+                        table: nil
+                    ),
+                    requires: AppSettings.appearance.separatePinnedTitles.key,
+                    value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                        forKey: "SHOW_PINNED_SECTION_TITLES_TEXT",
+                        value: "Label the pinned and library sections.",
+                        table: nil
+                    )))
+                ),
+                .init(
+                    key: AppSettings.appearance.keepPinnedTitlesInLibrary.key,
+                    title: Bundle.main.localizedString(
+                        forKey: "KEEP_PINNED_TITLES_IN_LIBRARY",
+                        value: "Keep Pinned Titles in Library",
+                        table: nil
+                    ),
+                    requires: AppSettings.appearance.separatePinnedTitles.key,
+                    value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                        forKey: "KEEP_PINNED_TITLES_IN_LIBRARY_TEXT",
+                        value: "Also show pinned titles in the Library section.",
+                        table: nil
+                    )))
                 )
             ]))
         )
@@ -250,6 +291,22 @@ extension Settings {
                     values: LibraryViewModel.PinType.allCases.map(\.rawValue),
                     titles: LibraryViewModel.PinType.allCases.map(\.title)
                 ))
+            ),
+            .init(
+                key: AppSettings.library.pinTitlesIgnoreFilters.key,
+                title: "Ignore Filters",
+                requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
+                value: .toggle(.init(subtitle: "Always show pinned titles."))
+            ),
+            .init(
+                key: AppSettings.library.pinTitlesIgnoredFilters.key,
+                title: "Ignored Filters",
+                requires: AppSettings.library.pinTitlesIgnoreFilters.key,
+                requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
+                value: .multiselect(.init(
+                    values: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.pinTitlesIgnoreFilterIdentifier),
+                    titles: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.title)
+                ))
             )
         ]))),
         .init(value: .group(.init(items: [
@@ -276,6 +333,11 @@ extension Settings {
                 .init(
                     key: "Library.filterGroups",
                     title: NSLocalizedString("FILTER_GROUPS"),
+                    value: .page(.init(items: []))
+                ),
+                .init(
+                    key: "Library.genreFilter",
+                    title: GenreFilterText.localized("GENRE_FILTER", fallback: "Genre Filters"),
                     value: .page(.init(items: []))
                 ),
                 .init(

@@ -20,6 +20,8 @@ struct LibrarySettings: Sendable {
             unreadChapterBadges,
             downloadedChapterBadges,
             pinTitles,
+            pinTitlesIgnoreFilters,
+            pinTitlesIgnoredFilters,
             lockLibrary,
             currentCategory,
             defaultCategory,
@@ -32,7 +34,8 @@ struct LibrarySettings: Sendable {
             updateOnlyOnWifi,
             refreshMetadata,
             notifyNewChapters,
-            filtersData
+            filtersData,
+            genreFilterConfigurationData
         ]
     }
 
@@ -47,6 +50,11 @@ struct LibrarySettings: Sendable {
     let unreadChapterBadges = SettingsKey<Bool>("Library.unreadChapterBadges", default: true)
     let downloadedChapterBadges = SettingsKey<Bool>("Library.downloadedChapterBadges", default: true)
     let pinTitles = SettingsKey<String>("Library.pinTitles", default: LibraryViewModel.PinType.none.rawValue)
+    let pinTitlesIgnoreFilters = SettingsKey<Bool>("Library.pinTitlesIgnoreFilters", default: false)
+    let pinTitlesIgnoredFilters = SettingsKey<[String]>(
+        "Library.pinTitlesIgnoredFilters",
+        default: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.pinTitlesIgnoreFilterIdentifier)
+    )
     let lockLibrary = SettingsKey<Bool>("Library.lockLibrary", default: false)
 
     let currentCategory = SettingsKey<String?>("Library.currentCategory")
@@ -63,4 +71,5 @@ struct LibrarySettings: Sendable {
     let notifyNewChapters = SettingsKey<Bool>("Library.notifyNewChapters", default: false)
 
     let filtersData = SettingsKey<Data?>("Library.filters")
+    let genreFilterConfigurationData = SettingsKey<Data?>("Library.genreFilterConfiguration")
 }

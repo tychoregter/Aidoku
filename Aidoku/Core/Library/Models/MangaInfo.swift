@@ -20,6 +20,9 @@ struct MangaInfo: Hashable, Sendable {
     var downloads: Int = 0
     var lastRead: Date?
 
+    // Used only when a title is intentionally shown in more than one library section.
+    var displayVariant: String? = nil
+
     func toManga() -> Manga {
         Manga(
             sourceId: id.sourceKey,

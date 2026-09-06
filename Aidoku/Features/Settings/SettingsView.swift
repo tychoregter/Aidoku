@@ -329,6 +329,8 @@ extension SettingsView {
             CategoriesView(categories: $categoriesOnly)
         } else if key == "Library.filterGroups" {
             FilterGroupsView()
+        } else if key == "Library.genreFilter" {
+            GenreFilterSettingsView()
         } else if key == "Reader.tapZones" {
             TapZonesSelectView()
         } else if key == "Reader.upscalingModels" {
