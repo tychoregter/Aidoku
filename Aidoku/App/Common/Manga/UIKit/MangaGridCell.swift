@@ -42,6 +42,9 @@ class MangaGridCell: UICollectionViewCell {
 
     let imageView = GIFImageView()
     private let titleLabel = UILabel()
+    private let placeholderIconView = UIImageView()
+    private let placeholderLabel = UILabel()
+    private let placeholderStackView = UIStackView()
     private let overlayView = UIView()
     private let gradient = CAGradientLayer()
 
@@ -53,6 +56,7 @@ class MangaGridCell: UICollectionViewCell {
     private var url: String?
     private var imageTask: ImageTask?
     var isEditing = false
+    private var isPlaceholder = false
 
     // shadow shown when in selection mode
     private lazy var shadowOverlayView: UIView = {
@@ -67,6 +71,8 @@ class MangaGridCell: UICollectionViewCell {
     private lazy var selectionView = SelectionCheckView(style: .bordered)
 
     private var badgeConstraints: [NSLayoutConstraint] = []
+    private var placeholderLeadingConstraint: NSLayoutConstraint?
+    private var placeholderTrailingConstraint: NSLayoutConstraint?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -88,6 +94,25 @@ class MangaGridCell: UICollectionViewCell {
         imageView.image = UIImage(named: "MangaPlaceholder")
         imageView.contentMode = .scaleAspectFill
         contentView.addSubview(imageView)
+
+        placeholderIconView.tintColor = .tertiaryLabel
+        placeholderIconView.contentMode = .scaleAspectFit
+
+        placeholderLabel.textAlignment = .center
+        placeholderLabel.textColor = .tertiaryLabel
+        placeholderLabel.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(
+            for: .systemFont(ofSize: 14, weight: .medium)
+        )
+        placeholderLabel.adjustsFontForContentSizeCategory = true
+        placeholderLabel.numberOfLines = 0
+
+        placeholderStackView.axis = .vertical
+        placeholderStackView.alignment = .center
+        placeholderStackView.spacing = 8
+        placeholderStackView.addArrangedSubview(placeholderIconView)
+        placeholderStackView.addArrangedSubview(placeholderLabel)
+        placeholderStackView.isHidden = true
+        contentView.addSubview(placeholderStackView)
 
         gradient.frame = bounds
         gradient.locations = [0.6, 1]
@@ -146,6 +171,7 @@ class MangaGridCell: UICollectionViewCell {
         imageView.translatesAutoresizingMaskIntoConstraints = false
         overlayView.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        placeholderStackView.translatesAutoresizingMaskIntoConstraints = false
         badgeView.translatesAutoresizingMaskIntoConstraints = false
         bookmarkView.translatesAutoresizingMaskIntoConstraints = false
         highlightView.translatesAutoresizingMaskIntoConstraints = false
@@ -156,6 +182,10 @@ class MangaGridCell: UICollectionViewCell {
             imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+            placeholderStackView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            placeholderIconView.widthAnchor.constraint(equalToConstant: 22),
+            placeholderIconView.heightAnchor.constraint(equalToConstant: 22),
 
             overlayView.topAnchor.constraint(equalTo: contentView.topAnchor),
             overlayView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -186,6 +216,16 @@ class MangaGridCell: UICollectionViewCell {
             selectionView.widthAnchor.constraint(equalToConstant: 24),
             selectionView.heightAnchor.constraint(equalToConstant: 24)
         ])
+        placeholderLeadingConstraint = placeholderStackView.leadingAnchor.constraint(
+            equalTo: contentView.leadingAnchor,
+            constant: 12
+        )
+        placeholderTrailingConstraint = placeholderStackView.trailingAnchor.constraint(
+            equalTo: contentView.trailingAnchor,
+            constant: -12
+        )
+        placeholderLeadingConstraint?.isActive = true
+        placeholderTrailingConstraint?.isActive = true
     }
 
     override func layoutSubviews() {
@@ -199,11 +239,46 @@ class MangaGridCell: UICollectionViewCell {
         imageTask?.cancel()
         imageTask = nil
         highlightView.alpha = 0
+        setPlaceholder(nil)
+    }
+
+    func setPlaceholder(
+        _ text: String?,
+        symbolName: String? = nil,
+        horizontalPadding: CGFloat = 12
+    ) {
+        isPlaceholder = text != nil
+        placeholderLabel.text = text
+        placeholderIconView.image = symbolName.flatMap {
+            UIImage(
+                systemName: $0,
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
+            )
+        }
+        placeholderStackView.isHidden = !isPlaceholder
+        placeholderLeadingConstraint?.constant = horizontalPadding
+        placeholderTrailingConstraint?.constant = -horizontalPadding
+        imageView.isHidden = isPlaceholder
+        badgeView.isHidden = isPlaceholder
+        bookmarkView.isHidden = true
+        selectionView.isHidden = isPlaceholder || !isEditing
+        shadowOverlayView.isHidden = isPlaceholder
+        contentView.backgroundColor = isPlaceholder
+            ? UIColor { traits in
+                traits.userInterfaceStyle == .dark
+                    ? UIColor(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 30.0 / 255.0, alpha: 1)
+                    : UIColor(red: 241.0 / 255.0, green: 241.0 / 255.0, blue: 246.0 / 255.0, alpha: 1)
+            }
+            : .clear
+        if isPlaceholder {
+            contentView.bringSubviewToFront(placeholderStackView)
+        }
     }
 }
 
 extension MangaGridCell {
     func highlight() {
+        guard !isPlaceholder else { return }
         highlightView.alpha = 1
     }
 
@@ -214,6 +289,7 @@ extension MangaGridCell {
     }
 
     func setEditing(_ editing: Bool, animated: Bool = true) {
+        guard !isPlaceholder else { return }
         guard isEditing != editing else { return }
         isEditing = editing
         if editing {

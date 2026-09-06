@@ -105,6 +105,10 @@ class LibraryViewModel {
             }
         }
 
+        func directionTitle(ascending: Bool) -> String {
+            ascending ? ascendingTitle : descendingTitle
+        }
+
         var sortStringValue: String {
             switch self {
                 case .alphabetical: "manga.title"
@@ -312,7 +316,7 @@ extension LibraryViewModel {
 
             var ids = Set<MangaIdentifier>()
 
-            main: for libraryObject in libraryObjects {
+            main: for (librarySortIndex, libraryObject) in libraryObjects.enumerated() {
                 guard
                     let mangaObject = libraryObject.manga,
                     // ensure the manga hasn't already been accounted for
@@ -331,6 +335,7 @@ extension LibraryViewModel {
                     url: mangaObject.url.flatMap { URL(string: $0) }
                 )
                 info.lastRead = libraryObject.lastRead
+                info.librarySortIndex = librarySortIndex
 
                 sourceKeys.insert(mangaObject.sourceId)
 
@@ -804,6 +809,43 @@ extension LibraryViewModel {
 
             default:
                 await loadLibrary()
+        }
+
+        updateLibrarySortIndices()
+    }
+
+    private func updateLibrarySortIndices() {
+        let sortedLibrary: [MangaInfo]
+        switch sortMethod {
+            case .alphabetical:
+                sortedLibrary = (libraryPinnedManga + manga).sorted {
+                    if sortAscending {
+                        ($0.title ?? "") > ($1.title ?? "")
+                    } else {
+                        ($0.title ?? "") < ($1.title ?? "")
+                    }
+                }
+            case .unreadChapters:
+                sortedLibrary = (libraryPinnedManga + manga).sorted {
+                    if sortAscending {
+                        if $0.unread == 0 { return false }
+                        if $1.unread == 0 { return true }
+                        return $0.unread < $1.unread
+                    }
+                    return $0.unread > $1.unread
+                }
+            default:
+                return
+        }
+
+        let indices = Dictionary(
+            uniqueKeysWithValues: sortedLibrary.enumerated().map { ($0.element.id, $0.offset) }
+        )
+        for index in libraryPinnedManga.indices {
+            libraryPinnedManga[index].librarySortIndex = indices[libraryPinnedManga[index].id] ?? index
+        }
+        for index in manga.indices {
+            manga[index].librarySortIndex = indices[manga[index].id] ?? index
         }
     }
 

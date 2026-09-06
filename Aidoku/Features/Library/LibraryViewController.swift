@@ -85,11 +85,17 @@ class LibraryViewController: OldMangaCollectionViewController {
     private var shouldRestoreLargeTitleAfterRefresh = false
     private let refreshDismissalDistance: CGFloat = 44
     private var usesSeparatedPinnedSections = false
+    private var isSeparatedPinnedLayoutEnabled: Bool {
+        AppSettings.appearance.separatePinnedTitles.get() && viewModel.pinType != .none
+    }
     private var showsPinnedSectionTitles: Bool {
-        usesSeparatedPinnedSections && AppSettings.appearance.showPinnedSectionTitles.get()
+        isSeparatedPinnedLayoutEnabled && AppSettings.appearance.showPinnedSectionTitles.get()
     }
     private var keepsPinnedTitlesInLibrary: Bool {
         usesSeparatedPinnedSections && AppSettings.appearance.keepPinnedTitlesInLibrary.get()
+    }
+    private var shouldShowPinnedPlaceholder: Bool {
+        showsPinnedSectionTitles && viewModel.pinnedManga.isEmpty
     }
 
     private let libraryUndoManager = UndoManager()
@@ -433,6 +439,12 @@ class LibraryViewController: OldMangaCollectionViewController {
                 self?.updateDataSource()
             }
         }
+        addObserver(forName: AppSettings.appearance.horizontalPinnedTitles.key) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.collectionView.setCollectionViewLayout(self.makeCollectionViewLayout(), animated: false)
+            }
+        }
 
         addObserver(forName: .favoriteChanged) { [weak self] _ in
             guard let self, self.viewModel.pinType == .favorites else { return }
@@ -518,9 +530,16 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     // collection view layout with header
     override func makeCollectionViewLayout() -> UICollectionViewLayout {
-        let layout = UICollectionViewCompositionalLayout { [weak self] _, environment in
+        let layout = UICollectionViewCompositionalLayout { [weak self] sectionIndex, environment in
             guard let self else { return nil }
-            let section = if self.usesListLayout {
+            let isPinnedPlaceholderSection = sectionIndex == 0 && self.shouldShowPinnedPlaceholder
+            let usesHorizontalPinnedRow = sectionIndex == 0
+                && self.usesSeparatedPinnedSections
+                && !self.usesListLayout
+                && AppSettings.appearance.horizontalPinnedTitles.get()
+            let section = if usesHorizontalPinnedRow {
+                Self.makeHorizontalGridLayoutSection(environment: environment)
+            } else if self.usesListLayout && !isPinnedPlaceholderSection {
                 Self.makeListLayoutSection(environment: environment)
             } else {
                 Self.makeGridLayoutSection(environment: environment)
@@ -553,6 +572,17 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     // cells with badges
     override func configure(cell: MangaGridCell, info: MangaInfo, indexPath: IndexPath) {
+        if info.isEmptyPinnedPlaceholder {
+            cell.identifier = nil
+            cell.setPlaceholder(
+                info.title,
+                symbolName: pinTypeIconName(for: viewModel.pinType),
+                horizontalPadding: AppSettings.appearance.layout.get() == .standard ? 20 : 12
+            )
+            cell.setEditing(false, animated: false)
+            return
+        }
+        cell.setPlaceholder(nil)
         super.configure(cell: cell, info: info, indexPath: indexPath)
 
         cell.badgeNumber = viewModel.badgeType.contains(.unread) ? info.unread : 0
@@ -592,7 +622,11 @@ class LibraryViewController: OldMangaCollectionViewController {
 extension LibraryViewController {
     func updateNavbarItems() {
         if isEditing {
-            let allItemsSelected = collectionView.indexPathsForSelectedItems?.count ?? 0 == dataSource.snapshot().itemIdentifiers.count
+            let selectableItems = dataSource.snapshot().itemIdentifiers.filter { !$0.isEmptyPinnedPlaceholder }
+            let selectedItems = (collectionView.indexPathsForSelectedItems ?? []).compactMap {
+                dataSource.itemIdentifier(for: $0)
+            }.filter { !$0.isEmptyPinnedPlaceholder }
+            let allItemsSelected = !selectableItems.isEmpty && selectedItems.count == selectableItems.count
             navigationItem.leftBarButtonItem = if allItemsSelected {
                 makeBarButton(
                     action: #selector(deselectAllItems),
@@ -720,7 +754,7 @@ extension LibraryViewController {
     }
 
     @objc func selectAllItems() {
-        for item in dataSource.snapshot().itemIdentifiers {
+        for item in dataSource.snapshot().itemIdentifiers where !item.isEmptyPinnedPlaceholder {
             if let indexPath = dataSource.indexPath(for: item) {
                 collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
             }
@@ -862,9 +896,8 @@ extension LibraryViewController {
     }
 
     func updateDataSource() {
-        let shouldSeparate = AppSettings.appearance.separatePinnedTitles.get()
-            && viewModel.pinType != .none
-            && !viewModel.pinnedManga.isEmpty
+        let shouldSeparate = isSeparatedPinnedLayoutEnabled
+            && (!viewModel.pinnedManga.isEmpty || AppSettings.appearance.showPinnedSectionTitles.get())
         if usesSeparatedPinnedSections != shouldSeparate {
             usesSeparatedPinnedSections = shouldSeparate
             collectionView.setCollectionViewLayout(makeCollectionViewLayout(), animated: false)
@@ -875,13 +908,20 @@ extension LibraryViewController {
         if !locked {
             if usesSeparatedPinnedSections {
                 snapshot.appendSections([.pinned])
-                snapshot.appendItems(viewModel.pinnedManga, toSection: .pinned)
+                if shouldShowPinnedPlaceholder {
+                    snapshot.appendItems([
+                        .emptyPinnedPlaceholder(title: emptyPinnedPlaceholderTitle)
+                    ], toSection: .pinned)
+                } else {
+                    snapshot.appendItems(viewModel.pinnedManga, toSection: .pinned)
+                }
                 let libraryManga = if keepsPinnedTitlesInLibrary {
-                    viewModel.libraryPinnedManga.map { manga in
+                    (viewModel.libraryPinnedManga.map { manga in
                         var manga = manga
                         manga.displayVariant = "library"
                         return manga
-                    } + viewModel.manga
+                    } + viewModel.manga)
+                        .sorted { $0.librarySortIndex < $1.librarySortIndex }
                 } else {
                     viewModel.manga
                 }
@@ -936,6 +976,34 @@ extension LibraryViewController {
         viewModel.pinType == .started
             ? NSLocalizedString("CONTINUE_READING")
             : viewModel.pinType.title
+    }
+
+    private var emptyPinnedPlaceholderTitle: String {
+        switch viewModel.pinType {
+            case .none:
+                ""
+            case .favorites:
+                "No Favorites"
+            case .started:
+                "Nothing to Continue"
+            case .unread:
+                "No Unread Titles"
+            case .completed:
+                "No Ended Titles"
+            case .updatedChapters:
+                "No Updated Titles"
+        }
+    }
+
+    private func pinTypeIconName(for pinType: LibraryViewModel.PinType) -> String {
+        switch pinType {
+            case .none: "pin.slash"
+            case .favorites: "star"
+            case .started: "clock"
+            case .unread: "eye.slash"
+            case .completed: "checkmark.circle"
+            case .updatedChapters: "clock.arrow.circlepath"
+        }
     }
 
     func reloadItems() {
@@ -1169,7 +1237,44 @@ extension LibraryViewController {
         Task {
             await viewModel.setSort(method: method, ascending: ascending)
             updateDataSource()
-            updateMoreMenu()
+            if #available(iOS 26.0, *) {
+                updateSortMenuState()
+            } else {
+                updateMoreMenu()
+            }
+        }
+    }
+
+    @available(iOS 26.0, *)
+    func updateSortMenuState() {
+        func updateElement(_ element: UIMenuElement) -> UIMenuElement {
+            guard let menu = element as? UIMenu else { return element }
+            if menu.title == NSLocalizedString("SORT_BY") {
+                menu.subtitle = viewModel.sortMethod.title
+                return menu.replacingChildren(menu.children.map { element in
+                    guard let inlineMenu = element as? UIMenu else { return element }
+                    return inlineMenu.replacingChildren(inlineMenu.children.map { element in
+                        guard let action = element as? UIAction else { return element }
+                        let method = LibraryViewModel.SortMethod.allCases.first { $0.title == action.title }
+                        let isSelected = method == viewModel.sortMethod
+                        action.state = isSelected ? .on : .off
+                        action.subtitle = isSelected
+                            ? viewModel.sortMethod.directionTitle(ascending: viewModel.sortAscending)
+                            : nil
+                        return action
+                    })
+                })
+            }
+            return menu.replacingChildren(menu.children.map(updateElement))
+        }
+
+        if let menu = moreBarButton.menu {
+            _ = updateElement(menu)
+        }
+
+        let contextMenuInteraction = moreBarButton.value(forKey: "_contextMenuInteraction") as? UIContextMenuInteraction
+        contextMenuInteraction?.updateVisibleMenu { menu in
+            updateElement(menu) as? UIMenu ?? menu
         }
     }
 
@@ -1495,15 +1600,7 @@ extension LibraryViewController {
     func makePinTitlesMenu(forSectionHeader: Bool = false) -> UIMenu {
         func image(for pinType: LibraryViewModel.PinType) -> UIImage? {
             guard forSectionHeader else { return nil }
-            let systemName = switch pinType {
-                case .none: "pin.slash"
-                case .favorites: "star"
-                case .started: "clock"
-                case .unread: "eye.slash"
-                case .completed: "checkmark.circle"
-                case .updatedChapters: "clock.arrow.circlepath"
-            }
-            return UIImage(systemName: systemName)
+            return UIImage(systemName: pinTypeIconName(for: pinType))
         }
 
         return UIMenu(
@@ -1573,20 +1670,20 @@ extension LibraryViewController {
             image: UIImage(systemName: "arrow.up.arrow.down"),
             children: [
                 UIMenu(options: .displayInline, children: LibraryViewModel.SortMethod.allCases.map { method in
-                    UIAction(
+                    let isSelected = viewModel.sortMethod == method
+                    return UIAction(
                         title: method.title,
-                        state: viewModel.sortMethod == method ? .on : .off
-                    ) { [weak self] _ in
-                        self?.setSort(method: method, ascending: false)
-                    }
-                }),
-                UIMenu(options: .displayInline, children: [false, true].map { ascending in
-                    UIAction(
-                        title: ascending ? viewModel.sortMethod.ascendingTitle : viewModel.sortMethod.descendingTitle,
-                        state: viewModel.sortAscending == ascending ? .on : .off
+                        subtitle: isSelected
+                            ? method.directionTitle(ascending: viewModel.sortAscending)
+                            : nil,
+                        attributes: .keepsMenuPresented,
+                        state: isSelected ? .on : .off
                     ) { [weak self] _ in
                         guard let self else { return }
-                        self.setSort(method: self.viewModel.sortMethod, ascending: ascending)
+                        let ascending = self.viewModel.sortMethod == method
+                            ? !self.viewModel.sortAscending
+                            : false
+                        self.setSort(method: method, ascending: ascending)
                     }
                 })
             ]
@@ -1764,7 +1861,11 @@ extension LibraryViewController: LibraryCategorySelectionHeaderDelegate {
 extension LibraryViewController {
     // support two finger drag to select
     func collectionView(_ collectionView: UICollectionView, shouldBeginMultipleSelectionInteractionAt indexPath: IndexPath) -> Bool {
-        true
+        dataSource.itemIdentifier(for: indexPath)?.isEmptyPinnedPlaceholder == false
+    }
+
+    func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
+        dataSource.itemIdentifier(for: indexPath)?.isEmptyPinnedPlaceholder == false
     }
 
     func collectionView(_ collectionView: UICollectionView, didBeginMultipleSelectionInteractionAt indexPath: IndexPath) {
@@ -1772,7 +1873,10 @@ extension LibraryViewController {
     }
 
     override func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        guard let info = dataSource.itemIdentifier(for: indexPath) else { return }
+        guard
+            let info = dataSource.itemIdentifier(for: indexPath),
+            !info.isEmptyPinnedPlaceholder
+        else { return }
 
         if isEditing {
             let cell = collectionView.cellForItem(at: indexPath)
@@ -1872,7 +1976,10 @@ extension LibraryViewController {
 
     // don't highlighting when selecting during editing
     override func collectionView(_ collectionView: UICollectionView, didHighlightItemAt indexPath: IndexPath) {
-        guard !isEditing else { return }
+        guard
+            !isEditing,
+            dataSource.itemIdentifier(for: indexPath)?.isEmptyPinnedPlaceholder == false
+        else { return }
         super.collectionView(collectionView, didHighlightItemAt: indexPath)
     }
 
@@ -1883,7 +1990,8 @@ extension LibraryViewController {
     ) -> UIContextMenuConfiguration? {
         guard
             let indexPath = indexPaths.first,
-            let manga = dataSource.itemIdentifier(for: indexPath)
+            let manga = dataSource.itemIdentifier(for: indexPath),
+            !manga.isEmptyPinnedPlaceholder
         else {
             return nil
         }

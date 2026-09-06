@@ -130,25 +130,8 @@ extension OldMangaCollectionViewController {
     }
 
     static func makeGridLayoutSection(environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection {
-        let layout = AppSettings.appearance.layout.get()
         let containerWidth = environment.container.contentSize.width
-
-        let itemsPerRow: Int
-        switch layout {
-            case .standard:
-                let idealWidth: CGFloat = 180
-                itemsPerRow = max(1, Int(floor(containerWidth / idealWidth)))
-            case .compact:
-                let idealWidth: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 150 : 120
-                itemsPerRow = max(1, Int(floor(containerWidth / idealWidth)))
-            case .custom:
-                let isLandscape = containerWidth > environment.container.contentSize.height
-                itemsPerRow = if isLandscape {
-                    AppSettings.appearance.customLandscapeRows.get()
-                } else {
-                    AppSettings.appearance.customPortraitRows.get()
-                }
-        }
+        let itemsPerRow = gridItemsPerRow(environment: environment)
 
         let item = NSCollectionLayoutItem(layoutSize: NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1 / CGFloat(itemsPerRow)),
@@ -170,6 +153,49 @@ extension OldMangaCollectionViewController {
         section.interGroupSpacing = itemSpacing
 
         return section
+    }
+
+    static func makeHorizontalGridLayoutSection(environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection {
+        let itemsPerRow = gridItemsPerRow(environment: environment)
+
+        let item = NSCollectionLayoutItem(layoutSize: NSCollectionLayoutSize(
+            widthDimension: .fractionalWidth(1),
+            heightDimension: .fractionalHeight(1)
+        ))
+        let group = NSCollectionLayoutGroup.horizontal(
+            layoutSize: NSCollectionLayoutSize(
+                widthDimension: .fractionalWidth(1 / CGFloat(itemsPerRow)),
+                heightDimension: .fractionalWidth(3 / (2 * CGFloat(itemsPerRow)))
+            ),
+            subitems: [item]
+        )
+
+        let section = NSCollectionLayoutSection(group: group)
+        section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 18, bottom: 0, trailing: 18)
+        section.interGroupSpacing = itemSpacing
+        section.orthogonalScrollingBehavior = .continuous
+        return section
+    }
+
+    private static func gridItemsPerRow(environment: NSCollectionLayoutEnvironment) -> Int {
+        let layout = AppSettings.appearance.layout.get()
+        let containerWidth = environment.container.contentSize.width
+
+        switch layout {
+            case .standard:
+                let idealWidth: CGFloat = 180
+                return max(1, Int(floor(containerWidth / idealWidth)))
+            case .compact:
+                let idealWidth: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 150 : 120
+                return max(1, Int(floor(containerWidth / idealWidth)))
+            case .custom:
+                let isLandscape = containerWidth > environment.container.contentSize.height
+                return if isLandscape {
+                    AppSettings.appearance.customLandscapeRows.get()
+                } else {
+                    AppSettings.appearance.customPortraitRows.get()
+                }
+        }
     }
 }
 
@@ -273,7 +299,14 @@ extension OldMangaCollectionViewController {
             collectionView: collectionView
         ) { [weak self] collectionView, indexPath, item in
             // swiftlint:disable force_cast
-            if self?.usesListLayout ?? false {
+            if item.isEmptyPinnedPlaceholder {
+                let cell = collectionView.dequeueReusableCell(
+                    withReuseIdentifier: "MangaGridCell",
+                    for: indexPath
+                ) as! MangaGridCell
+                self?.configure(cell: cell, info: item, indexPath: indexPath)
+                return cell
+            } else if self?.usesListLayout ?? false {
                 let cell = collectionView.dequeueReusableCell(
                     withReuseIdentifier: "MangaListCell",
                     for: indexPath

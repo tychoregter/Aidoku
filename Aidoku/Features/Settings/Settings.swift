@@ -252,6 +252,20 @@ extension Settings {
                         value: "Also show pinned titles in the Library section.",
                         table: nil
                     )))
+                ),
+                .init(
+                    key: AppSettings.appearance.horizontalPinnedTitles.key,
+                    title: Bundle.main.localizedString(
+                        forKey: "HORIZONTAL_PINNED_TITLES",
+                        value: "Horizontal Pinned Row",
+                        table: nil
+                    ),
+                    requires: AppSettings.appearance.separatePinnedTitles.key,
+                    value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                        forKey: "HORIZONTAL_PINNED_TITLES_TEXT",
+                        value: "Show pinned titles in a single scrolling row in Grid View.",
+                        table: nil
+                    )))
                 )
             ]))
         )

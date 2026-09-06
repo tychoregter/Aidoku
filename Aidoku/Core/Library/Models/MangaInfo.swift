@@ -8,6 +8,8 @@
 import Foundation
 
 struct MangaInfo: Hashable, Sendable {
+    private static let emptyPinnedPlaceholderSourceKey = "__empty_pinned_placeholder__"
+
     let id: MangaIdentifier
 
     var coverUrl: URL?
@@ -20,8 +22,27 @@ struct MangaInfo: Hashable, Sendable {
     var downloads: Int = 0
     var lastRead: Date?
 
+    // Position in the library's selected sort order. Pinned sections can use
+    // their own ordering while duplicate entries retain normal library order.
+    var librarySortIndex: Int = 0
+
     // Used only when a title is intentionally shown in more than one library section.
     var displayVariant: String? = nil
+
+    var isEmptyPinnedPlaceholder: Bool {
+        id.sourceKey == Self.emptyPinnedPlaceholderSourceKey
+    }
+
+    static func emptyPinnedPlaceholder(title: String) -> MangaInfo {
+        MangaInfo(
+            id: MangaIdentifier(
+                sourceKey: emptyPinnedPlaceholderSourceKey,
+                mangaKey: "empty"
+            ),
+            title: title,
+            displayVariant: "empty-pinned"
+        )
+    }
 
     func toManga() -> Manga {
         Manga(

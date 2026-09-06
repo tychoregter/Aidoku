@@ -17,7 +17,8 @@ struct AppearanceSettings: Sendable {
             customLandscapeRows,
             separatePinnedTitles,
             showPinnedSectionTitles,
-            keepPinnedTitlesInLibrary
+            keepPinnedTitlesInLibrary,
+            horizontalPinnedTitles
         ]
     }
 
@@ -30,4 +31,5 @@ struct AppearanceSettings: Sendable {
     let separatePinnedTitles = SettingsKey<Bool>("Appearance.separatePinnedTitles", default: false)
     let showPinnedSectionTitles = SettingsKey<Bool>("Appearance.showPinnedSectionTitles", default: true)
     let keepPinnedTitlesInLibrary = SettingsKey<Bool>("Appearance.keepPinnedTitlesInLibrary", default: false)
+    let horizontalPinnedTitles = SettingsKey<Bool>("Appearance.horizontalPinnedTitles", default: false)
 }
