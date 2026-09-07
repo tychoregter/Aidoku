@@ -211,7 +211,22 @@ extension Settings {
                     key: AppSettings.appearance.layout.key,
                     title: NSLocalizedString("LAYOUT"),
                     value: .custom
+                )
+            ]))
+        ),
+        .init(
+            title: Bundle.main.localizedString(
+                forKey: "PINNED_TITLES",
+                value: "Pinned Titles",
+                table: nil
+            ),
+            value: .group(.init(
+                footer: Bundle.main.localizedString(
+                    forKey: "PINNED_TITLES_APPEARANCE_TEXT",
+                    value: "Customize how pinned titles are arranged and displayed in the Library.",
+                    table: nil
                 ),
+                items: [
                 .init(
                     key: AppSettings.appearance.separatePinnedTitles.key,
                     title: Bundle.main.localizedString(
@@ -287,6 +302,11 @@ extension Settings {
                 key: AppSettings.library.continueReadingOnReselect.key,
                 title: NSLocalizedString("CONTINUE_READING_ON_RESELECT"),
                 value: .toggle(.init())
+            ),
+            .init(
+                key: AppSettings.library.contextMenuPagePreviews.key,
+                title: "Preview Current Page",
+                value: .toggle(.init(subtitle: "Show the current reading page when opening a title's menu."))
             ),
             .init(
                 key: AppSettings.library.unreadChapterBadges.key,
@@ -516,6 +536,26 @@ extension Settings {
                 key: "Reader.hideBarsOnSwipe",
                 title: NSLocalizedString("HIDE_BARS_ON_SWIPE"),
                 value: .toggle(.init())
+            ),
+            .init(
+                key: AppSettings.reader.thumbnailScrubber.key,
+                title: Bundle.main.localizedString(
+                    forKey: "THUMBNAIL_PAGE_SCRUBBER",
+                    value: "Thumbnail Page Scrubber",
+                    table: nil
+                ),
+                notification: .init(AppSettings.reader.thumbnailScrubber.key),
+                value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                    forKey: "THUMBNAIL_PAGE_SCRUBBER_TEXT",
+                    value: "Show page previews in the reader progress control.",
+                    table: nil
+                )))
+            ),
+            .init(
+                key: AppSettings.reader.compactThumbnailScrubber.key,
+                title: "Fit Short Chapter Previews",
+                notification: .init(AppSettings.reader.compactThumbnailScrubber.key),
+                value: .toggle(.init(subtitle: "Keep page previews at their natural size in short chapters."))
             ),
             .init(
                 key: "Reader.backgroundColor",

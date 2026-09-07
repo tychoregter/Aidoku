@@ -939,6 +939,13 @@ extension LibraryViewController {
             self?.updateVisibleSectionHeaders()
         }
 
+        if AppSettings.library.contextMenuPagePreviews.get() {
+            let mangaIds = Array(Set(snapshot.itemIdentifiers.filter { !$0.isEmptyPinnedPlaceholder }.map(\.id)))
+            Task(priority: .utility) {
+                await LibraryPagePreviewCache.shared.prewarm(mangaIds)
+            }
+        }
+
         // handle empty library or category
         emptyStackView.isHidden = !snapshot.itemIdentifiers.isEmpty
         collectionView.isScrollEnabled = emptyStackView.isHidden && lockedStackView.isHidden
@@ -1998,7 +2005,16 @@ extension LibraryViewController {
 
         let mangaInfo = indexPaths.compactMap { dataSource.itemIdentifier(for: $0) }
 
-        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { _ -> UIMenu? in
+        let previewProvider: UIContextMenuContentPreviewProvider? = if
+            AppSettings.library.contextMenuPagePreviews.get(),
+            mangaInfo.count == 1
+        {
+            { LibraryPageContextPreviewViewController(mangaId: manga.id) }
+        } else {
+            nil
+        }
+
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: previewProvider) { _ -> UIMenu? in
             var actions: [UIMenuElement] = []
             let singleAttributes = mangaInfo.count > 1
                 ? .disabled

@@ -188,6 +188,7 @@ extension MangaManager {
     }
 
     func removeFromLibrary(mangaId: MangaIdentifier) async {
+        await LibraryPagePreviewCache.shared.invalidate(mangaId: mangaId)
         // Get manga object for notification before deletion
         let mangaForNotification = await CoreDataManager.shared.container.performBackgroundTask { context in
             CoreDataManager.shared.getManga(mangaId: mangaId, context: context)?.toNewManga()

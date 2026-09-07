@@ -17,6 +17,7 @@ struct LibrarySettings: Sendable {
             opensReaderView,
             resumeLastOpenedChapter,
             continueReadingOnReselect,
+            contextMenuPagePreviews,
             unreadChapterBadges,
             downloadedChapterBadges,
             pinTitles,
@@ -47,6 +48,7 @@ struct LibrarySettings: Sendable {
     let opensReaderView = SettingsKey<Bool>("Library.opensReaderView", default: false)
     let resumeLastOpenedChapter = SettingsKey<Bool>("Library.resumeLastOpenedChapter", default: false)
     let continueReadingOnReselect = SettingsKey<Bool>("Library.continueReadingOnReselect", default: true)
+    let contextMenuPagePreviews = SettingsKey<Bool>("Library.contextMenuPagePreviews", default: true)
     let unreadChapterBadges = SettingsKey<Bool>("Library.unreadChapterBadges", default: true)
     let downloadedChapterBadges = SettingsKey<Bool>("Library.downloadedChapterBadges", default: true)
     let pinTitles = SettingsKey<String>("Library.pinTitles", default: LibraryViewModel.PinType.none.rawValue)

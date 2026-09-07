@@ -6,6 +6,7 @@
 //
 
 import AidokuRunner
+import Nuke
 import SafariServices
 import SwiftUI
 import UIKit
@@ -72,8 +73,19 @@ class ReaderViewController: BaseObservingViewController {
     private lazy var toolbarView = ReaderToolbarView()
     private var toolbarViewWidthConstraint: NSLayoutConstraint?
     private lazy var readerToolbar = UIView()
+    private var readerToolbarLeadingConstraint: NSLayoutConstraint?
+    private var readerToolbarTrailingConstraint: NSLayoutConstraint?
+    private var readerToolbarMinimumLeadingConstraint: NSLayoutConstraint?
+    private var readerToolbarMaximumTrailingConstraint: NSLayoutConstraint?
+    private var readerToolbarCenterConstraint: NSLayoutConstraint?
+    private var readerToolbarWidthConstraint: NSLayoutConstraint?
+    private var readerToolbarHeightConstraint: NSLayoutConstraint?
+    private var readerToolbarBottomConstraint: NSLayoutConstraint?
+    private weak var readerToolbarHost: UIView?
     @available(iOS 26.0, *)
-    private lazy var readerToolbarEffectView = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
+    private lazy var readerToolbarEffectView = UIVisualEffectView(effect: UIGlassContainerEffect())
+    @available(iOS 26.0, *)
+    private lazy var readerToolbarBackgroundEffectView = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
 
     private var squeezeTimer: Timer?
     private var longSqueezeTimer: Timer?
@@ -218,10 +230,29 @@ class ReaderViewController: BaseObservingViewController {
         // toolbar view
         toolbarView.sliderView.addTarget(self, action: #selector(sliderMoved(_:)), for: .valueChanged)
         toolbarView.sliderView.addTarget(self, action: #selector(sliderStopped(_:)), for: .editingDidEnd)
+        toolbarView.thumbnailScrubberView.addTarget(
+            self,
+            action: #selector(thumbnailScrubberMoved(_:)),
+            for: .valueChanged
+        )
+        toolbarView.thumbnailScrubberView.addTarget(
+            self,
+            action: #selector(thumbnailScrubberStopped(_:)),
+            for: .editingDidEnd
+        )
+        toolbarView.onScrubberStyleChange = { [weak self] usesThumbnailScrubber in
+            self?.updateReaderToolbarMetrics(usesThumbnailScrubber: usesThumbnailScrubber)
+        }
+        toolbarView.onThumbnailScrubberPreferredWidthChange = { [weak self] preferredWidth in
+            guard let self else { return }
+            self.updateReaderToolbarMetrics(usesThumbnailScrubber: self.toolbarView.usesThumbnailScrubber)
+            self.updateReaderToolbarWidth(preferredWidth)
+        }
         toolbarView.translatesAutoresizingMaskIntoConstraints = false
         let toolbarButtonItemView = UIBarButtonItem(customView: toolbarView)
         if #available(iOS 26.0, *) {
             guard let overlayHost = navigationController?.view ?? view else { return }
+            readerToolbarHost = overlayHost
             readerToolbar.translatesAutoresizingMaskIntoConstraints = false
             readerToolbar.layer.cornerRadius = 22
             readerToolbar.layer.cornerCurve = .continuous
@@ -230,26 +261,68 @@ class ReaderViewController: BaseObservingViewController {
 
             readerToolbarEffectView.translatesAutoresizingMaskIntoConstraints = false
             readerToolbarEffectView.isUserInteractionEnabled = false
-            readerToolbarEffectView.layer.cornerRadius = 22
-            readerToolbarEffectView.layer.cornerCurve = .continuous
-            readerToolbarEffectView.clipsToBounds = true
+            readerToolbarEffectView.clipsToBounds = false
             readerToolbar.addSubview(readerToolbarEffectView)
+
+            readerToolbarBackgroundEffectView.translatesAutoresizingMaskIntoConstraints = false
+            readerToolbarBackgroundEffectView.isUserInteractionEnabled = false
+            readerToolbarBackgroundEffectView.layer.cornerRadius = 22
+            readerToolbarBackgroundEffectView.layer.cornerCurve = .continuous
+            readerToolbarBackgroundEffectView.clipsToBounds = true
+            readerToolbarEffectView.contentView.addSubview(readerToolbarBackgroundEffectView)
             readerToolbar.addSubview(toolbarView)
+            toolbarView.moveThumbnailPageCounter(
+                to: readerToolbarEffectView.contentView,
+                centeredOn: readerToolbar.centerXAnchor,
+                above: readerToolbar.topAnchor
+            )
+
+            let leadingConstraint = readerToolbar.leadingAnchor.constraint(
+                equalTo: overlayHost.leadingAnchor,
+                constant: 21
+            )
+            let trailingConstraint = readerToolbar.trailingAnchor.constraint(
+                equalTo: overlayHost.trailingAnchor,
+                constant: -21
+            )
+            let heightConstraint = readerToolbar.heightAnchor.constraint(equalToConstant: 44)
+            let bottomConstraint = readerToolbar.bottomAnchor.constraint(
+                equalTo: overlayHost.safeAreaLayoutGuide.bottomAnchor
+            )
+            readerToolbarLeadingConstraint = leadingConstraint
+            readerToolbarTrailingConstraint = trailingConstraint
+            readerToolbarMinimumLeadingConstraint = readerToolbar.leadingAnchor.constraint(
+                greaterThanOrEqualTo: overlayHost.leadingAnchor,
+                constant: 28
+            )
+            readerToolbarMaximumTrailingConstraint = readerToolbar.trailingAnchor.constraint(
+                lessThanOrEqualTo: overlayHost.trailingAnchor,
+                constant: -28
+            )
+            readerToolbarCenterConstraint = readerToolbar.centerXAnchor.constraint(equalTo: overlayHost.centerXAnchor)
+            readerToolbarWidthConstraint = readerToolbar.widthAnchor.constraint(equalToConstant: 0)
+            readerToolbarHeightConstraint = heightConstraint
+            readerToolbarBottomConstraint = bottomConstraint
 
             NSLayoutConstraint.activate([
-                readerToolbar.leadingAnchor.constraint(equalTo: overlayHost.leadingAnchor, constant: 21),
-                readerToolbar.trailingAnchor.constraint(equalTo: overlayHost.trailingAnchor, constant: -21),
-                readerToolbar.heightAnchor.constraint(equalToConstant: 44),
-                readerToolbar.bottomAnchor.constraint(equalTo: overlayHost.safeAreaLayoutGuide.bottomAnchor),
+                leadingConstraint,
+                trailingConstraint,
+                heightConstraint,
+                bottomConstraint,
                 readerToolbarEffectView.leadingAnchor.constraint(equalTo: readerToolbar.leadingAnchor),
                 readerToolbarEffectView.trailingAnchor.constraint(equalTo: readerToolbar.trailingAnchor),
-                readerToolbarEffectView.topAnchor.constraint(equalTo: readerToolbar.topAnchor),
+                readerToolbarEffectView.topAnchor.constraint(equalTo: readerToolbar.topAnchor, constant: -44),
                 readerToolbarEffectView.bottomAnchor.constraint(equalTo: readerToolbar.bottomAnchor),
+                readerToolbarBackgroundEffectView.leadingAnchor.constraint(equalTo: readerToolbar.leadingAnchor),
+                readerToolbarBackgroundEffectView.trailingAnchor.constraint(equalTo: readerToolbar.trailingAnchor),
+                readerToolbarBackgroundEffectView.topAnchor.constraint(equalTo: readerToolbar.topAnchor),
+                readerToolbarBackgroundEffectView.bottomAnchor.constraint(equalTo: readerToolbar.bottomAnchor),
                 toolbarView.leadingAnchor.constraint(equalTo: readerToolbar.leadingAnchor),
                 toolbarView.trailingAnchor.constraint(equalTo: readerToolbar.trailingAnchor),
                 toolbarView.topAnchor.constraint(equalTo: readerToolbar.topAnchor),
                 toolbarView.bottomAnchor.constraint(equalTo: readerToolbar.bottomAnchor)
             ])
+            updateReaderToolbarMetrics(usesThumbnailScrubber: toolbarView.usesThumbnailScrubber)
         } else {
             toolbarButtonItemView.customView?.heightAnchor.constraint(equalToConstant: 40).isActive = true
             toolbarViewWidthConstraint = toolbarButtonItemView.customView?.widthAnchor.constraint(equalToConstant: view.bounds.width)
@@ -473,6 +546,9 @@ class ReaderViewController: BaseObservingViewController {
         super.viewDidLayoutSubviews()
         if #available(iOS 26.0, *) {
             readerToolbar.superview?.bringSubviewToFront(readerToolbar)
+            updateReaderToolbarWidth(toolbarView.usesThumbnailScrubber
+                ? toolbarView.thumbnailScrubberView.preferredWidth
+                : nil)
         }
     }
 
@@ -690,6 +766,12 @@ extension ReaderViewController {
     @objc func sliderStopped(_ sender: ReaderSliderView) {
         reader?.sliderStopped(value: sender.currentValue)
     }
+    @objc func thumbnailScrubberMoved(_ sender: ReaderThumbnailScrubberView) {
+        reader?.sliderMoved(value: sender.currentValue)
+    }
+    @objc func thumbnailScrubberStopped(_ sender: ReaderThumbnailScrubberView) {
+        reader?.sliderStopped(value: sender.currentValue)
+    }
 }
 
 // MARK: - Reading Mode
@@ -770,9 +852,9 @@ extension ReaderViewController {
         switch type {
             case .paged:
                 if readingMode == .rtl {
-                    toolbarView.sliderView.direction = .backward
+                    toolbarView.setSliderDirection(.backward)
                 } else {
-                    toolbarView.sliderView.direction = .forward
+                    toolbarView.setSliderDirection(.forward)
                 }
                 if !(reader is ReaderPagedViewController) {
                     pageController = ReaderPagedViewController(source: source, manga: manga, temporaryPageStore: temporaryPageStore)
@@ -780,7 +862,7 @@ extension ReaderViewController {
                     pageController = nil
                 }
             case .scroll:
-                toolbarView.sliderView.direction = .forward
+                toolbarView.setSliderDirection(.forward)
                 if !(reader is ReaderWebtoonViewController) {
                     pageController = ReaderWebtoonViewController(source: source, manga: manga, temporaryPageStore: temporaryPageStore)
                 } else {
@@ -788,7 +870,7 @@ extension ReaderViewController {
                 }
             case .text:
                 // Text always reads left-to-right, regardless of manga setting
-                toolbarView.sliderView.direction = .forward
+                toolbarView.setSliderDirection(.forward)
 
                 // Check user preference for text reader style
                 let textReaderStyle = UserDefaults.standard.string(forKey: "Reader.textReaderStyle") ?? "paged"
@@ -1075,11 +1157,13 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         {
             self.pages = pages
             toolbarView.totalPages = pages.count
+            configureThumbnailScrubber(with: pages)
             activityIndicator.stopAnimating()
             return
         }
         self.pages = pages
         toolbarView.totalPages = pages.count
+        configureThumbnailScrubber(with: pages)
         activityIndicator.stopAnimating()
         if pages.isEmpty {
             // no pages, show error
@@ -1116,7 +1200,89 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
     }
 
     func setSliderOffset(_ offset: CGFloat) {
-        toolbarView.sliderView.currentValue = offset
+        toolbarView.moveSlider(to: offset)
+    }
+
+    private func configureThumbnailScrubber(with pages: [Page]) {
+        let supportsThumbnails = !pages.isEmpty && pages.allSatisfy { !$0.isTextPage }
+        toolbarView.configureThumbnails(
+            pageCount: pages.count,
+            supportsThumbnails: supportsThumbnails
+        ) { [weak self] index in
+            guard let self, let page = pages[safe: index] else { return nil }
+            return await self.thumbnailImage(for: page)
+        }
+    }
+
+    private func thumbnailImage(for page: Page) async -> UIImage? {
+        if let image = page.image {
+            return makeScrubberThumbnail(from: image)
+        }
+
+        if let zipURLString = page.zipURL,
+           let zipURL = URL(string: zipURLString),
+           let filePath = page.imageURL,
+           let extractedURL = await temporaryPageStore.storeArchiveEntry(from: zipURL, path: filePath),
+           let data = try? Data(contentsOf: extractedURL) {
+            return scrubberThumbnailOptions.makeThumbnail(with: data)
+        }
+
+        if let imageURL = page.imageURL, let url = URL(string: imageURL) {
+            var request = await ReaderPageView.imageRequest(url: url, context: page.context, source: source)
+            request.thumbnail = scrubberThumbnailOptions
+            request.priority = .low
+            guard let image = try? await ImagePipeline.shared.image(for: request) else { return nil }
+            return image
+        }
+
+        if let base64 = page.base64, let data = Data(base64Encoded: base64) {
+            return scrubberThumbnailOptions.makeThumbnail(with: data)
+        }
+
+        return nil
+    }
+
+    private func makeScrubberThumbnail(from image: UIImage) -> UIImage {
+        image.preparingThumbnail(of: CGSize(width: 192, height: 256)) ?? image
+    }
+
+    private var scrubberThumbnailOptions: ImageRequest.ThumbnailOptions {
+        .init(maxPixelSize: 384)
+    }
+
+    private func updateReaderToolbarMetrics(usesThumbnailScrubber: Bool) {
+        guard #available(iOS 26.0, *) else { return }
+        let usesCompactThumbnailScrubber = usesThumbnailScrubber
+            && AppSettings.reader.compactThumbnailScrubber.get()
+        let height: CGFloat = usesThumbnailScrubber ? 49 : 44
+        readerToolbarLeadingConstraint?.constant = usesThumbnailScrubber ? 28 : 21
+        readerToolbarTrailingConstraint?.constant = usesThumbnailScrubber ? -28 : -21
+        readerToolbarHeightConstraint?.constant = height
+        // The thumbnail style sits 7pt lower, matching the roughly 82px
+        // bottom clearance of the Books reader on a 3x display.
+        readerToolbarBottomConstraint?.constant = usesThumbnailScrubber ? 7 : 0
+        readerToolbar.layer.cornerRadius = height / 2
+        readerToolbarBackgroundEffectView.layer.cornerRadius = height / 2
+        readerToolbarLeadingConstraint?.isActive = !usesCompactThumbnailScrubber
+        readerToolbarTrailingConstraint?.isActive = !usesCompactThumbnailScrubber
+        readerToolbarMinimumLeadingConstraint?.isActive = usesCompactThumbnailScrubber
+        readerToolbarMaximumTrailingConstraint?.isActive = usesCompactThumbnailScrubber
+        readerToolbarCenterConstraint?.isActive = usesCompactThumbnailScrubber
+        readerToolbarWidthConstraint?.isActive = usesCompactThumbnailScrubber
+        updateReaderToolbarWidth(usesCompactThumbnailScrubber
+            ? toolbarView.thumbnailScrubberView.preferredWidth
+            : nil)
+    }
+
+    private func updateReaderToolbarWidth(_ preferredWidth: CGFloat?) {
+        guard #available(iOS 26.0, *), toolbarView.usesThumbnailScrubber,
+              AppSettings.reader.compactThumbnailScrubber.get(),
+              let readerToolbarHost, let preferredWidth else {
+            return
+        }
+        let minimumSideMargin: CGFloat = 28
+        let availableWidth = max(0, readerToolbarHost.bounds.width - minimumSideMargin * 2)
+        readerToolbarWidthConstraint?.constant = min(preferredWidth, availableWidth)
     }
 
     func setCompleted() {

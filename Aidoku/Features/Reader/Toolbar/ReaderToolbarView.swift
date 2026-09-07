@@ -34,9 +34,17 @@ class ReaderToolbarView: UIView {
     }
 
     let sliderView = ReaderSliderView()
+    let thumbnailScrubberView = ReaderThumbnailScrubberView()
+    var onScrubberStyleChange: ((Bool) -> Void)?
+    var onThumbnailScrubberPreferredWidthChange: ((CGFloat?) -> Void)?
+    private(set) var usesThumbnailScrubber = false
     private let incognitoModeLabel = UILabel()
     private let currentPageLabel = UILabel()
+    let thumbnailPageCounterView = UIVisualEffectView()
+    private let thumbnailPageCounterLabel = UILabel()
     private var currentPageLabelWidthConstraint: NSLayoutConstraint?
+    private var thumbnailPageCounterPositionConstraints: [NSLayoutConstraint] = []
+    private var supportsThumbnailScrubber = false
 
     private var cancellables: [AnyCancellable] = []
 
@@ -69,6 +77,34 @@ class ReaderToolbarView: UIView {
 
         sliderView.semanticContentAttribute = .playback // for rtl languages
         addSubview(sliderView)
+        thumbnailScrubberView.semanticContentAttribute = .playback
+        thumbnailScrubberView.isHidden = true
+        thumbnailScrubberView.onPreviewVisibilityChange = { [weak self] isVisible in
+            guard let self else { return }
+            if isVisible {
+                self.bringSubviewToFront(self.thumbnailScrubberView)
+            } else {
+                self.thumbnailPageCounterView.superview?.bringSubviewToFront(self.thumbnailPageCounterView)
+            }
+        }
+        addSubview(thumbnailScrubberView)
+
+        if #available(iOS 26.0, *) {
+            thumbnailPageCounterView.effect = UIGlassEffect(style: .regular)
+        } else {
+            thumbnailPageCounterView.effect = UIBlurEffect(style: .systemMaterial)
+        }
+        thumbnailPageCounterView.layer.cornerRadius = 10
+        thumbnailPageCounterView.layer.cornerCurve = .continuous
+        thumbnailPageCounterView.clipsToBounds = true
+        thumbnailPageCounterView.isUserInteractionEnabled = false
+        thumbnailPageCounterView.isHidden = true
+        addSubview(thumbnailPageCounterView)
+
+        thumbnailPageCounterLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+        thumbnailPageCounterLabel.textColor = .secondaryLabel
+        thumbnailPageCounterLabel.textAlignment = .center
+        thumbnailPageCounterView.contentView.addSubview(thumbnailPageCounterLabel)
         bringSubviewToFront(incognitoModeLabel)
         bringSubviewToFront(currentPageLabel)
     }
@@ -77,11 +113,19 @@ class ReaderToolbarView: UIView {
         incognitoModeLabel.translatesAutoresizingMaskIntoConstraints = false
         currentPageLabel.translatesAutoresizingMaskIntoConstraints = false
         sliderView.translatesAutoresizingMaskIntoConstraints = false
+        thumbnailScrubberView.translatesAutoresizingMaskIntoConstraints = false
+        thumbnailPageCounterView.translatesAutoresizingMaskIntoConstraints = false
+        thumbnailPageCounterLabel.translatesAutoresizingMaskIntoConstraints = false
 
         let currentPageLabelWidthConstraint = currentPageLabel.widthAnchor.constraint(
             equalToConstant: Self.minimumPageLabelWidth
         )
         self.currentPageLabelWidthConstraint = currentPageLabelWidthConstraint
+
+        thumbnailPageCounterPositionConstraints = [
+            thumbnailPageCounterView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            thumbnailPageCounterView.bottomAnchor.constraint(equalTo: topAnchor, constant: -10)
+        ]
 
         NSLayoutConstraint.activate([
             incognitoModeLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
@@ -94,24 +138,63 @@ class ReaderToolbarView: UIView {
             sliderView.heightAnchor.constraint(equalTo: heightAnchor),
             sliderView.centerYAnchor.constraint(equalTo: centerYAnchor),
             sliderView.leadingAnchor.constraint(equalTo: currentPageLabel.trailingAnchor, constant: 8),
-            sliderView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12)
-        ])
+            sliderView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -12),
+
+            thumbnailScrubberView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            thumbnailScrubberView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            thumbnailScrubberView.topAnchor.constraint(equalTo: topAnchor),
+            thumbnailScrubberView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            thumbnailPageCounterView.heightAnchor.constraint(equalToConstant: 34),
+            thumbnailPageCounterView.widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
+            thumbnailPageCounterLabel.leadingAnchor.constraint(equalTo: thumbnailPageCounterView.contentView.leadingAnchor, constant: 12),
+            thumbnailPageCounterLabel.trailingAnchor.constraint(equalTo: thumbnailPageCounterView.contentView.trailingAnchor, constant: -12),
+            thumbnailPageCounterLabel.topAnchor.constraint(equalTo: thumbnailPageCounterView.contentView.topAnchor),
+            thumbnailPageCounterLabel.bottomAnchor.constraint(equalTo: thumbnailPageCounterView.contentView.bottomAnchor)
+        ] + thumbnailPageCounterPositionConstraints)
+    }
+
+    /// Places the counter inside the same glass container as the reader bar.
+    /// Keeping its positional constraints here also makes this easy to reverse.
+    func moveThumbnailPageCounter(
+        to container: UIView,
+        centeredOn centerXAnchor: NSLayoutXAxisAnchor,
+        above topAnchor: NSLayoutYAxisAnchor
+    ) {
+        NSLayoutConstraint.deactivate(thumbnailPageCounterPositionConstraints)
+        thumbnailPageCounterView.removeFromSuperview()
+        container.addSubview(thumbnailPageCounterView)
+        thumbnailPageCounterPositionConstraints = [
+            thumbnailPageCounterView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            thumbnailPageCounterView.bottomAnchor.constraint(equalTo: topAnchor, constant: -10)
+        ]
+        NSLayoutConstraint.activate(thumbnailPageCounterPositionConstraints)
     }
 
     func observe() {
         NotificationCenter.default.publisher(for: .init(AppSettings.general.incognitoMode.key))
             .sink { [weak self] _ in
-                self?.incognitoModeLabel.isHidden = !AppSettings.general.incognitoMode.get()
+                self?.refreshScrubberStyle()
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .init(AppSettings.reader.thumbnailScrubber.key))
+            .sink { [weak self] _ in
+                self?.refreshScrubberStyle()
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .init(AppSettings.reader.compactThumbnailScrubber.key))
+            .sink { [weak self] _ in
+                guard let self, self.usesThumbnailScrubber else { return }
+                self.onThumbnailScrubberPreferredWidthChange?(self.thumbnailScrubberView.preferredWidth)
             }
             .store(in: &cancellables)
     }
 
     // allow slider thumb to be touched outside bounds
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        for subview in subviews where subview is ReaderSliderView {
-            if subview.bounds.contains(convert(point, to: subview)) {
-                return subview
-            }
+        let activeControl: UIControl = thumbnailScrubberView.isHidden ? sliderView : thumbnailScrubberView
+        if activeControl.bounds.contains(convert(point, to: activeControl)) {
+            return activeControl
         }
         return super.hitTest(point, with: event)
     }
@@ -123,6 +206,11 @@ class ReaderToolbarView: UIView {
         let boundedPage = min(max(page, 1), totalPages)
         updatePageLabel(page: boundedPage, totalPages: totalPages)
         currentPageValue = boundedPage
+        let value = CGFloat(boundedPage - 1) / max(CGFloat(totalPages - 1), 1)
+        sliderView.move(toValue: value)
+        thumbnailScrubberView.move(toValue: value)
+        thumbnailScrubberView.accessibilityValue = "\(boundedPage) of \(totalPages)"
+        thumbnailPageCounterLabel.text = "\(boundedPage) of \(totalPages)"
     }
 
     func updatePageLabels() {
@@ -137,6 +225,7 @@ class ReaderToolbarView: UIView {
 
     private func updatePageLabel(page: Int, totalPages: Int) {
         currentPageLabel.text = "\(page) / \(totalPages)"
+        thumbnailPageCounterLabel.text = "\(page) of \(totalPages)"
 
         // Reserve enough room for the widest value this title can display so
         // advancing between pages never shifts the progress bar.
@@ -151,6 +240,48 @@ class ReaderToolbarView: UIView {
 
     func updateSliderPosition() {
         guard let currentPage = currentPage, let totalPages = totalPages else { return }
-        sliderView.move(toValue: CGFloat(currentPage - 1) / max(CGFloat(totalPages - 1), 1))
+        moveSlider(to: CGFloat(currentPage - 1) / max(CGFloat(totalPages - 1), 1))
+    }
+
+    func setSliderDirection(_ direction: ReaderSliderView.SliderDirection) {
+        sliderView.direction = direction
+        thumbnailScrubberView.direction = direction
+    }
+
+    func moveSlider(to value: CGFloat) {
+        sliderView.move(toValue: value)
+        thumbnailScrubberView.move(toValue: value)
+    }
+
+    func configureThumbnails(
+        pageCount: Int,
+        supportsThumbnails: Bool,
+        provider: @escaping (Int) async -> UIImage?
+    ) {
+        supportsThumbnailScrubber = supportsThumbnails
+        thumbnailScrubberView.configure(pageCount: pageCount, thumbnailProvider: provider)
+        onThumbnailScrubberPreferredWidthChange?(thumbnailScrubberView.preferredWidth)
+        thumbnailScrubberView.accessibilityValue = "\(currentPage ?? 1) of \(pageCount)"
+        thumbnailScrubberView.isAccessibilityElement = true
+        thumbnailScrubberView.accessibilityTraits = .adjustable
+        refreshScrubberStyle()
+    }
+
+    private func refreshScrubberStyle() {
+        let usesThumbnails = AppSettings.reader.thumbnailScrubber.get()
+            && supportsThumbnailScrubber
+        let styleChanged = usesThumbnails != usesThumbnailScrubber
+        usesThumbnailScrubber = usesThumbnails
+        thumbnailScrubberView.isHidden = !usesThumbnails
+        thumbnailPageCounterView.isHidden = !usesThumbnails
+        sliderView.isHidden = usesThumbnails
+        currentPageLabel.isHidden = usesThumbnails
+        incognitoModeLabel.isHidden = usesThumbnails || !AppSettings.general.incognitoMode.get()
+        if styleChanged {
+            onScrubberStyleChange?(usesThumbnails)
+        }
+        if usesThumbnails {
+            onThumbnailScrubberPreferredWidthChange?(thumbnailScrubberView.preferredWidth)
+        }
     }
 }

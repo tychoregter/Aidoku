@@ -291,6 +291,30 @@ extension ReaderSettingsView {
                     value: .toggle(.init())
                 )
             )
+            SettingView(
+                setting: .init(
+                    key: AppSettings.reader.thumbnailScrubber.key,
+                    title: Bundle.main.localizedString(
+                        forKey: "THUMBNAIL_PAGE_SCRUBBER",
+                        value: "Thumbnail Page Scrubber",
+                        table: nil
+                    ),
+                    notification: .init(AppSettings.reader.thumbnailScrubber.key),
+                    value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                        forKey: "THUMBNAIL_PAGE_SCRUBBER_TEXT",
+                        value: "Show page previews in the reader progress control.",
+                        table: nil
+                    )))
+                )
+            )
+            SettingView(
+                setting: .init(
+                    key: AppSettings.reader.compactThumbnailScrubber.key,
+                    title: "Fit Short Chapter Previews",
+                    notification: .init(AppSettings.reader.compactThumbnailScrubber.key),
+                    value: .toggle(.init(subtitle: "Keep page previews at their natural size in short chapters."))
+                )
+            )
             if reader != .text {
                 SettingView(
                     setting: .init(
