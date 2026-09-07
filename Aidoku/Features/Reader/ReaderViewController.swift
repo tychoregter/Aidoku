@@ -82,6 +82,8 @@ class ReaderViewController: BaseObservingViewController {
     private var readerToolbarHeightConstraint: NSLayoutConstraint?
     private var readerToolbarBottomConstraint: NSLayoutConstraint?
     private weak var readerToolbarHost: UIView?
+    private var readerProgressContrastUpdateWorkItem: DispatchWorkItem?
+    private var readerProgressUsesDarkAppearance: Bool?
     @available(iOS 26.0, *)
     private lazy var readerToolbarEffectView = UIVisualEffectView(effect: UIGlassContainerEffect())
     @available(iOS 26.0, *)
@@ -172,6 +174,7 @@ class ReaderViewController: BaseObservingViewController {
     }
 
     deinit {
+        readerProgressContrastUpdateWorkItem?.cancel()
         readerToolbar.removeFromSuperview()
         Task { [temporaryPageStore] in
             await temporaryPageStore.removeAll()
@@ -241,12 +244,17 @@ class ReaderViewController: BaseObservingViewController {
             for: .editingDidEnd
         )
         toolbarView.onScrubberStyleChange = { [weak self] usesThumbnailScrubber in
-            self?.updateReaderToolbarMetrics(usesThumbnailScrubber: usesThumbnailScrubber)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.viewIfLoaded?.window != nil else { return }
+                self.updateReaderToolbarMetrics(usesThumbnailScrubber: usesThumbnailScrubber)
+            }
         }
         toolbarView.onThumbnailScrubberPreferredWidthChange = { [weak self] preferredWidth in
-            guard let self else { return }
-            self.updateReaderToolbarMetrics(usesThumbnailScrubber: self.toolbarView.usesThumbnailScrubber)
-            self.updateReaderToolbarWidth(preferredWidth)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.viewIfLoaded?.window != nil else { return }
+                self.updateReaderToolbarMetrics(usesThumbnailScrubber: self.toolbarView.usesThumbnailScrubber)
+                self.updateReaderToolbarWidth(preferredWidth)
+            }
         }
         toolbarView.translatesAutoresizingMaskIntoConstraints = false
         let toolbarButtonItemView = UIBarButtonItem(customView: toolbarView)
@@ -515,6 +523,7 @@ class ReaderViewController: BaseObservingViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
 
+        cancelReaderProgressContrastUpdate()
         (reader as? ReaderWebtoonViewController)?.stopAutoScroll()
 
         if !chaptersToRemoveDownload.isEmpty {
@@ -1116,6 +1125,7 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         currentPosition = position
         toolbarView.currentPage = page
         toolbarView.updateSliderPosition()
+        scheduleReaderProgressContrastUpdate()
         // Mark as completed when reaching the last page
         // Exception: Don't mark for the pre-pagination placeholder (single text page before
         // ReaderPagedTextViewController has paginated it). Once paginated, even single-page
@@ -1197,6 +1207,7 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
 
     func displayPage(_ page: Int) {
         toolbarView.displayPage(page)
+        scheduleReaderProgressContrastUpdate()
     }
 
     func setSliderOffset(_ offset: CGFloat) {
@@ -1251,9 +1262,8 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
     }
 
     private func updateReaderToolbarMetrics(usesThumbnailScrubber: Bool) {
-        guard #available(iOS 26.0, *) else { return }
+        guard #available(iOS 26.0, *), readerToolbar.superview != nil else { return }
         let usesCompactThumbnailScrubber = usesThumbnailScrubber
-            && AppSettings.reader.compactThumbnailScrubber.get()
         let height: CGFloat = usesThumbnailScrubber ? 49 : 44
         readerToolbarLeadingConstraint?.constant = usesThumbnailScrubber ? 28 : 21
         readerToolbarTrailingConstraint?.constant = usesThumbnailScrubber ? -28 : -21
@@ -1263,26 +1273,151 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         readerToolbarBottomConstraint?.constant = usesThumbnailScrubber ? 7 : 0
         readerToolbar.layer.cornerRadius = height / 2
         readerToolbarBackgroundEffectView.layer.cornerRadius = height / 2
-        readerToolbarLeadingConstraint?.isActive = !usesCompactThumbnailScrubber
-        readerToolbarTrailingConstraint?.isActive = !usesCompactThumbnailScrubber
-        readerToolbarMinimumLeadingConstraint?.isActive = usesCompactThumbnailScrubber
-        readerToolbarMaximumTrailingConstraint?.isActive = usesCompactThumbnailScrubber
-        readerToolbarCenterConstraint?.isActive = usesCompactThumbnailScrubber
-        readerToolbarWidthConstraint?.isActive = usesCompactThumbnailScrubber
-        updateReaderToolbarWidth(usesCompactThumbnailScrubber
-            ? toolbarView.thumbnailScrubberView.preferredWidth
-            : nil)
+
+        let edgeConstraints = [
+            readerToolbarLeadingConstraint,
+            readerToolbarTrailingConstraint
+        ].compactMap { $0 }
+        let compactConstraints = [
+            readerToolbarMinimumLeadingConstraint,
+            readerToolbarMaximumTrailingConstraint,
+            readerToolbarCenterConstraint,
+            readerToolbarWidthConstraint
+        ].compactMap { $0 }
+
+        // Swap the two mutually exclusive layouts as constraint groups. Setting
+        // each constraint's isActive independently briefly left both layouts
+        // installed when the scrubber setting changed, which can abort inside
+        // NSLayoutConstraint before Auto Layout gets a chance to resolve them.
+        if usesCompactThumbnailScrubber {
+            NSLayoutConstraint.deactivate(edgeConstraints)
+            updateReaderToolbarWidth(toolbarView.thumbnailScrubberView.preferredWidth)
+            NSLayoutConstraint.activate(compactConstraints)
+        } else {
+            NSLayoutConstraint.deactivate(compactConstraints)
+            NSLayoutConstraint.activate(edgeConstraints)
+        }
     }
 
     private func updateReaderToolbarWidth(_ preferredWidth: CGFloat?) {
         guard #available(iOS 26.0, *), toolbarView.usesThumbnailScrubber,
-              AppSettings.reader.compactThumbnailScrubber.get(),
               let readerToolbarHost, let preferredWidth else {
             return
         }
         let minimumSideMargin: CGFloat = 28
         let availableWidth = max(0, readerToolbarHost.bounds.width - minimumSideMargin * 2)
         readerToolbarWidthConstraint?.constant = min(preferredWidth, availableWidth)
+    }
+
+    private func scheduleReaderProgressContrastUpdate() {
+        guard #available(iOS 26.0, *),
+              readerToolbar.window != nil,
+              !readerToolbar.isHidden,
+              readerToolbar.alpha > 0.95 else { return }
+        readerProgressContrastUpdateWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.updateReaderProgressContrastFromOverlay()
+        }
+        readerProgressContrastUpdateWorkItem = workItem
+        // Sampling redraws the window, so wait until paging/scrolling has settled
+        // and perform it once instead of continuously competing with rendering.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
+    }
+
+    private func cancelReaderProgressContrastUpdate() {
+        readerProgressContrastUpdateWorkItem?.cancel()
+        readerProgressContrastUpdateWorkItem = nil
+    }
+
+    /// Samples the rendered glass pill itself so its contents follow the
+    /// appearance chosen by the adaptive material, independent of app theme.
+    private func updateReaderProgressContrastFromOverlay() {
+        guard #available(iOS 26.0, *),
+              let window = readerToolbar.window,
+              readerToolbar.bounds.width > 0,
+              readerToolbar.bounds.height > 0 else { return }
+
+        // Stay inside the rounded ends. The empty strips above and below the
+        // progress content expose the finished glass surface without allowing
+        // the foreground itself to influence the result.
+        let toolbarFrame = readerToolbar.convert(readerToolbar.bounds, to: window)
+        let sampleFrame = toolbarFrame.insetBy(dx: 12, dy: 2)
+        guard sampleFrame.width > 0, sampleFrame.height > 0 else { return }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(size: sampleFrame.size, format: format).image { context in
+            context.cgContext.translateBy(x: -sampleFrame.minX, y: -sampleFrame.minY)
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        guard let luminance = glassSurfaceLuminance(of: image) else { return }
+
+        // Use separate transition thresholds so grayscale artwork near the
+        // midpoint cannot make the foreground rapidly alternate.
+        let usesDarkAppearance: Bool
+        if luminance >= 0.58 {
+            usesDarkAppearance = false
+        } else if luminance <= 0.42 {
+            usesDarkAppearance = true
+        } else if let readerProgressUsesDarkAppearance {
+            usesDarkAppearance = readerProgressUsesDarkAppearance
+        } else {
+            usesDarkAppearance = luminance < 0.5
+        }
+        guard usesDarkAppearance != readerProgressUsesDarkAppearance else { return }
+        readerProgressUsesDarkAppearance = usesDarkAppearance
+        let color = ReaderProgressAppearance.contrastColor(forDarkBackdrop: usesDarkAppearance)
+        toolbarView.setProgressOverlayAppearance(isDark: usesDarkAppearance)
+        toolbarView.setProgressContrastColor(color)
+    }
+
+    private func glassSurfaceLuminance(of image: UIImage) -> CGFloat? {
+        guard let image = image.cgImage else { return nil }
+        let width = 5
+        let height = 2
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        guard let context = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                | CGBitmapInfo.byteOrder32Big.rawValue
+        ) else { return nil }
+
+        context.interpolationQuality = .high
+        // Compress the upper and lower empty bands independently, avoiding the
+        // centered slider/thumbnails while averaging across the pill's width.
+        let sourceWidth = CGFloat(image.width)
+        let sourceHeight = CGFloat(image.height)
+        let bandHeight = max(1, floor(sourceHeight * 0.18))
+        guard let upperBand = image.cropping(to: CGRect(
+            x: 0,
+            y: 0,
+            width: sourceWidth,
+            height: bandHeight
+        )), let lowerBand = image.cropping(to: CGRect(
+            x: 0,
+            y: sourceHeight - bandHeight,
+            width: sourceWidth,
+            height: bandHeight
+        )) else { return nil }
+        context.draw(upperBand, in: CGRect(x: 0, y: 1, width: width, height: 1))
+        context.draw(lowerBand, in: CGRect(x: 0, y: 0, width: width, height: 1))
+
+        let luminances = stride(from: 0, to: pixels.count, by: 4).compactMap { offset -> CGFloat? in
+            let alpha = CGFloat(pixels[offset + 3]) / 255
+            guard alpha > 0.5 else { return nil }
+            let red = CGFloat(pixels[offset]) / 255 / alpha
+            let green = CGFloat(pixels[offset + 1]) / 255 / alpha
+            let blue = CGFloat(pixels[offset + 2]) / 255 / alpha
+            return min(1, red) * 0.2126 + min(1, green) * 0.7152 + min(1, blue) * 0.0722
+        }
+        guard !luminances.isEmpty else { return nil }
+        return luminances.reduce(0, +) / CGFloat(luminances.count)
     }
 
     func setCompleted() {
@@ -1725,12 +1860,15 @@ extension ReaderViewController {
                     }
                 }
                 self.node.layoutIfNeeded()
+            } completion: { _ in
+                self.scheduleReaderProgressContrastUpdate()
             }
         }
     }
 
     func hideBars() {
         guard let navigationController else { return }
+        cancelReaderProgressContrastUpdate()
 
         UIView.animate(withDuration: CATransaction.animationDuration()) {
             self.statusBarHidden = true

@@ -52,7 +52,9 @@ final class ReaderThumbnailScrubberView: UIControl {
     private var pageCount = 0
     private var thumbnailViews: [UIImageView] = []
     private var thumbnailTasks: [Task<Void, Never>] = []
+    private var thumbnailPreloadTask: Task<Void, Never>?
     private var loadingIndexes: Set<Int> = []
+    private var isLoadingEnabled = false
     private var thumbnailProvider: ((Int) async -> UIImage?)?
     private var loadedImages: [Int: UIImage] = [:]
     private var displayedPreviewIndex: Int?
@@ -75,10 +77,13 @@ final class ReaderThumbnailScrubberView: UIControl {
     }
 
     deinit {
+        thumbnailPreloadTask?.cancel()
         thumbnailTasks.forEach { $0.cancel() }
     }
 
     func configure(pageCount: Int, thumbnailProvider: @escaping (Int) async -> UIImage?) {
+        thumbnailPreloadTask?.cancel()
+        thumbnailPreloadTask = nil
         thumbnailTasks.forEach { $0.cancel() }
         thumbnailTasks.removeAll()
         thumbnailViews.forEach { $0.removeFromSuperview() }
@@ -103,7 +108,23 @@ final class ReaderThumbnailScrubberView: UIControl {
             return imageView
         }
         setNeedsLayout()
-        loadVisibleThumbnails()
+        if isLoadingEnabled {
+            loadVisibleThumbnails()
+        }
+    }
+
+    func setLoadingEnabled(_ enabled: Bool) {
+        guard enabled != isLoadingEnabled else { return }
+        isLoadingEnabled = enabled
+        if enabled {
+            loadVisibleThumbnails()
+        } else {
+            thumbnailPreloadTask?.cancel()
+            thumbnailPreloadTask = nil
+            thumbnailTasks.forEach { $0.cancel() }
+            thumbnailTasks.removeAll()
+            loadingIndexes.removeAll()
+        }
     }
 
     func move(toValue value: CGFloat) {
@@ -198,7 +219,7 @@ final class ReaderThumbnailScrubberView: UIControl {
         selectedThumbnailView.contentMode = .scaleAspectFill
         selectedThumbnailView.clipsToBounds = true
         selectionView.addSubview(selectedThumbnailView)
-        updateSelectionBorderColor()
+        setContrastColor(.label)
 
         if #available(iOS 26.0, *) {
             previewContainer.effect = UIGlassEffect(style: .regular)
@@ -328,31 +349,43 @@ final class ReaderThumbnailScrubberView: UIControl {
         let indexes = (0..<pageCount).sorted {
             abs($0 - currentIndex) < abs($1 - currentIndex)
         }
-        for index in indexes {
-            loadThumbnail(at: index)
+        thumbnailPreloadTask?.cancel()
+        thumbnailPreloadTask = Task(priority: .utility) { [weak self] in
+            for index in indexes {
+                guard !Task.isCancelled, let self else { return }
+                await self.fetchThumbnail(at: index)
+                await Task.yield()
+            }
         }
     }
 
     private func loadThumbnail(at index: Int, prioritizePreview: Bool = false) {
-        guard loadedImages[index] == nil, !loadingIndexes.contains(index), let thumbnailProvider else { return }
-        loadingIndexes.insert(index)
+        guard isLoadingEnabled else { return }
         let priority: TaskPriority = prioritizePreview ? .userInitiated : .utility
         let task = Task(priority: priority) { [weak self] in
             guard let self, !Task.isCancelled else { return }
-            let image = await thumbnailProvider(index)
-            await MainActor.run {
-                self.loadingIndexes.remove(index)
-                guard !Task.isCancelled, let image, index < self.thumbnailViews.count else { return }
-                self.loadedImages[index] = image
-                self.thumbnailViews[index].image = image
-                let currentIndex = self.pageIndex(for: self.currentValue)
-                self.selectedThumbnailView.image = self.closestLoadedThumbnail(to: currentIndex)
-                if let displayedPreviewIndex = self.displayedPreviewIndex {
-                    self.previewImageView.image = self.closestLoadedThumbnail(to: displayedPreviewIndex)
-                }
-            }
+            await self.fetchThumbnail(at: index)
         }
         thumbnailTasks.append(task)
+    }
+
+    private func fetchThumbnail(at index: Int) async {
+        guard isLoadingEnabled,
+              loadedImages[index] == nil,
+              !loadingIndexes.contains(index),
+              let thumbnailProvider else { return }
+        loadingIndexes.insert(index)
+        let image = await thumbnailProvider(index)
+        loadingIndexes.remove(index)
+        guard !Task.isCancelled, isLoadingEnabled,
+              let image, index < thumbnailViews.count else { return }
+        loadedImages[index] = image
+        thumbnailViews[index].image = image
+        let currentIndex = pageIndex(for: currentValue)
+        selectedThumbnailView.image = closestLoadedThumbnail(to: currentIndex)
+        if let displayedPreviewIndex {
+            previewImageView.image = closestLoadedThumbnail(to: displayedPreviewIndex)
+        }
     }
 
     private func hidePreview() {
@@ -379,20 +412,14 @@ final class ReaderThumbnailScrubberView: UIControl {
         return loadedImages[closestIndex]
     }
 
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        if previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle {
-            updateSelectionBorderColor()
-        }
-    }
-
-    private func updateSelectionBorderColor() {
-        let color = traitCollection.userInterfaceStyle == .dark
-            ? UIColor.white.withAlphaComponent(0.95)
-            : UIColor.black.withAlphaComponent(0.82)
-
+    func setContrastColor(_ color: UIColor) {
+        let color = color.withAlphaComponent(0.95)
         selectionView.layer.borderColor = color.cgColor
         selectionView.backgroundColor = color
         selectedThumbnailView.backgroundColor = color
+    }
+
+    func setOverlayAppearance(_ style: UIUserInterfaceStyle) {
+        previewContainer.overrideUserInterfaceStyle = style
     }
 }
