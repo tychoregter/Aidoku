@@ -1,4 +1,4 @@
-# Aidoku Fork
+# Aidoku - Fork
 This Fork of Aidoku was initially made to make some changes and enhancements that tailored towards my personal preferences, but this quickly spiraled out of control. At the time of writing this fork made over 25 improvements, ranging from small design tweaks to the ability to mark items as favorites, and a completely redesigned pinned item system. A full list of changes can be found below.
 
 Even though this fork was primarily meant as a private project for private use, I am fully open to some of these changes being integrated into the main Aidoku branch. 
@@ -49,7 +49,7 @@ Some changes I made are currently non-configurable as I never planned for this t
 
 AI disclosure: some more complex changes were made with the help of Codex, changes were audited and approved by me, a human.
 
-# Aidoku
+# Aidoku - Original README
 
 A free and open source manga reading application for iOS, iPadOS, and macOS.
 
