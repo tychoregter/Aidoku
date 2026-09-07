@@ -1,3 +1,54 @@
+# Aidoku Fork
+This Fork of Aidoku was initially made to make some changes and enhancements that tailored towards my personal preferences, but this quickly spiraled out of control. At the time of writing this fork made over 25 improvements, ranging from small design tweaks to the ability to mark items as favorites, and a completely redesigned pinned item system. A full list of changes can be found below.
+
+Even though this fork was primarily meant as a private project for private use, I am fully open to some of these changes being integrated into the main Aidoku branch. 
+
+Some changes I made are currently non-configurable as I never planned for this to be much of a public project, changes I made later in the project are mostly configurable. Commits are unfortunately also quite a mess because I didn't really care about them much because of it being, again, a private project I started mostly for fun, which is why most commits were made and summarized by AI, often after multiple unrelated changes had been made.
+
+## List of changes (as of the moment of writing):
+
+### Library
+- Modernized the look of covers/posters.
+- Removed the title on top of covers.
+- Modernized the look of the unread/download badge.
+- Added the ability to mark items as favorite, including a filter and pinned title option.
+- Added configurable current-page previews in library context menus.
+
+### Pins
+- Added more configurable pinned title types.
+- Added optional section subtitles.
+- Added option to have pinned titles sit in the library grid continuously, without any gab or spacing between them and the rest of the library.
+- Added optional horizontally scrolling pinned row for the grid layout.
+- Added an option to keep pinned titles in the normal Library section also.
+- Added configurable filter ignoring for pinned titles.
+- Added an in-library pin selector dropdown when section subtitles are enabled.
+- Added empty pinned-section placeholder when section subtitles are enabled.
+- Added page-preview caching for long-pressing library items.
+- Added Pinned Titles seelection to the Library menu.
+
+### Filters
+- Added more (configurable) library filters, mostly focused at personal libraries like Komga.
+  - Added a Caught Up filter.
+  - Added a Source filter, shown only when multiple sources are present.
+  - Added a configurable Genre filter, shown genres can be configured and support custom aliases.
+- Added configurable two-state/three-state behavior for Content Rating, Collection, Category, and Source.
+- Sorting now toggles ascending/descending by selecting the same sort option again, with direction shown only for the active option similar to some Apple apps like Files.
+
+### Reader
+- Added an optional Apple Books-inspired thumbnail page scrubber.
+- Modernized the old page scrubber.
+- UI elements hide automatically when the reader is opened.
+
+### Miscellaneous
+- Browse and History can be placed either in Settings or as dedicated tab-bar tabs.
+- Updates was moved from the Library top bar into Settings.
+- Added tab-bar scroll-to-top.
+- Removed the refresh popup, when manually triggered by pulling down, the spinner now stays visible until the refresh finished.
+- Probably more I forgot about.
+
+
+AI disclosure: some more complex changes were made with the help of Codex, changes were audited and approved by me, a human.
+
 # Aidoku
 
 A free and open source manga reading application for iOS, iPadOS, and macOS.
