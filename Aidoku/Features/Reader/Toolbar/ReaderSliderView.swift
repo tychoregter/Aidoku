@@ -7,6 +7,12 @@
 
 import UIKit
 
+enum ReaderProgressAppearance {
+    static func contrastColor(forDarkBackdrop isDark: Bool) -> UIColor {
+        isDark ? .white : .black
+    }
+}
+
 class ReaderSliderView: UIControl {
     private enum Metrics {
         static let restingTrackHeight: CGFloat = 8
@@ -15,15 +21,9 @@ class ReaderSliderView: UIControl {
         static let animationDuration: TimeInterval = 0.2
     }
 
-    private static let progressColor = UIColor { traits in
-        let base: UIColor = traits.userInterfaceStyle == .dark ? .white : .black
-        return base.withAlphaComponent(0.85)
-    }
+    private static let progressColor = UIColor.label.withAlphaComponent(0.85)
 
-    private static let remainingTrackColor = UIColor { traits in
-        let base: UIColor = traits.userInterfaceStyle == .dark ? .white : .black
-        return base.withAlphaComponent(0.30)
-    }
+    private static let remainingTrackColor = UIColor.label.withAlphaComponent(0.30)
 
     enum SliderDirection {
         case forward
@@ -110,6 +110,16 @@ class ReaderSliderView: UIControl {
     func configure() {
         addSubview(trackView)
         trackView.addSubview(progressedTrackView)
+    }
+
+    func setContrastColor(_ color: UIColor) {
+        let remainingColor = color.withAlphaComponent(0.30)
+        if let glassTrack = trackView as? LiquidLensView {
+            glassTrack.restingBackgroundColor = remainingColor
+        } else {
+            trackView.backgroundColor = remainingColor
+        }
+        progressedTrackView.backgroundColor = color.withAlphaComponent(0.85)
     }
 
     func constrain() {

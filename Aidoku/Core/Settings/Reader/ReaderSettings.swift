@@ -7,9 +7,8 @@
 
 struct ReaderSettings: Sendable {
     var keys: [any SettingsDefault] {
-        [thumbnailScrubber, compactThumbnailScrubber]
+        [thumbnailScrubber]
     }
 
     let thumbnailScrubber = SettingsKey<Bool>("Reader.thumbnailScrubber", default: true)
-    let compactThumbnailScrubber = SettingsKey<Bool>("Reader.compactThumbnailScrubber", default: true)
 }

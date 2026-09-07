@@ -62,6 +62,25 @@ struct LibraryFilter: Codable, Hashable {
             .downloaded
         ]
 
+        static let configurableThreeStateFilterMethods: [Self] = [
+            .contentRating,
+            .collection,
+            .category,
+            .source
+        ]
+
+        /// The top-level filter entries shown in the Library filter menu.
+        /// Value-based filters remain one entry here; their submenu values
+        /// are configured within the filter itself.
+        static let menuFilterMethods: [Self] = [
+            .favorite, .started, .caughtUp, .completed,
+            .contentRating, .collection, .category, .source, .genre, .downloaded
+        ]
+
+        var threeStateFilterIdentifier: String {
+            String(rawValue)
+        }
+
         var pinTitlesIgnoreFilterIdentifier: String {
             String(rawValue)
         }
@@ -127,7 +146,8 @@ struct LibraryFilter: Codable, Hashable {
 
         var defaultsToExcluded: Bool {
             switch self {
-                case .contentRating, .category, .collection: true
+                case .contentRating, .category, .collection, .source:
+                    AppSettings.library.threeStateFilterMethods.get().contains(threeStateFilterIdentifier)
                 default: false
             }
         }

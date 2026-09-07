@@ -18,6 +18,7 @@ struct SettingsView: View {
 
     @State private var searchText: String = ""
     @State private var searchResult: SettingSearchResult?
+    @State private var navigationTabSettingsRevision = 0
 
     @EnvironmentObject private var path: NavigationCoordinator
 
@@ -26,7 +27,8 @@ struct SettingsView: View {
 
 extension SettingsView {
     var body: some View {
-        List {
+        let _ = navigationTabSettingsRevision
+        return List {
             if searchText.isEmpty {
                 ForEach(Self.settings.indices, id: \.self) { offset in
                     let setting = Self.settings[offset]
@@ -131,6 +133,16 @@ extension SettingsView {
             Task {
                 await updateCategories()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: .init(AppSettings.appearance.dedicatedBrowseTab.key)
+        )) { _ in
+            navigationTabSettingsRevision += 1
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: .init(AppSettings.appearance.dedicatedHistoryTab.key)
+        )) { _ in
+            navigationTabSettingsRevision += 1
         }
         .environment(\.openSettingsPage) { key in
             switch key {
@@ -431,6 +443,10 @@ extension SettingsView {
             var groupItems: [SettingPath] = []
 
             for setting in group.items {
+                if (setting.key == "Browse" && AppSettings.appearance.dedicatedBrowseTab.get())
+                    || (setting.key == "History" && AppSettings.appearance.dedicatedHistoryTab.get()) {
+                    continue
+                }
                 if case let .page(pageSetting) = setting.value {
                     let items = setting.search(for: searchText)
                     if !items.isEmpty {

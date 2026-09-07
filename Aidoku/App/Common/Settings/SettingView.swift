@@ -344,8 +344,12 @@ extension SettingView {
     @ViewBuilder
     func groupView(value: GroupSetting) -> some View {
         if !disabled {
-            let body = ForEach(value.items.indices, id: \.self) { offset in
-                let setting = value.items[offset]
+            let items = value.items.filter {
+                !($0.key == "Browse" && AppSettings.appearance.dedicatedBrowseTab.get())
+                    && !($0.key == "History" && AppSettings.appearance.dedicatedHistoryTab.get())
+            }
+            let body = ForEach(items.indices, id: \.self) { offset in
+                let setting = items[offset]
                 SettingView(source: source, setting: setting, namespace: namespace, onChange: onChange)
                     .tag(setting.key.isEmpty ? UUID().uuidString : key(setting.key))
             }

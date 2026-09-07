@@ -13,10 +13,7 @@ class ReaderToolbarView: UIView {
     private static let maximumPageLabelWidth: CGFloat = 88
     private static let pageLabelWidthPadding: CGFloat = 4
 
-    private static let timestampColor = UIColor { traits in
-        let base: UIColor = traits.userInterfaceStyle == .dark ? .white : .black
-        return base.withAlphaComponent(0.50)
-    }
+    private static let timestampColor = UIColor.secondaryLabel
 
     var currentPageValue: Int? {
         didSet {
@@ -173,19 +170,15 @@ class ReaderToolbarView: UIView {
 
     func observe() {
         NotificationCenter.default.publisher(for: .init(AppSettings.general.incognitoMode.key))
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.refreshScrubberStyle()
             }
             .store(in: &cancellables)
         NotificationCenter.default.publisher(for: .init(AppSettings.reader.thumbnailScrubber.key))
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.refreshScrubberStyle()
-            }
-            .store(in: &cancellables)
-        NotificationCenter.default.publisher(for: .init(AppSettings.reader.compactThumbnailScrubber.key))
-            .sink { [weak self] _ in
-                guard let self, self.usesThumbnailScrubber else { return }
-                self.onThumbnailScrubberPreferredWidthChange?(self.thumbnailScrubberView.preferredWidth)
             }
             .store(in: &cancellables)
     }
@@ -211,6 +204,24 @@ class ReaderToolbarView: UIView {
         thumbnailScrubberView.move(toValue: value)
         thumbnailScrubberView.accessibilityValue = "\(boundedPage) of \(totalPages)"
         thumbnailPageCounterLabel.text = "\(boundedPage) of \(totalPages)"
+    }
+
+    func setProgressContrastColor(_ color: UIColor) {
+        UIView.animate(
+            withDuration: 0.14,
+            delay: 0,
+            options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]
+        ) {
+            self.currentPageLabel.textColor = color.withAlphaComponent(0.50)
+            self.sliderView.setContrastColor(color)
+            self.thumbnailScrubberView.setContrastColor(color)
+        }
+    }
+
+    func setProgressOverlayAppearance(isDark: Bool) {
+        let style: UIUserInterfaceStyle = isDark ? .dark : .light
+        thumbnailPageCounterView.overrideUserInterfaceStyle = style
+        thumbnailScrubberView.setOverlayAppearance(style)
     }
 
     func updatePageLabels() {
@@ -273,6 +284,7 @@ class ReaderToolbarView: UIView {
         let styleChanged = usesThumbnails != usesThumbnailScrubber
         usesThumbnailScrubber = usesThumbnails
         thumbnailScrubberView.isHidden = !usesThumbnails
+        thumbnailScrubberView.setLoadingEnabled(usesThumbnails)
         thumbnailPageCounterView.isHidden = !usesThumbnails
         sliderView.isHidden = usesThumbnails
         currentPageLabel.isHidden = usesThumbnails

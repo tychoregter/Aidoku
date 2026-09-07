@@ -95,6 +95,14 @@ enum Settings {
                 ))
             ),
             .init(
+                title: Bundle.main.localizedString(forKey: "PINS", value: "Pins", table: nil),
+                value: .page(.init(
+                    items: pinSettings,
+                    inlineTitle: true,
+                    icon: .system(name: "pin.fill", color: "purple")
+                ))
+            ),
+            .init(
                 title: NSLocalizedString("READER"),
                 value: .page(.init(
                     items: readerSettings,
@@ -215,11 +223,89 @@ extension Settings {
             ]))
         ),
         .init(
-            title: Bundle.main.localizedString(
-                forKey: "PINNED_TITLES",
-                value: "Pinned Titles",
-                table: nil
+            title: "Navigation",
+            value: .group(.init(
+                footer: "Choose whether Browse and History appear in the tab bar or in Settings.",
+                items: [
+                    .init(
+                        key: AppSettings.appearance.dedicatedBrowseTab.key,
+                        title: "Dedicated Browse Tab",
+                        value: .toggle(.init())
+                    ),
+                    .init(
+                        key: AppSettings.appearance.dedicatedHistoryTab.key,
+                        title: "Dedicated History Tab",
+                        value: .toggle(.init())
+                    )
+                ]
+            ))
+        )
+    ]
+
+    private static let filterSettings: [Setting] = [
+        .init(
+            title: Bundle.main.localizedString(forKey: "FILTERS", value: "Filters", table: nil),
+            value: .group(.init(items: [
+            .init(
+                key: AppSettings.library.threeStateFilterMethods.key,
+                title: "Two-State Filters",
+                value: .multiselect(.init(
+                    values: LibraryFilter.FilterMethod.configurableThreeStateFilterMethods
+                        .map(\.threeStateFilterIdentifier),
+                    titles: LibraryFilter.FilterMethod.configurableThreeStateFilterMethods.map(\.title)
+                ))
             ),
+            .init(
+                key: AppSettings.library.visibleFilterMethods.key,
+                title: "Visible Filters",
+                notification: .init(AppSettings.library.visibleFilterMethods.key),
+                value: .multiselect(.init(
+                    values: LibraryFilter.FilterMethod.menuFilterMethods.map { String($0.rawValue) },
+                    titles: LibraryFilter.FilterMethod.menuFilterMethods.map(\.title)
+                ))
+            ),
+            .init(
+                key: "Library.filterGroups",
+                title: NSLocalizedString("FILTER_GROUPS"),
+                value: .page(.init(items: []))
+            ),
+            .init(
+                key: "Library.genreFilter",
+                title: GenreFilterText.localized("GENRE_FILTER", fallback: "Genre Filters"),
+                value: .page(.init(items: []))
+            )
+        ])))
+    ]
+
+    private static let pinSettings: [Setting] = [
+        .init(value: .group(.init(items: [
+            .init(
+                key: AppSettings.library.pinTitles.key,
+                title: NSLocalizedString("PIN_TITLES"),
+                value: .select(.init(
+                    values: LibraryViewModel.PinType.allCases.map(\.rawValue),
+                    titles: LibraryViewModel.PinType.allCases.map(\.title)
+                ))
+            ),
+            .init(
+                key: AppSettings.library.pinTitlesIgnoreFilters.key,
+                title: "Ignore Filters",
+                requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
+                value: .toggle(.init(subtitle: "Always show pinned titles."))
+            ),
+            .init(
+                key: AppSettings.library.pinTitlesIgnoredFilters.key,
+                title: "Ignored Filters",
+                requires: AppSettings.library.pinTitlesIgnoreFilters.key,
+                requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
+                value: .multiselect(.init(
+                    values: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.pinTitlesIgnoreFilterIdentifier),
+                    titles: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.title)
+                ))
+            )
+        ]))),
+        .init(
+            title: NSLocalizedString("APPEARANCE"),
             value: .group(.init(
                 footer: Bundle.main.localizedString(
                     forKey: "PINNED_TITLES_APPEARANCE_TEXT",
@@ -227,62 +313,63 @@ extension Settings {
                     table: nil
                 ),
                 items: [
-                .init(
-                    key: AppSettings.appearance.separatePinnedTitles.key,
-                    title: Bundle.main.localizedString(
-                        forKey: "SEPARATE_PINNED_TITLES",
-                        value: "Separate Pinned Titles",
-                        table: nil
+                    .init(
+                        key: AppSettings.appearance.separatePinnedTitles.key,
+                        title: Bundle.main.localizedString(
+                            forKey: "SEPARATE_PINNED_TITLES",
+                            value: "Separate Pinned Titles",
+                            table: nil
+                        ),
+                        value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                            forKey: "SEPARATE_PINNED_TITLES_TEXT",
+                            value: "Show pinned and other library titles in labeled sections.",
+                            table: nil
+                        )))
                     ),
-                    value: .toggle(.init(subtitle: Bundle.main.localizedString(
-                        forKey: "SEPARATE_PINNED_TITLES_TEXT",
-                        value: "Show pinned and other library titles in labeled sections.",
-                        table: nil
-                    )))
-                ),
-                .init(
-                    key: AppSettings.appearance.showPinnedSectionTitles.key,
-                    title: Bundle.main.localizedString(
-                        forKey: "SHOW_PINNED_SECTION_TITLES",
-                        value: "Show Section Titles",
-                        table: nil
+                    .init(
+                        key: AppSettings.appearance.showPinnedSectionTitles.key,
+                        title: Bundle.main.localizedString(
+                            forKey: "SHOW_PINNED_SECTION_TITLES",
+                            value: "Show Section Titles",
+                            table: nil
+                        ),
+                        requires: AppSettings.appearance.separatePinnedTitles.key,
+                        value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                            forKey: "SHOW_PINNED_SECTION_TITLES_TEXT",
+                            value: "Label the pinned and library sections.",
+                            table: nil
+                        )))
                     ),
-                    requires: AppSettings.appearance.separatePinnedTitles.key,
-                    value: .toggle(.init(subtitle: Bundle.main.localizedString(
-                        forKey: "SHOW_PINNED_SECTION_TITLES_TEXT",
-                        value: "Label the pinned and library sections.",
-                        table: nil
-                    )))
-                ),
-                .init(
-                    key: AppSettings.appearance.keepPinnedTitlesInLibrary.key,
-                    title: Bundle.main.localizedString(
-                        forKey: "KEEP_PINNED_TITLES_IN_LIBRARY",
-                        value: "Keep Pinned Titles in Library",
-                        table: nil
+                    .init(
+                        key: AppSettings.appearance.keepPinnedTitlesInLibrary.key,
+                        title: Bundle.main.localizedString(
+                            forKey: "KEEP_PINNED_TITLES_IN_LIBRARY",
+                            value: "Keep Pinned Titles in Library",
+                            table: nil
+                        ),
+                        requires: AppSettings.appearance.separatePinnedTitles.key,
+                        value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                            forKey: "KEEP_PINNED_TITLES_IN_LIBRARY_TEXT",
+                            value: "Also show pinned titles in the Library section.",
+                            table: nil
+                        )))
                     ),
-                    requires: AppSettings.appearance.separatePinnedTitles.key,
-                    value: .toggle(.init(subtitle: Bundle.main.localizedString(
-                        forKey: "KEEP_PINNED_TITLES_IN_LIBRARY_TEXT",
-                        value: "Also show pinned titles in the Library section.",
-                        table: nil
-                    )))
-                ),
-                .init(
-                    key: AppSettings.appearance.horizontalPinnedTitles.key,
-                    title: Bundle.main.localizedString(
-                        forKey: "HORIZONTAL_PINNED_TITLES",
-                        value: "Horizontal Pinned Row",
-                        table: nil
-                    ),
-                    requires: AppSettings.appearance.separatePinnedTitles.key,
-                    value: .toggle(.init(subtitle: Bundle.main.localizedString(
-                        forKey: "HORIZONTAL_PINNED_TITLES_TEXT",
-                        value: "Show pinned titles in a single scrolling row in Grid View.",
-                        table: nil
-                    )))
-                )
-            ]))
+                    .init(
+                        key: AppSettings.appearance.horizontalPinnedTitles.key,
+                        title: Bundle.main.localizedString(
+                            forKey: "HORIZONTAL_PINNED_TITLES",
+                            value: "Horizontal Pinned Row",
+                            table: nil
+                        ),
+                        requires: AppSettings.appearance.separatePinnedTitles.key,
+                        value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                            forKey: "HORIZONTAL_PINNED_TITLES_TEXT",
+                            value: "Show pinned titles in a single scrolling row in Grid View.",
+                            table: nil
+                        )))
+                    )
+                ]
+            ))
         )
     ]
 
@@ -317,30 +404,6 @@ extension Settings {
                 key: AppSettings.library.downloadedChapterBadges.key,
                 title: NSLocalizedString("DOWNLOADED_CHAPTER_BADGES"),
                 value: .toggle(.init())
-            ),
-            .init(
-                key: AppSettings.library.pinTitles.key,
-                title: NSLocalizedString("PIN_TITLES"),
-                value: .select(.init(
-                    values: LibraryViewModel.PinType.allCases.map(\.rawValue),
-                    titles: LibraryViewModel.PinType.allCases.map(\.title)
-                ))
-            ),
-            .init(
-                key: AppSettings.library.pinTitlesIgnoreFilters.key,
-                title: "Ignore Filters",
-                requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
-                value: .toggle(.init(subtitle: "Always show pinned titles."))
-            ),
-            .init(
-                key: AppSettings.library.pinTitlesIgnoredFilters.key,
-                title: "Ignored Filters",
-                requires: AppSettings.library.pinTitlesIgnoreFilters.key,
-                requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
-                value: .multiselect(.init(
-                    values: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.pinTitlesIgnoreFilterIdentifier),
-                    titles: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.title)
-                ))
             )
         ]))),
         .init(value: .group(.init(items: [
@@ -356,22 +419,13 @@ extension Settings {
                 value: .toggle(.init(authToDisable: true))
             )
         ]))),
+        filterSettings[0],
         .init(
             title: NSLocalizedString("CATEGORIES"),
             value: .group(.init(items: [
                 .init(
                     key: "Library.categories",
                     title: NSLocalizedString("CATEGORIES"),
-                    value: .page(.init(items: []))
-                ),
-                .init(
-                    key: "Library.filterGroups",
-                    title: NSLocalizedString("FILTER_GROUPS"),
-                    value: .page(.init(items: []))
-                ),
-                .init(
-                    key: "Library.genreFilter",
-                    title: GenreFilterText.localized("GENRE_FILTER", fallback: "Genre Filters"),
                     value: .page(.init(items: []))
                 ),
                 .init(
@@ -550,12 +604,6 @@ extension Settings {
                     value: "Show page previews in the reader progress control.",
                     table: nil
                 )))
-            ),
-            .init(
-                key: AppSettings.reader.compactThumbnailScrubber.key,
-                title: "Fit Short Chapter Previews",
-                notification: .init(AppSettings.reader.compactThumbnailScrubber.key),
-                value: .toggle(.init(subtitle: "Keep page previews at their natural size in short chapters."))
             ),
             .init(
                 key: "Reader.backgroundColor",

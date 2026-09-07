@@ -18,6 +18,8 @@ struct LibrarySettings: Sendable {
             resumeLastOpenedChapter,
             continueReadingOnReselect,
             contextMenuPagePreviews,
+            threeStateFilterMethods,
+            visibleFilterMethods,
             unreadChapterBadges,
             downloadedChapterBadges,
             pinTitles,
@@ -49,6 +51,14 @@ struct LibrarySettings: Sendable {
     let resumeLastOpenedChapter = SettingsKey<Bool>("Library.resumeLastOpenedChapter", default: false)
     let continueReadingOnReselect = SettingsKey<Bool>("Library.continueReadingOnReselect", default: true)
     let contextMenuPagePreviews = SettingsKey<Bool>("Library.contextMenuPagePreviews", default: true)
+    let threeStateFilterMethods = SettingsKey<[String]>(
+        "Library.threeStateFilterMethods",
+        default: []
+    )
+    let visibleFilterMethods = SettingsKey<[String]>(
+        "Library.visibleFilterMethods",
+        default: LibraryFilter.FilterMethod.menuFilterMethods.map { String($0.rawValue) }
+    )
     let unreadChapterBadges = SettingsKey<Bool>("Library.unreadChapterBadges", default: true)
     let downloadedChapterBadges = SettingsKey<Bool>("Library.downloadedChapterBadges", default: true)
     let pinTitles = SettingsKey<String>("Library.pinTitles", default: LibraryViewModel.PinType.none.rawValue)

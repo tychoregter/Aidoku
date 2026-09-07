@@ -307,14 +307,6 @@ extension ReaderSettingsView {
                     )))
                 )
             )
-            SettingView(
-                setting: .init(
-                    key: AppSettings.reader.compactThumbnailScrubber.key,
-                    title: "Fit Short Chapter Previews",
-                    notification: .init(AppSettings.reader.compactThumbnailScrubber.key),
-                    value: .toggle(.init(subtitle: "Keep page previews at their natural size in short chapters."))
-                )
-            )
             if reader != .text {
                 SettingView(
                     setting: .init(

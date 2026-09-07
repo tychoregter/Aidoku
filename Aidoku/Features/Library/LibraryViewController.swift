@@ -336,6 +336,26 @@ class LibraryViewController: OldMangaCollectionViewController {
                 self.updateMoreMenu()
             }
         }
+        addObserver(forName: .init(AppSettings.library.threeStateFilterMethods.key)) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                let twoStateMethods = Set(
+                    AppSettings.library.threeStateFilterMethods.get().compactMap { identifier in
+                        LibraryFilter.FilterMethod.configurableThreeStateFilterMethods.first {
+                            $0.threeStateFilterIdentifier == identifier
+                        }
+                    }
+                )
+                self.viewModel.filters.removeAll {
+                    LibraryFilter.FilterMethod.configurableThreeStateFilterMethods.contains($0.type)
+                        && twoStateMethods.contains($0.type)
+                        && !$0.exclude
+                }
+                await self.viewModel.loadLibrary()
+                self.updateDataSource()
+                self.updateMoreMenu()
+            }
+        }
         addObserver(forName: .updateLibraryLock) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
@@ -1418,6 +1438,10 @@ extension LibraryViewController {
         return options.joined(separator: NSLocalizedString("FILTER_SEPARATOR"))
     }
 
+    private func isFilterVisible(_ method: LibraryFilter.FilterMethod) -> Bool {
+        AppSettings.library.visibleFilterMethods.get().contains(String(method.rawValue))
+    }
+
     func filterSubmenuValues(for method: LibraryFilter.FilterMethod) -> [String] {
         switch method {
             case .contentRating:
@@ -1510,6 +1534,12 @@ extension LibraryViewController {
             }
 
             var children = menu.children.map { updateElement($0) }
+            children.removeAll { element in
+                guard let method = LibraryFilter.FilterMethod.allCases.first(where: { $0.title == element.title }) else {
+                    return false
+                }
+                return !isFilterVisible(method)
+            }
             if !self.viewModel.filters.isEmpty,
                !children.contains(where: { $0.title == NSLocalizedString("REMOVE_FILTER") }) {
                 children.append(self.removeFilterAction())
@@ -1803,6 +1833,12 @@ extension LibraryViewController {
                 )
             }
             filterChildren.append(filterAction(for: .downloaded))
+            filterChildren.removeAll { element in
+                guard let method = LibraryFilter.FilterMethod.allCases.first(where: { $0.title == element.title }) else {
+                    return false
+                }
+                return !self.isFilterVisible(method)
+            }
 
             var filterMenu = UIMenu(
                 title: NSLocalizedString("BUTTON_FILTER"),
