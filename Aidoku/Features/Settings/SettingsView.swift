@@ -420,6 +420,7 @@ extension SettingsView {
         if let imageCache = ImagePipeline.shared.configuration.imageCache as? Nuke.ImageCache {
             imageCache.removeAll()
         }
+        await LibraryPagePreviewCache.shared.removeAll()
     }
 
     func resetSettings() {

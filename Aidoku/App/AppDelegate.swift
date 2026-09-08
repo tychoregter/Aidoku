@@ -203,6 +203,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
         Task {
             await SourceManager.shared.start()
+            Task(priority: .utility) {
+                await LibraryPagePreviewCache.shared.prewarmLibrary()
+            }
             await BackupManager.shared.scheduleAutoBackup()
             if #available(iOS 18.0, *) {
                 DictionaryManager.shared.autoUpdateDictionaries()
@@ -283,6 +286,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
+        LibraryPagePreviewCache.removeSessionFiles()
         guard let networkObserverId else { return }
         Task {
             await Reachability.shared.unregisterConnectionTypeObserver(networkObserverId)

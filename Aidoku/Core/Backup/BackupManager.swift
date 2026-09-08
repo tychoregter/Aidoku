@@ -25,6 +25,9 @@ actor BackupManager {
         AppSettings.browse.sourceLists.key, // stored separately
         AppSettings.general.icloudSync.key
     ]
+    private static let additionalSettings: Set<String> = [
+        "library.favoriteMangaIdentifiers"
+    ]
     static let excludedSettingsPrefixes = [
         "Flag",
         "Data"
@@ -213,7 +216,9 @@ actor BackupManager {
         // convert to export compatible types
         for (key, value) in allSettings {
             guard
-                Self.allowedSettingsPrefixes.contains(where: { key.hasPrefix($0) }) || sourceKeys.contains(where: { key.hasPrefix($0) }),
+                Self.allowedSettingsPrefixes.contains(where: { key.hasPrefix($0) })
+                    || Self.additionalSettings.contains(key)
+                    || sourceKeys.contains(where: { key.hasPrefix($0) }),
                 !Self.excludedSettings.contains(key)
             else {
                 continue
@@ -233,10 +238,48 @@ actor BackupManager {
                 convertedSettings[key] = .bool(value)
             } else if let value = value as? [String] {
                 convertedSettings[key] = .array(value)
+            } else if let value = value as? [Int] {
+                convertedSettings[key] = .intArray(value)
+            } else if let value = value as? Data {
+                convertedSettings[key] = .data(value)
+            } else if let value = Self.convertSettingsDictionary(value) {
+                convertedSettings[key] = .object(value)
             }
         }
 
         return convertedSettings
+    }
+
+    private nonisolated static func convertSettingsDictionary(_ value: Any) -> [String: JSONAnyValue]? {
+        guard let dictionary = value as? [String: Any] else { return nil }
+        var converted: [String: JSONAnyValue] = [:]
+        for (key, value) in dictionary {
+            if
+                let number = value as? NSNumber,
+                CFGetTypeID(number) == CFBooleanGetTypeID()
+            {
+                converted[key] = .bool(number.boolValue)
+            } else if let value = value as? String {
+                converted[key] = .string(value)
+            } else if let value = value as? Int {
+                converted[key] = .int(value)
+            } else if let value = value as? Double {
+                converted[key] = .double(value)
+            } else if let value = value as? Bool {
+                converted[key] = .bool(value)
+            } else if let value = value as? [String] {
+                converted[key] = .array(value)
+            } else if let value = value as? [Int] {
+                converted[key] = .intArray(value)
+            } else if let value = value as? Data {
+                converted[key] = .data(value)
+            } else if let value = convertSettingsDictionary(value) {
+                converted[key] = .object(value)
+            } else {
+                return nil
+            }
+        }
+        return converted
     }
 
     func renameBackup(url: URL, name: String?) -> Bool {
@@ -672,7 +715,10 @@ extension BackupManager {
         var needsMigrate = false
 
         for (key, value) in settings {
-            let hasAllowedPrefix = (sourceKeys == nil && Self.allowedSettingsPrefixes.contains { key.hasPrefix($0) })
+            let hasAllowedPrefix = (sourceKeys == nil && (
+                Self.allowedSettingsPrefixes.contains { key.hasPrefix($0) }
+                    || Self.additionalSettings.contains(key)
+            ))
                 || sourceKeyPrefixes.contains { key.hasPrefix($0) }
             guard
                 hasAllowedPrefix,

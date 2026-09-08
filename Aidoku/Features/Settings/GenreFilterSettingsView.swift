@@ -16,10 +16,23 @@ struct GenreFilterSettingsView: View {
     @State private var configuration = LibraryGenreFilterSettings.load()
     @State private var isLoading = true
     @State private var showingLinkSheet = false
+    @State private var linkSheetPrimaryGenre: String?
 
-    private var linkedGenreIDs: [String] {
-        configuration.links.keys.sorted {
-            displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
+    private var linkedGenreGroups: [LinkedGenreGroup] {
+        Dictionary(grouping: configuration.links.keys) { aliasID in
+            LibraryGenreFilterSettings.rootIdentifier(for: aliasID, configuration: configuration)
+        }
+        .map { primaryID, aliasIDs in
+            LinkedGenreGroup(
+                primaryID: primaryID,
+                aliasIDs: aliasIDs.sorted {
+                    displayName(for: $0).localizedCaseInsensitiveCompare(displayName(for: $1)) == .orderedAscending
+                }
+            )
+        }
+        .sorted {
+            displayName(for: $0.primaryID)
+                .localizedCaseInsensitiveCompare(displayName(for: $1.primaryID)) == .orderedAscending
         }
     }
 
@@ -57,30 +70,51 @@ struct GenreFilterSettingsView: View {
                 }
 
                 Section {
-                    if linkedGenreIDs.isEmpty {
+                    if linkedGenreGroups.isEmpty {
                         Text(
                             GenreFilterText.localized("NO_LINKED_GENRES", fallback: "No links")
                         )
                         .foregroundStyle(.secondary)
                     } else {
-                        ForEach(linkedGenreIDs, id: \.self) { aliasID in
-                            HStack {
-                                Text(displayName(for: aliasID))
-                                Spacer()
-                                Image(systemName: "arrow.right")
-                                    .foregroundStyle(.tertiary)
-                                Text(displayName(for: configuration.links[aliasID] ?? ""))
-                                    .foregroundStyle(.secondary)
+                        ForEach(linkedGenreGroups) { group in
+                            Button {
+                                edit(group)
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(displayName(for: group.primaryID))
+                                            .foregroundStyle(.primary)
+                                        Text(group.aliasIDs.map(displayName).joined(separator: ", "))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.tertiary)
+                                }
                             }
-                        }
-                        .onDelete { offsets in
-                            for offset in offsets {
-                                configuration.links.removeValue(forKey: linkedGenreIDs[offset])
+                            .foregroundStyle(.primary)
+                            .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                Button {
+                                    edit(group)
+                                } label: {
+                                    Label(NSLocalizedString("EDIT"), systemImage: "pencil")
+                                }
+                                .tint(.blue)
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    delete(group)
+                                } label: {
+                                    Label(NSLocalizedString("DELETE"), systemImage: "trash")
+                                }
                             }
                         }
                     }
 
                     Button {
+                        linkSheetPrimaryGenre = nil
                         showingLinkSheet = true
                     } label: {
                         Label(
@@ -113,7 +147,22 @@ struct GenreFilterSettingsView: View {
             NotificationCenter.default.post(name: .genreFilterSettingsChanged, object: nil)
         }
         .sheet(isPresented: $showingLinkSheet) {
-            GenreLinkSheet(genres: genres, configuration: $configuration)
+            GenreLinkSheet(
+                genres: genres,
+                configuration: $configuration,
+                initialPrimaryGenre: linkSheetPrimaryGenre
+            )
+        }
+    }
+
+    private func edit(_ group: LinkedGenreGroup) {
+        linkSheetPrimaryGenre = displayName(for: group.primaryID)
+        showingLinkSheet = true
+    }
+
+    private func delete(_ group: LinkedGenreGroup) {
+        for aliasID in group.aliasIDs {
+            configuration.links.removeValue(forKey: aliasID)
         }
     }
 
@@ -177,6 +226,13 @@ struct GenreFilterSettingsView: View {
     }
 }
 
+private struct LinkedGenreGroup: Identifiable {
+    let primaryID: String
+    let aliasIDs: [String]
+
+    var id: String { primaryID }
+}
+
 private struct GenreLinkSheet: View {
     let genres: [String]
     @Binding var configuration: LibraryGenreFilterConfiguration
@@ -186,8 +242,12 @@ private struct GenreLinkSheet: View {
     @State private var primaryGenre: String
     @State private var linkedGenres: Set<String>
 
-    init(genres: [String], configuration: Binding<LibraryGenreFilterConfiguration>) {
-        let primaryGenre = genres.first ?? ""
+    init(
+        genres: [String],
+        configuration: Binding<LibraryGenreFilterConfiguration>,
+        initialPrimaryGenre: String? = nil
+    ) {
+        let primaryGenre = initialPrimaryGenre ?? genres.first ?? ""
         self.genres = genres
         self._configuration = configuration
         self._primaryGenre = State(initialValue: primaryGenre)

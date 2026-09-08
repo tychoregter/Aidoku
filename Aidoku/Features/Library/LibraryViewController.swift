@@ -959,13 +959,6 @@ extension LibraryViewController {
             self?.updateVisibleSectionHeaders()
         }
 
-        if AppSettings.library.contextMenuPagePreviews.get() {
-            let mangaIds = Array(Set(snapshot.itemIdentifiers.filter { !$0.isEmptyPinnedPlaceholder }.map(\.id)))
-            Task(priority: .utility) {
-                await LibraryPagePreviewCache.shared.prewarm(mangaIds)
-            }
-        }
-
         // handle empty library or category
         emptyStackView.isHidden = !snapshot.itemIdentifiers.isEmpty
         collectionView.isScrollEnabled = emptyStackView.isHidden && lockedStackView.isHidden

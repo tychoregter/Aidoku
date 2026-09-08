@@ -3,16 +3,29 @@
 //  Aidoku
 //
 
+import AidokuRunner
+import SwiftUI
 import UIKit
 
 final class LibraryPageContextPreviewViewController: UIViewController {
-    private let mangaId: MangaIdentifier
+    private enum PreviewRequest {
+        case library(MangaIdentifier)
+        case chapter(AidokuRunner.Manga, AidokuRunner.Chapter, Int)
+    }
+
+    private let request: PreviewRequest
     private let imageView = UIImageView()
     private let activityIndicator = UIActivityIndicatorView(style: .medium)
     private var loadTask: Task<Void, Never>?
 
     init(mangaId: MangaIdentifier) {
-        self.mangaId = mangaId
+        request = .library(mangaId)
+        super.init(nibName: nil, bundle: nil)
+        preferredContentSize = CGSize(width: 300, height: 440)
+    }
+
+    init(manga: AidokuRunner.Manga, chapter: AidokuRunner.Chapter, pageIndex: Int) {
+        request = .chapter(manga, chapter, pageIndex)
         super.init(nibName: nil, bundle: nil)
         preferredContentSize = CGSize(width: 300, height: 440)
     }
@@ -45,7 +58,16 @@ final class LibraryPageContextPreviewViewController: UIViewController {
 
         loadTask = Task { [weak self] in
             guard let self else { return }
-            let image = await LibraryPagePreviewCache.shared.image(for: mangaId)
+            let image = switch request {
+                case .library(let mangaId):
+                    await LibraryPagePreviewCache.shared.image(for: mangaId)
+                case .chapter(let manga, let chapter, let pageIndex):
+                    await LibraryPagePreviewCache.shared.image(
+                        for: manga,
+                        chapter: chapter,
+                        pageIndex: pageIndex
+                    )
+            }
             guard !Task.isCancelled else { return }
             activityIndicator.stopAnimating()
             imageView.image = image
@@ -70,4 +92,25 @@ final class LibraryPageContextPreviewViewController: UIViewController {
     deinit {
         loadTask?.cancel()
     }
+}
+
+/// Bridges the same UIKit preview into SwiftUI chapter context menus on the
+/// manga info screen.
+struct ChapterPageContextPreview: UIViewControllerRepresentable {
+    let manga: AidokuRunner.Manga
+    let chapter: AidokuRunner.Chapter
+    let pageIndex: Int
+
+    func makeUIViewController(context: Context) -> LibraryPageContextPreviewViewController {
+        LibraryPageContextPreviewViewController(
+            manga: manga,
+            chapter: chapter,
+            pageIndex: pageIndex
+        )
+    }
+
+    func updateUIViewController(
+        _ uiViewController: LibraryPageContextPreviewViewController,
+        context: Context
+    ) {}
 }

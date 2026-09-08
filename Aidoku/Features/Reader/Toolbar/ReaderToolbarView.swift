@@ -267,7 +267,7 @@ class ReaderToolbarView: UIView {
     func configureThumbnails(
         pageCount: Int,
         supportsThumbnails: Bool,
-        provider: @escaping (Int) async -> UIImage?
+        provider: @escaping (Int, ReaderThumbnailScrubberView.ImageKind) async -> UIImage?
     ) {
         supportsThumbnailScrubber = supportsThumbnails
         thumbnailScrubberView.configure(pageCount: pageCount, thumbnailProvider: provider)

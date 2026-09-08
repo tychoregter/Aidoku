@@ -183,12 +183,14 @@ extension MangaManager {
         // add enhanced trackers
         await TrackerManager.shared.bindEnhancedTrackers(manga: manga)
 
+        await LibraryPagePreviewCache.shared.invalidate(mangaId: manga.identifier)
+
         NotificationCenter.default.post(name: .addToLibrary, object: manga)
         NotificationCenter.default.post(name: .updateLibrary, object: nil)
     }
 
     func removeFromLibrary(mangaId: MangaIdentifier) async {
-        await LibraryPagePreviewCache.shared.invalidate(mangaId: mangaId)
+        await LibraryPagePreviewCache.shared.remove(mangaId: mangaId)
         // Get manga object for notification before deletion
         let mangaForNotification = await CoreDataManager.shared.container.performBackgroundTask { context in
             CoreDataManager.shared.getManga(mangaId: mangaId, context: context)?.toNewManga()
@@ -220,7 +222,6 @@ extension MangaManager {
                 LogManager.logger.error("MangaManager.removeFromLibrary(mangaId: \(mangaId)): \(error.localizedDescription)")
             }
         }
-
         // Post specific notification for removal with manga object
         if let mangaForNotification {
             NotificationCenter.default.post(name: .removeFromLibrary, object: mangaForNotification)
@@ -299,6 +300,7 @@ extension MangaManager {
                     "MangaManager.restoreToLibrary: \(error.localizedDescription)")
             }
         }
+        await LibraryPagePreviewCache.shared.invalidate(mangaId: newManga.identifier)
     }
 
     static func shouldAskForCategories() async -> Bool {
@@ -350,7 +352,7 @@ extension MangaManager {
 #endif
     }
 
-    func scheduleLibraryRefresh() {
+    func scheduleLibraryRefresh(allowImmediateRefresh: Bool = true) {
         let lastUpdated = AppSettings.library.lastUpdated.get()
         let interval: Double = switch AppSettings.library.updateInterval.get() {
             case "12hours": 43200
@@ -368,6 +370,11 @@ extension MangaManager {
         let nextUpdateTime = lastUpdated + interval
 
         if nextUpdateTime < Date.now {
+            // A refresh can finish without updating `lastUpdated` (for
+            // example, when it is blocked by the Wi-Fi-only setting). Do not
+            // immediately start the same overdue refresh again from its own
+            // completion path.
+            guard allowImmediateRefresh else { return }
             guard !AppSettings.flags.libraryRefreshInProgress.get() else { return }
             // interval time has passed, refresh now
             Task {
@@ -421,36 +428,37 @@ extension MangaManager {
         forceAll: Bool = false,
         task: (ProgressReporting & Sendable)? = nil
     ) async {
-        if libraryRefreshTask != nil {
+        if let libraryRefreshTask {
             // wait for already running library refresh
-            await libraryRefreshTask?.value
-        } else {
-            // spawn new library refresh
-            AppSettings.flags.libraryRefreshInProgress.set(true)
-            libraryRefreshTask = Task {
-                await doLibraryRefresh(
-                    category: category,
-                    skipReachabilityCheck: skipReachabilityCheck,
-                    forceAll: forceAll,
-                    task: task,
-                    refreshStarted: {
-                        self.onLibraryRefreshProgress = { progress in
-                            task?.progress.totalUnitCount = progress.totalUnitCount
-                            task?.progress.completedUnitCount = progress.completedUnitCount
-                            if #available(iOS 26.0, *), let task = task as? BGContinuedProcessingTask {
-                                task.updateTitle(
-                                    NSLocalizedString("REFRESHING_LIBRARY"),
-                                    subtitle: String(format: NSLocalizedString("%i_OF_%i"), progress.completedUnitCount, progress.totalUnitCount)
-                                )
-                            }
+            await libraryRefreshTask.value
+            return
+        }
+
+        // spawn new library refresh
+        AppSettings.flags.libraryRefreshInProgress.set(true)
+        libraryRefreshTask = Task {
+            await doLibraryRefresh(
+                category: category,
+                skipReachabilityCheck: skipReachabilityCheck,
+                forceAll: forceAll,
+                task: task,
+                refreshStarted: {
+                    self.onLibraryRefreshProgress = { progress in
+                        task?.progress.totalUnitCount = progress.totalUnitCount
+                        task?.progress.completedUnitCount = progress.completedUnitCount
+                        if #available(iOS 26.0, *), let task = task as? BGContinuedProcessingTask {
+                            task.updateTitle(
+                                NSLocalizedString("REFRESHING_LIBRARY"),
+                                subtitle: String(format: NSLocalizedString("%i_OF_%i"), progress.completedUnitCount, progress.totalUnitCount)
+                            )
                         }
                     }
-                )
-                libraryRefreshTask = nil
-                AppSettings.flags.libraryRefreshInProgress.reset()
-            }
-            await libraryRefreshTask?.value
+                }
+            )
+            libraryRefreshTask = nil
+            AppSettings.flags.libraryRefreshInProgress.reset()
         }
+        await libraryRefreshTask?.value
 
         onLibraryRefreshProgress = nil
 
@@ -459,7 +467,7 @@ extension MangaManager {
 
         NotificationCenter.default.post(name: .updateLibrary, object: nil)
 
-        scheduleLibraryRefresh()
+        scheduleLibraryRefresh(allowImmediateRefresh: false)
     }
 
     /// Check if a manga should skip updating based on skip options.
@@ -545,6 +553,10 @@ extension MangaManager {
 
         // ensure there are manga to update
         guard !allManga.isEmpty else {
+            // An empty library is still a completed refresh. Advancing this
+            // timestamp prevents the scheduler from continuously retrying the
+            // same overdue refresh.
+            AppSettings.library.lastUpdated.set(Date.now)
             return
         }
 
@@ -694,6 +706,10 @@ extension MangaManager {
         }
 
         AppSettings.library.lastUpdated.set(Date.now)
+
+        Task(priority: .utility) {
+            await LibraryPagePreviewCache.shared.prewarmLibrary()
+        }
     }
 
     private func updateLibraryRefreshProgress(_ progress: Progress) {

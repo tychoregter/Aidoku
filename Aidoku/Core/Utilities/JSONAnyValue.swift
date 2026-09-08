@@ -16,6 +16,7 @@ enum JSONAnyType: Int {
     case object = 6
     case double = 7
     case intArray = 8
+    case data = 9
 }
 
 struct JSONAnyValue: Hashable, Sendable {
@@ -28,6 +29,7 @@ struct JSONAnyValue: Hashable, Sendable {
     var intArrayValue: [Int]?
     var stringArrayValue: [String]?
     var objectValue: [String: JSONAnyValue]?
+    var dataValue: Data?
 
     func toRaw() -> Any? {
         switch type {
@@ -39,6 +41,7 @@ struct JSONAnyValue: Hashable, Sendable {
             case .object: return objectValue?.mapValues { $0.toRaw() }
             case .double: return doubleValue
             case .intArray: return intArrayValue
+            case .data: return dataValue
         }
     }
 }
@@ -56,6 +59,7 @@ extension JSONAnyValue: Codable {
             intArrayValue = nil
             stringArrayValue = nil
             objectValue = nil
+            dataValue = nil
         } else if let int = try? container.decode(Int.self) {
             type = .int
             boolValue = nil
@@ -65,6 +69,7 @@ extension JSONAnyValue: Codable {
             intArrayValue = nil
             stringArrayValue = nil
             objectValue = nil
+            dataValue = nil
         } else if let float = try? container.decode(Float.self) {
             type = .double
             boolValue = nil
@@ -74,6 +79,7 @@ extension JSONAnyValue: Codable {
             intArrayValue = nil
             stringArrayValue = nil
             objectValue = nil
+            dataValue = nil
         } else if let double = try? container.decode(Double.self) {
             type = .double
             boolValue = nil
@@ -83,6 +89,7 @@ extension JSONAnyValue: Codable {
             intArrayValue = nil
             stringArrayValue = nil
             objectValue = nil
+            dataValue = nil
         } else if let string = try? container.decode(String.self) {
             type = .string
             boolValue = nil
@@ -92,6 +99,7 @@ extension JSONAnyValue: Codable {
             intArrayValue = nil
             stringArrayValue = nil
             objectValue = nil
+            dataValue = nil
         } else if let ints = try? container.decode([Int].self) {
             type = .intArray
             boolValue = nil
@@ -101,6 +109,7 @@ extension JSONAnyValue: Codable {
             intArrayValue = ints
             stringArrayValue = nil
             objectValue = nil
+            dataValue = nil
         } else if let strings = try? container.decode([String].self) {
             type = .array
             boolValue = nil
@@ -110,6 +119,22 @@ extension JSONAnyValue: Codable {
             intArrayValue = nil
             stringArrayValue = strings
             objectValue = nil
+            dataValue = nil
+        } else if
+            let encodedData = try? container.decode([String: String].self),
+            encodedData.count == 1,
+            let base64 = encodedData[Self.dataCodingKey],
+            let data = Data(base64Encoded: base64)
+        {
+            type = .data
+            boolValue = nil
+            intValue = nil
+            doubleValue = nil
+            stringValue = nil
+            intArrayValue = nil
+            stringArrayValue = nil
+            objectValue = nil
+            dataValue = data
         } else if let object = try? container.decode([String: JSONAnyValue].self) {
             type = .object
             boolValue = nil
@@ -119,6 +144,7 @@ extension JSONAnyValue: Codable {
             intArrayValue = nil
             stringArrayValue = nil
             objectValue = object
+            dataValue = nil
         } else {
             type = .null
             boolValue = nil
@@ -128,6 +154,7 @@ extension JSONAnyValue: Codable {
             intArrayValue = nil
             stringArrayValue = nil
             objectValue = nil
+            dataValue = nil
         }
     }
 
@@ -142,8 +169,12 @@ extension JSONAnyValue: Codable {
             case .object: try container.encode(objectValue)
             case .double: try container.encode(doubleValue)
             case .intArray: try container.encode(intArrayValue)
+            case .data:
+                try container.encode([Self.dataCodingKey: dataValue?.base64EncodedString() ?? ""])
         }
     }
+
+    private static let dataCodingKey = "__aidokuBackupData"
 }
 
 extension JSONAnyValue {
@@ -177,5 +208,9 @@ extension JSONAnyValue {
 
     static func object(_ value: [String: JSONAnyValue]) -> JSONAnyValue {
         .init(type: .object, objectValue: value)
+    }
+
+    static func data(_ value: Data) -> JSONAnyValue {
+        .init(type: .data, dataValue: value)
     }
 }

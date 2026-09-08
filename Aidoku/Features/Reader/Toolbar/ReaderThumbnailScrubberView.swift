@@ -8,6 +8,11 @@ import UIKit
 /// An Apple Books-inspired page scrubber that keeps the reader's existing
 /// normalized (0...1) progress API while presenting the chapter as thumbnails.
 final class ReaderThumbnailScrubberView: UIControl {
+    enum ImageKind: Equatable {
+        case strip
+        case preview
+    }
+
     private enum Metrics {
         static let horizontalInset: CGFloat = 22
         static let trackHeight: CGFloat = 20
@@ -51,13 +56,14 @@ final class ReaderThumbnailScrubberView: UIControl {
 
     private var pageCount = 0
     private var thumbnailViews: [UIImageView] = []
-    private var thumbnailTasks: [Task<Void, Never>] = []
+    private var previewTasks: [Int: Task<Void, Never>] = [:]
     private var thumbnailPreloadTask: Task<Void, Never>?
-    private var loadingIndexes: Set<Int> = []
     private var isLoadingEnabled = false
-    private var thumbnailProvider: ((Int) async -> UIImage?)?
+    private var thumbnailProvider: ((Int, ImageKind) async -> UIImage?)?
     private var loadedImages: [Int: UIImage] = [:]
+    private var loadedPreviewImages: [Int: UIImage] = [:]
     private var displayedPreviewIndex: Int?
+    private var loadGeneration = 0
 
     /// The width needed to show every page as a page-shaped thumbnail rather
     /// than stretching a short chapter across the whole reader overlay.
@@ -78,19 +84,16 @@ final class ReaderThumbnailScrubberView: UIControl {
 
     deinit {
         thumbnailPreloadTask?.cancel()
-        thumbnailTasks.forEach { $0.cancel() }
+        previewTasks.values.forEach { $0.cancel() }
     }
 
-    func configure(pageCount: Int, thumbnailProvider: @escaping (Int) async -> UIImage?) {
-        thumbnailPreloadTask?.cancel()
-        thumbnailPreloadTask = nil
-        thumbnailTasks.forEach { $0.cancel() }
-        thumbnailTasks.removeAll()
+    func configure(
+        pageCount: Int,
+        thumbnailProvider: @escaping (Int, ImageKind) async -> UIImage?
+    ) {
+        resetLoadedContent(clearViews: true)
         thumbnailViews.forEach { $0.removeFromSuperview() }
         thumbnailViews.removeAll()
-        loadedImages.removeAll()
-        loadingIndexes.removeAll()
-        displayedPreviewIndex = nil
 
         self.pageCount = pageCount
         self.thumbnailProvider = thumbnailProvider
@@ -119,11 +122,7 @@ final class ReaderThumbnailScrubberView: UIControl {
         if enabled {
             loadVisibleThumbnails()
         } else {
-            thumbnailPreloadTask?.cancel()
-            thumbnailPreloadTask = nil
-            thumbnailTasks.forEach { $0.cancel() }
-            thumbnailTasks.removeAll()
-            loadingIndexes.removeAll()
+            resetLoadedContent(clearViews: true)
         }
     }
 
@@ -296,8 +295,9 @@ final class ReaderThumbnailScrubberView: UIControl {
         guard displayedPreviewIndex != logicalIndex else { return }
         displayedPreviewIndex = logicalIndex
         previewLabel.text = String(format: NSLocalizedString("PAGE_X"), logicalIndex + 1)
-        previewImageView.image = closestLoadedThumbnail(to: logicalIndex)
-        loadThumbnail(at: logicalIndex, prioritizePreview: true)
+        previewImageView.image = closestLoadedPreview(to: logicalIndex)
+            ?? closestLoadedThumbnail(to: logicalIndex)
+        prefetchPreviewImages(around: logicalIndex)
     }
 
     private func updateSelectionFrame(itemWidth: CGFloat) {
@@ -314,7 +314,8 @@ final class ReaderThumbnailScrubberView: UIControl {
             height: height
         )
         selectedThumbnailView.frame = selectionView.bounds.insetBy(dx: 1.5, dy: 1.5)
-        selectedThumbnailView.image = closestLoadedThumbnail(to: logicalIndex)
+        selectedThumbnailView.image = closestLoadedPreview(to: logicalIndex)
+            ?? closestLoadedThumbnail(to: logicalIndex)
     }
 
     private var maximumThumbnailWidth: CGFloat {
@@ -345,46 +346,91 @@ final class ReaderThumbnailScrubberView: UIControl {
     }
 
     private func loadVisibleThumbnails() {
+        guard isLoadingEnabled, pageCount > 0 else { return }
         let currentIndex = pageIndex(for: currentValue)
         let indexes = (0..<pageCount).sorted {
             abs($0 - currentIndex) < abs($1 - currentIndex)
         }
+        prefetchPreviewImages(around: currentIndex)
         thumbnailPreloadTask?.cancel()
+        let generation = loadGeneration
         thumbnailPreloadTask = Task(priority: .utility) { [weak self] in
             for index in indexes {
-                guard !Task.isCancelled, let self else { return }
-                await self.fetchThumbnail(at: index)
+                guard !Task.isCancelled, let self,
+                      self.loadGeneration == generation else { return }
+                await self.fetchThumbnail(at: index, generation: generation)
                 await Task.yield()
             }
+            guard let self, self.loadGeneration == generation else { return }
+            self.thumbnailPreloadTask = nil
         }
     }
 
-    private func loadThumbnail(at index: Int, prioritizePreview: Bool = false) {
-        guard isLoadingEnabled else { return }
-        let priority: TaskPriority = prioritizePreview ? .userInitiated : .utility
-        let task = Task(priority: priority) { [weak self] in
-            guard let self, !Task.isCancelled else { return }
-            await self.fetchThumbnail(at: index)
-        }
-        thumbnailTasks.append(task)
-    }
-
-    private func fetchThumbnail(at index: Int) async {
+    private func fetchThumbnail(at index: Int, generation: Int) async {
         guard isLoadingEnabled,
               loadedImages[index] == nil,
-              !loadingIndexes.contains(index),
               let thumbnailProvider else { return }
-        loadingIndexes.insert(index)
-        let image = await thumbnailProvider(index)
-        loadingIndexes.remove(index)
-        guard !Task.isCancelled, isLoadingEnabled,
+        let image = await thumbnailProvider(index, .strip)
+        guard !Task.isCancelled, isLoadingEnabled, loadGeneration == generation,
               let image, index < thumbnailViews.count else { return }
         loadedImages[index] = image
         thumbnailViews[index].image = image
         let currentIndex = pageIndex(for: currentValue)
-        selectedThumbnailView.image = closestLoadedThumbnail(to: currentIndex)
+        selectedThumbnailView.image = closestLoadedPreview(to: currentIndex)
+            ?? closestLoadedThumbnail(to: currentIndex)
         if let displayedPreviewIndex {
-            previewImageView.image = closestLoadedThumbnail(to: displayedPreviewIndex)
+            previewImageView.image = closestLoadedPreview(to: displayedPreviewIndex)
+                ?? closestLoadedThumbnail(to: displayedPreviewIndex)
+        }
+    }
+
+    private func prefetchPreviewImages(around index: Int) {
+        guard isLoadingEnabled, pageCount > 0 else { return }
+        let nearbyIndexes = [index, index - 1, index + 1]
+            .filter { $0 >= 0 && $0 < pageCount }
+        let retainedIndexes = Set(nearbyIndexes)
+        loadedPreviewImages = loadedPreviewImages.filter { retainedIndexes.contains($0.key) }
+        let obsoleteTaskIndexes = previewTasks.keys.filter { !retainedIndexes.contains($0) }
+        for taskIndex in obsoleteTaskIndexes {
+            previewTasks[taskIndex]?.cancel()
+            previewTasks[taskIndex] = nil
+        }
+        nearbyIndexes.forEach(loadPreviewThumbnail)
+    }
+
+    private func loadPreviewThumbnail(at index: Int) {
+        guard loadedPreviewImages[index] == nil, previewTasks[index] == nil,
+              let thumbnailProvider else { return }
+        let generation = loadGeneration
+        previewTasks[index] = Task(priority: .userInitiated) { [weak self] in
+            let image = await thumbnailProvider(index, .preview)
+            guard let self else { return }
+            self.previewTasks[index] = nil
+            guard !Task.isCancelled, self.isLoadingEnabled,
+                  self.loadGeneration == generation, let image else { return }
+            self.loadedPreviewImages[index] = image
+            if self.pageIndex(for: self.currentValue) == index {
+                self.selectedThumbnailView.image = image
+            }
+            if self.displayedPreviewIndex == index {
+                self.previewImageView.image = image
+            }
+        }
+    }
+
+    private func resetLoadedContent(clearViews: Bool) {
+        loadGeneration &+= 1
+        thumbnailPreloadTask?.cancel()
+        thumbnailPreloadTask = nil
+        previewTasks.values.forEach { $0.cancel() }
+        previewTasks.removeAll()
+        loadedImages.removeAll()
+        loadedPreviewImages.removeAll()
+        displayedPreviewIndex = nil
+        previewImageView.image = nil
+        selectedThumbnailView.image = nil
+        if clearViews {
+            thumbnailViews.forEach { $0.image = nil }
         }
     }
 
@@ -410,6 +456,18 @@ final class ReaderThumbnailScrubberView: UIControl {
             return nil
         }
         return loadedImages[closestIndex]
+    }
+
+    private func closestLoadedPreview(to index: Int) -> UIImage? {
+        if let exactImage = loadedPreviewImages[index] {
+            return exactImage
+        }
+        guard let closestIndex = loadedPreviewImages.keys.min(by: {
+            abs($0 - index) < abs($1 - index)
+        }) else {
+            return nil
+        }
+        return loadedPreviewImages[closestIndex]
     }
 
     func setContrastColor(_ color: UIColor) {

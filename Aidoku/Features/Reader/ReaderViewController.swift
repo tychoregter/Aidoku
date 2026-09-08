@@ -1219,15 +1219,19 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         toolbarView.configureThumbnails(
             pageCount: pages.count,
             supportsThumbnails: supportsThumbnails
-        ) { [weak self] index in
+        ) { [weak self] index, kind in
             guard let self, let page = pages[safe: index] else { return nil }
-            return await self.thumbnailImage(for: page)
+            return await self.thumbnailImage(for: page, kind: kind)
         }
     }
 
-    private func thumbnailImage(for page: Page) async -> UIImage? {
+    private func thumbnailImage(
+        for page: Page,
+        kind: ReaderThumbnailScrubberView.ImageKind
+    ) async -> UIImage? {
+        let options = scrubberThumbnailOptions(for: kind)
         if let image = page.image {
-            return makeScrubberThumbnail(from: image)
+            return makeScrubberThumbnail(from: image, kind: kind)
         }
 
         if let zipURLString = page.zipURL,
@@ -1235,30 +1239,46 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
            let filePath = page.imageURL,
            let extractedURL = await temporaryPageStore.storeArchiveEntry(from: zipURL, path: filePath),
            let data = try? Data(contentsOf: extractedURL) {
-            return scrubberThumbnailOptions.makeThumbnail(with: data)
+            return options.makeThumbnail(with: data)
         }
 
         if let imageURL = page.imageURL, let url = URL(string: imageURL) {
             var request = await ReaderPageView.imageRequest(url: url, context: page.context, source: source)
-            request.thumbnail = scrubberThumbnailOptions
-            request.priority = .low
+            request.thumbnail = options
+            request.priority = kind == .preview ? .high : .low
             guard let image = try? await ImagePipeline.shared.image(for: request) else { return nil }
             return image
         }
 
         if let base64 = page.base64, let data = Data(base64Encoded: base64) {
-            return scrubberThumbnailOptions.makeThumbnail(with: data)
+            return options.makeThumbnail(with: data)
         }
 
         return nil
     }
 
-    private func makeScrubberThumbnail(from image: UIImage) -> UIImage {
-        image.preparingThumbnail(of: CGSize(width: 192, height: 256)) ?? image
+    private func makeScrubberThumbnail(
+        from image: UIImage,
+        kind: ReaderThumbnailScrubberView.ImageKind
+    ) -> UIImage? {
+        let maxPixelSize = scrubberThumbnailPixelSize(for: kind)
+        let size = CGFloat(maxPixelSize)
+        return image.preparingThumbnail(of: CGSize(width: size, height: size))
     }
 
-    private var scrubberThumbnailOptions: ImageRequest.ThumbnailOptions {
-        .init(maxPixelSize: 384)
+    private func scrubberThumbnailOptions(
+        for kind: ReaderThumbnailScrubberView.ImageKind
+    ) -> ImageRequest.ThumbnailOptions {
+        .init(maxPixelSize: scrubberThumbnailPixelSize(for: kind))
+    }
+
+    private func scrubberThumbnailPixelSize(
+        for kind: ReaderThumbnailScrubberView.ImageKind
+    ) -> Float {
+        switch kind {
+            case .strip: 72
+            case .preview: 512
+        }
     }
 
     private func updateReaderToolbarMetrics(usesThumbnailScrubber: Bool) {

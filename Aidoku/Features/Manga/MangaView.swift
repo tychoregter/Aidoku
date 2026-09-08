@@ -354,6 +354,7 @@ extension MangaView {
 
         ChapterCellView(
             source: viewModel.source,
+            manga: viewModel.manga,
             sourceKey: viewModel.manga.sourceKey,
             chapter: chapter,
             read: viewModel.readingHistory[chapter.key]?.page == -1,
@@ -800,6 +801,7 @@ extension MangaView {
 
 private struct ChapterCellView<T: View>: View, Equatable {
     let source: AidokuRunner.Source?
+    let manga: AidokuRunner.Manga
     let sourceKey: String
     let chapter: AidokuRunner.Chapter
     let read: Bool
@@ -842,12 +844,23 @@ private struct ChapterCellView<T: View>: View, Equatable {
                 if !locked {
                     contextMenu?()
                 }
+            } preview: {
+                if AppSettings.library.contextMenuPagePreviews.get() {
+                    ChapterPageContextPreview(
+                        manga: manga,
+                        chapter: chapter,
+                        pageIndex: max((page ?? 1) - 1, 0)
+                    )
+                } else {
+                    view
+                }
             }
         }
     }
 
     static nonisolated func == (lhs: ChapterCellView<T>, rhs: ChapterCellView<T>) -> Bool {
-        lhs.chapter == rhs.chapter
+        lhs.manga.identifier == rhs.manga.identifier
+            && lhs.chapter == rhs.chapter
             && lhs.read == rhs.read
             && lhs.page == rhs.page
             && lhs.downloadStatus == rhs.downloadStatus

@@ -573,6 +573,8 @@ extension MangaView.ViewModel {
                     newManga = resultManga
                 }
 
+                await LibraryPagePreviewCache.shared.invalidate(mangaId: mangaId)
+
                 NotificationCenter.default.post(name: .updateManga, object: newManga.identifier)
             }
 

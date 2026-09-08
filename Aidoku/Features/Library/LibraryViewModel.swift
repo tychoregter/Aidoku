@@ -178,6 +178,15 @@ class LibraryViewModel {
     }
     private(set) var actuallyEmpty = true
 
+    // Several independent notifications can request a library reload at the
+    // same time. Since this type is main-actor isolated, each load can suspend
+    // while Core Data works and otherwise allow another load to start. Keep a
+    // single load in flight and fold requests received during it into one
+    // follow-up pass instead of accumulating background contexts.
+    private var isLoadingLibrary = false
+    private var libraryReloadPending = false
+    private var libraryLoadWaiters: [CheckedContinuation<Void, Never>] = []
+
     init() {
         favoriteIds = Set(UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? [])
         let filtersData = AppSettings.library.filtersData.get()
@@ -245,8 +254,31 @@ extension LibraryViewModel {
         }
     }
 
-    // swiftlint:disable:next cyclomatic_complexity
     func loadLibrary() async {
+        if isLoadingLibrary {
+            libraryReloadPending = true
+            await withCheckedContinuation { continuation in
+                libraryLoadWaiters.append(continuation)
+            }
+            return
+        }
+
+        isLoadingLibrary = true
+        repeat {
+            libraryReloadPending = false
+            await performLibraryLoad()
+        } while libraryReloadPending
+        isLoadingLibrary = false
+
+        let waiters = libraryLoadWaiters
+        libraryLoadWaiters.removeAll(keepingCapacity: true)
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    // swiftlint:disable:next cyclomatic_complexity
+    private func performLibraryLoad() async {
         // Favorites can be changed from the manga details screen while this view remains alive.
         favoriteIds = Set(UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? [])
 
