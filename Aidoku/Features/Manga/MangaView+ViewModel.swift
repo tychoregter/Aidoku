@@ -104,9 +104,9 @@ extension MangaView.ViewModel {
                     Task { @MainActor in
                         guard
                             let self,
-                            let manga = output.object as? AidokuRunner.Manga,
-                            manga.identifier == self.manga.identifier
-                                else {
+                            let id = output.object as? MangaIdentifier,
+                            id == self.manga.identifier
+                        else {
                             return
                         }
                         await self.loadBookmarked()
@@ -602,7 +602,7 @@ extension MangaView.ViewModel {
     }
 
     private func loadDownloadStatus() async {
-        for chapter in chapters + otherDownloadedChapters {
+        for chapter in (manga.chapters ?? chapters) + otherDownloadedChapters {
             downloadStatus[chapter.key] = DownloadManager.shared.getDownloadStatus(
                 for: .init(sourceKey: manga.sourceKey, mangaKey: manga.key, chapterKey: chapter.key)
             )
@@ -906,5 +906,6 @@ extension MangaView.ViewModel {
         manga.langFilter = chapterLangFilter
         manga.scanlatorFilter = chapterScanlatorFilter
         await CoreDataManager.shared.updateMangaDetails(manga: manga)
+        NotificationCenter.default.post(name: .filteredChapters, object: manga.identifier)
     }
 }

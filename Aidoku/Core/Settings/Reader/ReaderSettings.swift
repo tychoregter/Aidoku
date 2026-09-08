@@ -7,8 +7,12 @@
 
 struct ReaderSettings: Sendable {
     var keys: [any SettingsDefault] {
-        [thumbnailScrubber]
+        [
+            thumbnailScrubber,
+            autoScrollPosition
+        ]
     }
 
     let thumbnailScrubber = SettingsKey<Bool>("Reader.thumbnailScrubber", default: true)
+    let autoScrollPosition = SettingsKey<AutoScrollPosition>("Reader.autoScrollPosition", default: .right)
 }

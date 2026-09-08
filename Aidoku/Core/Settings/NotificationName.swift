@@ -31,6 +31,7 @@ extension Notification.Name {
     static let updateMangaCategories = Self("updateMangaCategories")
     static let favoriteChanged = Self("favoriteChanged")
     static let updateLibraryLock = Self("updateLibraryLock")
+    static let filteredChapters = Self("filteredChapters")
     static let mangaUpdatesViewed = Self("mangaUpdatesViewed")
     static let genreFilterSettingsChanged = Self("genreFilterSettingsChanged")
 
