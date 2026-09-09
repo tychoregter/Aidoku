@@ -313,14 +313,9 @@ extension ReaderSettingsView {
                         key: "Reader.backgroundColor",
                         title: NSLocalizedString("READER_BG_COLOR"),
                         value: .select(.init(
-                            values: ["system", "systemBlackWhenHidden", "auto", "white", "black"],
+                            values: ["system", "auto", "white", "black"],
                             titles: [
                                 NSLocalizedString("READER_BG_COLOR_SYSTEM"),
-                                Bundle.main.localizedString(
-                                    forKey: "READER_BG_COLOR_SYSTEM_BLACK_WHEN_HIDDEN",
-                                    value: "System (Black When Controls Are Hidden)",
-                                    table: nil
-                                ),
                                 NSLocalizedString("READER_BG_COLOR_AUTO"),
                                 NSLocalizedString("READER_BG_COLOR_WHITE"),
                                 NSLocalizedString("READER_BG_COLOR_BLACK")

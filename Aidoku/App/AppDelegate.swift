@@ -147,6 +147,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 "Reader.textAppearance": "system"
             ]
         )
+        // Dynamic was an experimental background mode. Preserve a dark canvas
+        // for anyone who selected it after the option was removed.
+        if UserDefaults.standard.string(forKey: "Reader.backgroundColor") == "systemBlackWhenHidden" {
+            UserDefaults.standard.set("black", forKey: "Reader.backgroundColor")
+        }
         AppSettings.registerDefaults()
 
         // PlayCover fix: eagerly initialize the Core Data stack on the main thread

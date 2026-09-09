@@ -1939,6 +1939,20 @@ extension LibraryViewController {
             return
         }
 
+        // A title can be visible twice when it is pinned and kept in Library.
+        // Capture the exact cover the user tapped before the asynchronous
+        // reader setup begins, rather than later looking up the first match.
+        let tappedTransitionSourceView: UIView? = {
+            guard let cell = collectionView.cellForItem(at: indexPath) else { return nil }
+            if let cell = cell as? MangaGridCell {
+                return cell.imageView
+            }
+            if let cell = cell as? MangaListCell {
+                return cell.coverImageView
+            }
+            return cell.contentView
+        }()
+
         if AppSettings.library.opensReaderView.get() {
             Task {
                 // get next chapter to read
@@ -1965,8 +1979,11 @@ extension LibraryViewController {
                         mangaInfo: info
                     )
                     if #available(iOS 18.0, *) {
-                        navigationController.preferredTransition = .zoom { [weak self] _ in
-                            self?.libraryTransitionSourceView(for: info.id)
+                        navigationController.preferredTransition = .zoom { [weak self, weak tappedTransitionSourceView] _ in
+                            if let tappedTransitionSourceView, tappedTransitionSourceView.window != nil {
+                                return tappedTransitionSourceView
+                            }
+                            return self?.libraryTransitionSourceView(for: info.id)
                         }
                     }
                     navigationController.modalPresentationStyle = .fullScreen

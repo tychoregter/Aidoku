@@ -50,6 +50,8 @@ class ReaderViewController: BaseObservingViewController {
     private var sessionLastInteraction: Date?
     private weak var contentSwipeDismissGesture: UIGestureRecognizer?
     private weak var openingTransitionCornerMask: UIView?
+    private var openingTransitionCornerMaskDisplayLink: CADisplayLink?
+    private var openingTransitionCornerMaskFramesRemaining = 0
 
     weak var reader: ReaderReaderDelegate?
 
@@ -195,6 +197,8 @@ class ReaderViewController: BaseObservingViewController {
 
     deinit {
         readerProgressContrastUpdateWorkItem?.cancel()
+        openingTransitionCornerMaskDisplayLink?.invalidate()
+        openingTransitionCornerMask?.removeFromSuperview()
         readerToolbar.removeFromSuperview()
         Task { [temporaryPageStore] in
             await temporaryPageStore.removeAll()
@@ -526,7 +530,7 @@ class ReaderViewController: BaseObservingViewController {
 
         if AppSettings.reader.automaticallyHideControls.get() {
             hideBarsImmediately()
-            scheduleDynamicOpeningCornerMaskIfNeeded(animated: animated)
+            scheduleBlackOpeningCornerMaskIfNeeded(animated: animated)
         }
     }
 
@@ -550,6 +554,8 @@ class ReaderViewController: BaseObservingViewController {
         super.viewWillDisappear(animated)
 
         cancelReaderProgressContrastUpdate()
+        openingTransitionCornerMaskDisplayLink?.invalidate()
+        openingTransitionCornerMaskDisplayLink = nil
         (reader as? ReaderWebtoonViewController)?.stopAutoScroll()
 
         if !chaptersToRemoveDownload.isEmpty {
@@ -1886,41 +1892,58 @@ extension ReaderViewController {
     /// fraction of a second after the reader has filled the screen. On a dark
     /// canvas, briefly mask that outer area so the system background cannot
     /// show through.
-    private func scheduleDynamicOpeningCornerMaskIfNeeded(animated: Bool) {
+    private func scheduleBlackOpeningCornerMaskIfNeeded(animated: Bool) {
         guard
             animated,
             isBeingPresented || navigationController?.isBeingPresented == true,
-            let selectedBackground = UserDefaults.standard.string(forKey: "Reader.backgroundColor"),
-            ["systemBlackWhenHidden", "black"].contains(selectedBackground),
+            UserDefaults.standard.string(forKey: "Reader.backgroundColor") == "black",
             let coordinator = transitionCoordinator
         else { return }
 
-        let duration = coordinator.transitionDuration
-        guard duration > 0 else { return }
+        // Trigger near the end of the native zoom rather than subtracting a
+        // fixed time. This keeps the same visual phase on 60 Hz and ProMotion
+        // displays. The display-frame offset below preserves a consistent
+        // frame relationship instead of adding a fixed number of milliseconds.
+        let transitionPhase = 1.50
+        let additionalDisplayFrames = 0
+        let revealDelay = coordinator.transitionDuration * transitionPhase
+        DispatchQueue.main.asyncAfter(deadline: .now() + revealDelay) { [weak self] in
+            guard let self, !self.isBeingDismissed else { return }
+            self.showOpeningCornerMask(afterDisplayFrames: additionalDisplayFrames)
+        }
+    }
 
-        // Start two display frames after UIKit reports the native zoom complete:
-        // this is the short interval where its rounded snapshot can linger.
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration + (2.0 / 60.0)) { [weak self] in
-            guard
-                let self,
-                let readerView = self.navigationController?.view,
-                let transitionContainer = readerView.superview
-            else { return }
+    private func showOpeningCornerMask(afterDisplayFrames frameCount: Int) {
+        openingTransitionCornerMaskDisplayLink?.invalidate()
+        openingTransitionCornerMaskFramesRemaining = frameCount
 
-            self.openingTransitionCornerMask?.removeFromSuperview()
-            let mask = ReaderOpeningTransitionCornerMask(frame: transitionContainer.bounds)
-            mask.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            mask.alpha = 1
-            // Sit behind the complete presented reader, including its page
-            // image and the native zoom snapshot, rather than over either.
-            transitionContainer.insertSubview(mask, belowSubview: readerView)
-            self.openingTransitionCornerMask = mask
+        let displayLink = CADisplayLink(target: self, selector: #selector(handleOpeningCornerMaskDisplayLink))
+        openingTransitionCornerMaskDisplayLink = displayLink
+        displayLink.add(to: .main, forMode: .common)
+    }
 
-            // Diagnostic only: no opacity animation. Keep it long enough to
-            // inspect the layer ordering and the post-transition snapshot.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
-                mask.removeFromSuperview()
-            }
+    @objc private func handleOpeningCornerMaskDisplayLink() {
+        openingTransitionCornerMaskFramesRemaining -= 1
+        guard openingTransitionCornerMaskFramesRemaining <= 0 else { return }
+
+        openingTransitionCornerMaskDisplayLink?.invalidate()
+        openingTransitionCornerMaskDisplayLink = nil
+
+        guard
+            let libraryView = navigationController?.presentingViewController?.view
+        else { return }
+
+        openingTransitionCornerMask?.removeFromSuperview()
+        // This lives on the presenting Library view, below the reader and the
+        // native zoom snapshot. It therefore supplies a solid backdrop for
+        // the snapshot's rounded cutout without being clipped by it.
+        let mask = ReaderOpeningTransitionCornerMask(frame: libraryView.bounds, fillsBounds: true)
+        mask.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        libraryView.addSubview(mask)
+        openingTransitionCornerMask = mask
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
+            mask.removeFromSuperview()
         }
     }
 
@@ -1931,9 +1954,8 @@ extension ReaderViewController {
             case "white":
                 .white
             default:
-                // This includes Automatic, Black, and System (Black When
-                // Controls Are Hidden), which should all use a black canvas
-                // once the overlays are gone.
+                // Automatic and Black use a black canvas once the overlays
+                // are gone.
                 .black
         }
     }
@@ -2068,8 +2090,10 @@ extension ReaderViewController {
 
 private final class ReaderOpeningTransitionCornerMask: UIView {
     private let maskLayer = CAShapeLayer()
+    private let fillsBounds: Bool
 
-    override init(frame: CGRect) {
+    init(frame: CGRect, fillsBounds: Bool = false) {
+        self.fillsBounds = fillsBounds
         super.init(frame: frame)
         isUserInteractionEnabled = false
         backgroundColor = .clear
@@ -2086,11 +2110,10 @@ private final class ReaderOpeningTransitionCornerMask: UIView {
         super.layoutSubviews()
         maskLayer.frame = bounds
 
-        #if DEBUG
-        // Diagnostic only. Once confirmed, restore the corner-only path below.
-        maskLayer.path = UIBezierPath(rect: bounds).cgPath
-        return
-        #endif
+        if fillsBounds {
+            maskLayer.path = UIBezierPath(rect: bounds).cgPath
+            return
+        }
 
         let path = UIBezierPath(rect: bounds)
         // UIKit does not expose the physical display radius on this deployment
