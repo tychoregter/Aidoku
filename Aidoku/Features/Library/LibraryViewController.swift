@@ -1965,20 +1965,8 @@ extension LibraryViewController {
                         mangaInfo: info
                     )
                     if #available(iOS 18.0, *) {
-                        navigationController.preferredTransition = .zoom { context in
-                            guard
-                                let navigationController = context.zoomedViewController as? ReaderNavigationController,
-                                let info = navigationController.mangaInfo,
-                                let indexPath = self.dataSource.indexPath(for: info),
-                                let cell = self.collectionView.cellForItem(at: indexPath)
-                            else {
-                                return nil
-                            }
-                            if let cell = cell as? MangaListCell {
-                                return cell.coverImageView
-                            } else {
-                                return cell.contentView
-                            }
+                        navigationController.preferredTransition = .zoom { [weak self] _ in
+                            self?.libraryTransitionSourceView(for: info.id)
                         }
                     }
                     navigationController.modalPresentationStyle = .fullScreen
@@ -2041,16 +2029,22 @@ extension LibraryViewController {
 
         let mangaInfo = indexPaths.compactMap { dataSource.itemIdentifier(for: $0) }
 
-        let previewProvider: UIContextMenuContentPreviewProvider? = if
+        let contextPreviewController: LibraryPageContextPreviewViewController? = if
             AppSettings.library.contextMenuPagePreviews.get(),
             mangaInfo.count == 1
         {
-            { LibraryPageContextPreviewViewController(mangaId: manga.id) }
+            // Start preparing the reader as soon as the menu is requested,
+            // instead of waiting for UIKit to ask for the visual preview.
+            LibraryPageContextPreviewViewController(mangaId: manga.id)
         } else {
             nil
         }
 
-        return UIContextMenuConfiguration(identifier: nil, previewProvider: previewProvider) { _ -> UIMenu? in
+        let previewProvider: UIContextMenuContentPreviewProvider? = contextPreviewController.map { controller in
+            { controller }
+        }
+        let previewIdentifier: NSString? = contextPreviewController == nil ? nil : manga.id.description as NSString
+        return UIContextMenuConfiguration(identifier: previewIdentifier, previewProvider: previewProvider) { _ -> UIMenu? in
             var actions: [UIMenuElement] = []
             let singleAttributes = mangaInfo.count > 1
                 ? .disabled
@@ -2243,6 +2237,87 @@ extension LibraryViewController {
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
         self.collectionView(collectionView, contextMenuConfigurationForItemsAt: [indexPath], point: point)
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration,
+        animator: any UIContextMenuInteractionCommitAnimating
+    ) {
+        guard
+            let identifier = configuration.identifier as? String,
+            let mangaInfo = dataSource.snapshot().itemIdentifiers.first(where: {
+                $0.id.description == identifier
+            })
+        else { return }
+
+        guard animator.previewViewController is LibraryPageContextPreviewViewController else { return }
+        // Let UIKit promote the preview using its native commit transition.
+        // The reader is attached after the promotion completes.
+        animator.preferredCommitStyle = .pop
+        animator.addCompletion { [weak self] in
+            guard let self else { return }
+            Task {
+                guard
+                    let target = await LibraryPagePreviewCache.shared.target(for: mangaInfo.id),
+                    let source = SourceManager.shared.store.source(for: mangaInfo.id.sourceKey)
+                else { return }
+                self.openReaderFromContextPreview(
+                    for: mangaInfo,
+            target: target,
+            source: source
+                )
+            }
+        }
+    }
+
+    private func openReaderFromContextPreview(
+        for mangaInfo: MangaInfo,
+        target: LibraryPagePreviewTarget,
+        source: AidokuRunner.Source
+    ) {
+        let readerController = ReaderViewController(
+            source: source,
+            manga: target.manga,
+            chapter: target.chapter,
+            startPage: target.pageIndex + 1,
+            delaysAutomaticHideControls: true
+        )
+        let navigationController = ReaderNavigationController(
+            readerViewController: readerController,
+            mangaInfo: mangaInfo
+        )
+        if #available(iOS 18.0, *) {
+            // The context-menu commit supplies the opening animation; this
+            // transition is retained for the reader's dismissal.
+            navigationController.preferredTransition = .zoom { [weak self] _ in
+                self?.libraryTransitionSourceView(for: mangaInfo.id)
+            }
+        }
+        navigationController.modalPresentationStyle = .fullScreen
+        present(navigationController, animated: false)
+    }
+
+    private func libraryTransitionSourceView(for mangaId: MangaIdentifier) -> UIView? {
+        let snapshot = dataSource.snapshot()
+        let matchingIndexPaths = collectionView.indexPathsForVisibleItems.filter { indexPath in
+            dataSource.itemIdentifier(for: indexPath)?.id == mangaId
+        }.sorted { lhs, rhs in
+            let lhsSection = snapshot.sectionIdentifiers[safe: lhs.section]
+            let rhsSection = snapshot.sectionIdentifiers[safe: rhs.section]
+            if lhsSection == .pinned, rhsSection != .pinned { return true }
+            if lhsSection != .pinned, rhsSection == .pinned { return false }
+            return lhs < rhs
+        }
+
+        for indexPath in matchingIndexPaths {
+            guard let cell = collectionView.cellForItem(at: indexPath) else { continue }
+            if let cell = cell as? MangaListCell {
+                return cell.coverImageView
+            }
+            return cell.contentView
+        }
+        return nil
     }
 }
 

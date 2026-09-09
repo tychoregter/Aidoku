@@ -9,20 +9,21 @@ import ImageIO
 import Nuke
 import UIKit
 
+struct LibraryPagePreviewTarget: Sendable {
+    let manga: AidokuRunner.Manga
+    let chapter: AidokuRunner.Chapter
+    /// Zero-based page index, matching the cached preview image.
+    let pageIndex: Int
+
+    var pageKey: String { "\(chapter.key)|\(pageIndex)" }
+}
+
 /// Maintains one persistent current-page preview per Library title and a
 /// separate launch-scoped cache for chapter previews shown on manga screens.
 /// Images are kept on disk only; the context-menu view owns the sole decoded
 /// image while it is visible.
 actor LibraryPagePreviewCache {
     static let shared = LibraryPagePreviewCache()
-
-    private struct PreviewTarget: Sendable {
-        let manga: AidokuRunner.Manga
-        let chapter: AidokuRunner.Chapter
-        let pageIndex: Int
-
-        var pageKey: String { "\(chapter.key)|\(pageIndex)" }
-    }
 
     private struct LoadedPreview {
         let pageKey: String
@@ -39,6 +40,7 @@ actor LibraryPagePreviewCache {
     private static let thumbnailOptions = ImageRequest.ThumbnailOptions(maxPixelSize: 1200)
 
     private var inFlight: [String: Task<LoadedPreview?, Never>] = [:]
+    private var inFlightPages: [String: Task<[Page], Never>] = [:]
     private var pendingRefreshes: [MangaIdentifier: Task<Void, Never>] = [:]
     private var prewarmTask: Task<Void, Never>?
     private var generations: [MangaIdentifier: UInt64] = [:]
@@ -61,6 +63,26 @@ actor LibraryPagePreviewCache {
         return await refreshNow(mangaId: mangaId, returnImage: true)
     }
 
+    /// Describes the chapter and page represented by a Library preview.
+    /// Used when the context-menu preview is committed into the reader.
+    func target(for mangaId: MangaIdentifier) async -> LibraryPagePreviewTarget? {
+        await Self.previewTarget(for: mangaId)
+    }
+
+    /// Shares the page-list request with the visible preview, so committing it
+    /// does not make the reader fetch the same chapter a second time.
+    func pages(for target: LibraryPagePreviewTarget) async -> [Page] {
+        let key = "pages|\(target.manga.identifier.description)|\(target.chapter.key)"
+        if let task = inFlightPages[key] {
+            return await task.value
+        }
+        let task = Task<[Page], Never> { await Self.loadPages(for: target) }
+        inFlightPages[key] = task
+        let pages = await task.value
+        inFlightPages[key] = nil
+        return pages
+    }
+
     /// Returns a launch-scoped preview for a chapter on the manga info screen.
     /// The persistent current-page file is reused when both targets match.
     func image(
@@ -68,7 +90,7 @@ actor LibraryPagePreviewCache {
         chapter: AidokuRunner.Chapter,
         pageIndex: Int
     ) async -> UIImage? {
-        let target = PreviewTarget(manga: manga, chapter: chapter, pageIndex: max(pageIndex, 0))
+        let target = LibraryPagePreviewTarget(manga: manga, chapter: chapter, pageIndex: max(pageIndex, 0))
         let mangaId = manga.identifier
         if Self.persistentPageKey(for: mangaId) == target.pageKey,
            let image = Self.persistentImage(for: mangaId) {
@@ -148,6 +170,8 @@ actor LibraryPagePreviewCache {
         pendingRefreshes.removeAll()
         inFlight.values.forEach { $0.cancel() }
         inFlight.removeAll()
+        inFlightPages.values.forEach { $0.cancel() }
+        inFlightPages.removeAll()
         Self.rootDirectory.removeItem()
         Self.persistentDirectory.createDirectory()
         Self.sessionDirectory.createDirectory()
@@ -188,38 +212,39 @@ actor LibraryPagePreviewCache {
         return returnImage ? loaded.image : nil
     }
 
-    private func load(target: PreviewTarget, taskKey: String) async -> LoadedPreview? {
+    private func load(target: LibraryPagePreviewTarget, taskKey: String) async -> LoadedPreview? {
         if let task = inFlight[taskKey] {
             return await task.value
         }
-        let task = Task(priority: .utility) { await Self.loadPreview(target: target) }
+        let task = Task(priority: .utility) { await self.loadPreview(target: target) }
         inFlight[taskKey] = task
         let result = await task.value
         inFlight[taskKey] = nil
         return result
     }
 
-    private static func previewTarget(for mangaId: MangaIdentifier) async -> PreviewTarget? {
-        guard let manga = await CoreDataManager.shared.container.performBackgroundTask({ context in
+    private static func previewTarget(for mangaId: MangaIdentifier) async -> LibraryPagePreviewTarget? {
+        guard var manga = await CoreDataManager.shared.container.performBackgroundTask({ context in
             CoreDataManager.shared.getManga(mangaId: mangaId, context: context)?.toNewManga()
         }) else { return nil }
 
         let result = await MangaManager.shared.getNextChapter(mangaId: mangaId)
         guard let chapter = result.nextChapter ?? result.chapters.first else { return nil }
+        manga.chapters = result.chapters
         let history = await CoreDataManager.shared.getReadingHistory(mangaId: mangaId)
         let storedPage = history[chapter.id]?.page ?? 1
-        return PreviewTarget(
+        return LibraryPagePreviewTarget(
             manga: manga,
             chapter: chapter,
             pageIndex: storedPage > 0 ? storedPage - 1 : 0
         )
     }
 
-    private static func loadPreview(target: PreviewTarget) async -> LoadedPreview? {
+    private func loadPreview(target: LibraryPagePreviewTarget) async -> LoadedPreview? {
         let pages = await pages(for: target)
         guard !pages.isEmpty else { return nil }
         let pageIndex = min(max(target.pageIndex, 0), pages.count - 1)
-        guard let image = await thumbnail(for: pages[pageIndex], sourceKey: target.manga.sourceKey),
+        guard let image = await Self.thumbnail(for: pages[pageIndex], sourceKey: target.manga.sourceKey),
               let data = image.jpegData(compressionQuality: 0.82) else { return nil }
         return LoadedPreview(
             pageKey: "\(target.chapter.key)|\(pageIndex)",
@@ -228,7 +253,7 @@ actor LibraryPagePreviewCache {
         )
     }
 
-    private static func pages(for target: PreviewTarget) async -> [Page] {
+    private static func loadPages(for target: LibraryPagePreviewTarget) async -> [Page] {
         let mangaId = target.manga.identifier
         let chapterId = ChapterIdentifier(
             sourceKey: mangaId.sourceKey,

@@ -21,6 +21,7 @@ class ReaderViewController: BaseObservingViewController {
     let source: AidokuRunner.Source?
     let manga: AidokuRunner.Manga
     var chapter: AidokuRunner.Chapter
+    private let delaysAutomaticHideControls: Bool
     var pages: [Page] = []
     var readingMode: ReadingMode = .rtl
     var defaultReadingMode: ReadingMode?
@@ -173,11 +174,13 @@ class ReaderViewController: BaseObservingViewController {
         source: AidokuRunner.Source?,
         manga: AidokuRunner.Manga,
         chapter: AidokuRunner.Chapter,
-        startPage: Int? = nil
+        startPage: Int? = nil,
+        delaysAutomaticHideControls: Bool = false
     ) {
         self.source = source
         self.manga = manga
         self.chapter = chapter
+        self.delaysAutomaticHideControls = delaysAutomaticHideControls
         self.chapterList = manga.chapters ?? []
         self.chaptersToMark = [chapter]
         self.defaultReadingMode = switch manga.viewer {
@@ -530,8 +533,20 @@ class ReaderViewController: BaseObservingViewController {
         sessionStartDate = Date.now
         sessionLastInteraction = nil
 
-        // Open directly in the clean reading view. A tap still reveals the bars.
-        hideBars()
+        if AppSettings.reader.automaticallyHideControls.get() {
+            if delaysAutomaticHideControls {
+                // A context-menu `.pop` commit has already consumed the
+                // presentation animation before this controller appears.
+                // Keep the controls visible for the same short settling period
+                // the normal cover presentation provides.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                    guard let self, self.viewIfLoaded?.window != nil else { return }
+                    self.hideBars()
+                }
+            } else {
+                hideBars()
+            }
+        }
 
         disableSwipeGestures()
         configureNavigationBarDismissTapGesture(enabled: isDictionarySingleTapLookupActiveForCurrentChapter)
@@ -860,7 +875,11 @@ extension ReaderViewController {
                     toolbarView.setSliderDirection(.forward)
                 }
                 if !(reader is ReaderPagedViewController) {
-                    pageController = ReaderPagedViewController(source: source, manga: manga, temporaryPageStore: temporaryPageStore)
+                    pageController = ReaderPagedViewController(
+                        source: source,
+                        manga: manga,
+                        temporaryPageStore: temporaryPageStore
+                    )
                 } else {
                     pageController = nil
                 }

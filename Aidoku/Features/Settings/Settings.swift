@@ -587,6 +587,19 @@ extension Settings {
                 value: .toggle(.init())
             ),
             .init(
+                key: AppSettings.reader.automaticallyHideControls.key,
+                title: Bundle.main.localizedString(
+                    forKey: "AUTOMATICALLY_HIDE_READER_CONTROLS",
+                    value: "Automatically Hide Controls",
+                    table: nil
+                ),
+                value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                    forKey: "AUTOMATICALLY_HIDE_READER_CONTROLS_TEXT",
+                    value: "Hide the reader controls when opening or returning to the reader.",
+                    table: nil
+                )))
+            ),
+            .init(
                 key: "Reader.hideBarsOnSwipe",
                 title: NSLocalizedString("HIDE_BARS_ON_SWIPE"),
                 value: .toggle(.init())

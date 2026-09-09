@@ -56,7 +56,7 @@ final class LibraryPageContextPreviewViewController: UIViewController {
             activityIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
 
-        loadTask = Task { [weak self] in
+        loadTask = Task(priority: .utility) { [weak self] in
             guard let self else { return }
             let image = switch request {
                 case .library(let mangaId):
