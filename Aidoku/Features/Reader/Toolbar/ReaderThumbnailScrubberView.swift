@@ -8,6 +8,11 @@ import UIKit
 /// An Apple Books-inspired page scrubber that keeps the reader's existing
 /// normalized (0...1) progress API while presenting the chapter as thumbnails.
 final class ReaderThumbnailScrubberView: UIControl {
+    enum Direction {
+        case forward
+        case backward
+    }
+
     enum ImageKind: Equatable {
         case strip
         case preview
@@ -24,7 +29,7 @@ final class ReaderThumbnailScrubberView: UIControl {
         static let previewSpacing: CGFloat = 8
     }
 
-    var direction: ReaderSliderView.SliderDirection = .forward {
+    var direction: Direction = .forward {
         didSet {
             guard oldValue != direction else { return }
             layoutThumbnailViews()

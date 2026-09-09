@@ -11,7 +11,6 @@ import AidokuRunner
 class ReaderNavigationController: UINavigationController {
     let readerViewController: ReaderViewController
     let mangaInfo: MangaInfo?
-
     init(readerViewController: ReaderViewController, mangaInfo: MangaInfo? = nil) {
         self.readerViewController = readerViewController
         self.mangaInfo = mangaInfo

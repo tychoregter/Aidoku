@@ -572,6 +572,7 @@
 "HIDE_BARS_ON_SWIPE" = "Hide Bars on Swipe";
 "READER_BG_COLOR" = "Background Color";
 "READER_BG_COLOR_SYSTEM" = "System";
+"READER_BG_COLOR_SYSTEM_BLACK_WHEN_HIDDEN" = "Dynamic";
 "READER_BG_COLOR_AUTO" = "Automatic";
 "READER_BG_COLOR_WHITE" = "White";
 "READER_BG_COLOR_BLACK" = "Black";
@@ -732,6 +733,9 @@
 "PAGES_TO_PRELOAD" = "Pages to Preload";
 "SINGLE_PAGE" = "Single Page";
 "PAGED" = "Paged";
+"PAGE_TURN_EFFECT" = "Page Turn Effect";
+"PAGE_TURN_EFFECT_SLIDE" = "Slide";
+"PAGE_TURN_EFFECT_CURL" = "Curl";
 "PAGE_LAYOUT" = "Page Layout";
 "DOUBLE_PAGE" = "Double Page";
 "PAGE_OFFSET" = "Page Offset";

@@ -19,7 +19,10 @@ class ReaderPagedViewController: BaseObservingViewController {
     var readingMode: ReadingMode = .rtl {
         didSet(oldValue) {
             guard readingMode != oldValue else { return }
-            if readingMode == .vertical || oldValue == .vertical {
+            let needsNewPageController =
+                readingMode == .vertical || oldValue == .vertical ||
+                (usesPageCurl && (readingMode == .rtl) != (oldValue == .rtl))
+            if needsNewPageController {
                 pageViewController.remove()
                 pageViewController = makePageViewController()
                 configure()
@@ -63,11 +66,26 @@ class ReaderPagedViewController: BaseObservingViewController {
 
     private lazy var pageViewController = makePageViewController()
 
+    private var usesPageCurl: Bool {
+        readingMode != .vertical && AppSettings.reader.pageTurnEffect.get() == .curl
+    }
+
     func makePageViewController() -> UIPageViewController {
-        UIPageViewController(
-            transitionStyle: .scroll,
-            navigationOrientation: readingMode == .vertical ? .vertical : .horizontal,
-            options: nil
+        let options: [UIPageViewController.OptionsKey: Any]? = if usesPageCurl {
+            [
+                // Keep the native forward curl for both reading directions. Moving
+                // the spine to the trailing edge makes RTL pages turn from the left.
+                .spineLocation: (readingMode == .rtl
+                    ? UIPageViewController.SpineLocation.max
+                    : UIPageViewController.SpineLocation.min).rawValue
+            ]
+        } else {
+            nil
+        }
+        return UIPageViewController(
+            transitionStyle: usesPageCurl ? .pageCurl : .scroll,
+            navigationOrientation: usesPageCurl || readingMode != .vertical ? .horizontal : .vertical,
+            options: options
         )
     }
 
@@ -87,12 +105,19 @@ class ReaderPagedViewController: BaseObservingViewController {
     override func configure() {
         pageViewController.delegate = self
         pageViewController.dataSource = self
+        pageViewController.view.isOpaque = false
+        pageViewController.view.backgroundColor = .clear
         add(child: pageViewController)
+        pageViewController.view.frame = view.bounds
 
         updatePageLayout()
     }
 
     override func observe() {
+        addObserver(forName: .readerPageTurnEffect) { [weak self] _ in
+            guard let self, self.chapter != nil else { return }
+            self.rebuildPageViewController()
+        }
         addObserver(forName: "Reader.pagedPageLayout") { [weak self] _ in
             guard let self = self else { return }
             self.updatePageLayout()
@@ -173,7 +198,21 @@ class ReaderPagedViewController: BaseObservingViewController {
         }
     }
 
+    private func rebuildPageViewController() {
+        pageViewController.remove()
+        pageViewController = makePageViewController()
+        configure()
+        refreshChapter(startPage: currentPage)
+    }
+
     func updatePageLayout() {
+        if usesPageCurl {
+            // UIKit's curl effect works on one view-controller-sized surface.
+            // Keep it to a single fitted page rather than turning a whole spread.
+            usesDoublePages = false
+            usesAutoPageLayout = false
+            return
+        }
         usesDoublePages = {
             self.usesAutoPageLayout = false
             switch UserDefaults.standard.string(forKey: "Reader.pagedPageLayout") {
@@ -316,13 +355,16 @@ extension ReaderPagedViewController {
             delegate: delegate,
             temporaryPageStore: viewModel.temporaryPageStore
         )
+        page.usesPageCurl = usesPageCurl
         page.pageView?.imageView.addInteraction(UIContextMenuInteraction(delegate: self))
         if #available(iOS 18.0, *) {
             bindDictionaryOverlayTap(to: page)
         }
         if hasImageCallbacks {
             page.onImageisWideImage = { [weak self, weak page] isWide in
-                guard let self, let page, isWide else { return }
+                guard let self, let page else { return }
+                self.updatePageCurlViewport(for: page)
+                guard isWide else { return }
                 guard let vcIndex = self.pageViewControllers.firstIndex(of: page) else { return }
                 let liveDisplay = self.pageIndex(from: vcIndex)
                 let actualPage = self.actualPageIndex(from: liveDisplay)
@@ -349,6 +391,44 @@ extension ReaderPagedViewController {
             page.setPage(preloadPage, skipProcessing: skipProcessing)
         }
         return page
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard !isTransitioning else { return }
+        updatePageCurlViewport()
+    }
+
+    private func updatePageCurlViewport(for page: ReaderPageViewController? = nil) {
+        guard usesPageCurl else {
+            pageViewController.view.frame = view.bounds
+            return
+        }
+
+        let visiblePage = page ?? pageViewController.viewControllers?.first as? ReaderPageViewController
+        guard
+            let visiblePage,
+            pageViewController.viewControllers?.contains(where: { $0 === visiblePage }) == true,
+            let aspectRatio = visiblePage.imageAspectRatio,
+            aspectRatio > 0
+        else {
+            return
+        }
+
+        let bounds = view.bounds
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        let imageSize: CGSize
+        if bounds.width / bounds.height > aspectRatio {
+            imageSize = .init(width: bounds.height * aspectRatio, height: bounds.height)
+        } else {
+            imageSize = .init(width: bounds.width, height: bounds.width / aspectRatio)
+        }
+        pageViewController.view.frame = .init(
+            x: bounds.midX - imageSize.width / 2,
+            y: bounds.midY - imageSize.height / 2,
+            width: imageSize.width,
+            height: imageSize.height
+        )
     }
 
     func move(toPage page: Int, animated: Bool, resetGesture: Bool = true) {
@@ -980,6 +1060,7 @@ extension ReaderPagedViewController: UIPageViewControllerDelegate {
         isTransitioning = false
         setLiveTextButtonHidden(delegate?.barsHidden ?? false)
         if completed {
+            updatePageCurlViewport()
             for viewController in previousViewControllers {
                 if let pageController = viewController as? ReaderPageViewController {
                     pageController.pageView?.clearLiveTextSelection()

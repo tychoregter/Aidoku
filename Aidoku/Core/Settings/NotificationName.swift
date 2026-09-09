@@ -72,6 +72,7 @@ extension Notification.Name {
     static let readerReadingMode = Self("Reader.readingMode")
     static let readerTapZones = Self("Reader.tapZones")
     static let readerOrientation = Self("Reader.orientation")
+    static let readerPageTurnEffect = Self("Reader.pageTurnEffect")
     static let dictionaryDictionariesChanged = Self("Dictionary.dictionariesChanged")
     static let dictionaryVocabChanged = Self("Dictionary.vocabChanged")
 }

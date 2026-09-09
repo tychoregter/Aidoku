@@ -605,26 +605,17 @@ extension Settings {
                 value: .toggle(.init())
             ),
             .init(
-                key: AppSettings.reader.thumbnailScrubber.key,
-                title: Bundle.main.localizedString(
-                    forKey: "THUMBNAIL_PAGE_SCRUBBER",
-                    value: "Thumbnail Page Scrubber",
-                    table: nil
-                ),
-                notification: .init(AppSettings.reader.thumbnailScrubber.key),
-                value: .toggle(.init(subtitle: Bundle.main.localizedString(
-                    forKey: "THUMBNAIL_PAGE_SCRUBBER_TEXT",
-                    value: "Show page previews in the reader progress control.",
-                    table: nil
-                )))
-            ),
-            .init(
                 key: "Reader.backgroundColor",
                 title: NSLocalizedString("READER_BG_COLOR"),
                 value: .select(.init(
-                    values: ["system", "auto", "white", "black"],
+                    values: ["system", "systemBlackWhenHidden", "auto", "white", "black"],
                     titles: [
                         NSLocalizedString("READER_BG_COLOR_SYSTEM"),
+                        Bundle.main.localizedString(
+                            forKey: "READER_BG_COLOR_SYSTEM_BLACK_WHEN_HIDDEN",
+                            value: "System (Black When Controls Are Hidden)",
+                            table: nil
+                        ),
                         NSLocalizedString("READER_BG_COLOR_AUTO"),
                         NSLocalizedString("READER_BG_COLOR_WHITE"),
                         NSLocalizedString("READER_BG_COLOR_BLACK")
@@ -723,6 +714,15 @@ extension Settings {
                             NSLocalizedString("DOUBLE_PAGE"),
                             NSLocalizedString("AUTOMATIC")
                         ]
+                    ))
+                ),
+                .init(
+                    key: AppSettings.reader.pageTurnEffect.key,
+                    title: NSLocalizedString("PAGE_TURN_EFFECT"),
+                    notification: .init(Notification.Name.readerPageTurnEffect.rawValue),
+                    value: .select(.init(
+                        values: ReaderSettings.PageTurnEffect.allCases.map(\.rawValue),
+                        titles: ReaderSettings.PageTurnEffect.allCases.map(\.title)
                     ))
                 ),
                 .init(

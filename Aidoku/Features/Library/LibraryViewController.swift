@@ -2280,8 +2280,7 @@ extension LibraryViewController {
             source: source,
             manga: target.manga,
             chapter: target.chapter,
-            startPage: target.pageIndex + 1,
-            delaysAutomaticHideControls: true
+            startPage: target.pageIndex + 1
         )
         let navigationController = ReaderNavigationController(
             readerViewController: readerController,

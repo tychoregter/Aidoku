@@ -9,12 +9,12 @@ struct ReaderSettings: Sendable {
     var keys: [any SettingsDefault] {
         [
             automaticallyHideControls,
-            thumbnailScrubber,
+            pageTurnEffect,
             autoScrollPosition
         ]
     }
 
     let automaticallyHideControls = SettingsKey<Bool>("Reader.automaticallyHideControls", default: true)
-    let thumbnailScrubber = SettingsKey<Bool>("Reader.thumbnailScrubber", default: true)
+    let pageTurnEffect = SettingsKey<PageTurnEffect>("Reader.pageTurnEffect", default: .slide)
     let autoScrollPosition = SettingsKey<AutoScrollPosition>("Reader.autoScrollPosition", default: .right)
 }

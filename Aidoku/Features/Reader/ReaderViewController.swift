@@ -21,7 +21,6 @@ class ReaderViewController: BaseObservingViewController {
     let source: AidokuRunner.Source?
     let manga: AidokuRunner.Manga
     var chapter: AidokuRunner.Chapter
-    private let delaysAutomaticHideControls: Bool
     var pages: [Page] = []
     var readingMode: ReadingMode = .rtl
     var defaultReadingMode: ReadingMode?
@@ -49,6 +48,8 @@ class ReaderViewController: BaseObservingViewController {
     private var sessionReadPages: Set<Int> = []
     private var sessionStartDate: Date?
     private var sessionLastInteraction: Date?
+    private weak var contentSwipeDismissGesture: UIGestureRecognizer?
+    private weak var openingTransitionCornerMask: UIView?
 
     weak var reader: ReaderReaderDelegate?
 
@@ -174,13 +175,11 @@ class ReaderViewController: BaseObservingViewController {
         source: AidokuRunner.Source?,
         manga: AidokuRunner.Manga,
         chapter: AidokuRunner.Chapter,
-        startPage: Int? = nil,
-        delaysAutomaticHideControls: Bool = false
+        startPage: Int? = nil
     ) {
         self.source = source
         self.manga = manga
         self.chapter = chapter
-        self.delaysAutomaticHideControls = delaysAutomaticHideControls
         self.chapterList = manga.chapters ?? []
         self.chaptersToMark = [chapter]
         self.defaultReadingMode = switch manga.viewer {
@@ -249,11 +248,7 @@ class ReaderViewController: BaseObservingViewController {
         navigationController?.toolbar.compactAppearance = toolbarAppearance
         navigationController?.toolbar.scrollEdgeAppearance = toolbarAppearance
 
-        loadNavbarTitle()
-
         // toolbar view
-        toolbarView.sliderView.addTarget(self, action: #selector(sliderMoved(_:)), for: .valueChanged)
-        toolbarView.sliderView.addTarget(self, action: #selector(sliderStopped(_:)), for: .editingDidEnd)
         toolbarView.thumbnailScrubberView.addTarget(
             self,
             action: #selector(thumbnailScrubberMoved(_:)),
@@ -526,27 +521,21 @@ class ReaderViewController: BaseObservingViewController {
         }
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+
+        if AppSettings.reader.automaticallyHideControls.get() {
+            hideBarsImmediately()
+            scheduleDynamicOpeningCornerMaskIfNeeded(animated: animated)
+        }
+    }
+
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
 
         sessionReadPages = [self.currentPage]
         sessionStartDate = Date.now
         sessionLastInteraction = nil
-
-        if AppSettings.reader.automaticallyHideControls.get() {
-            if delaysAutomaticHideControls {
-                // A context-menu `.pop` commit has already consumed the
-                // presentation animation before this controller appears.
-                // Keep the controls visible for the same short settling period
-                // the normal cover presentation provides.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                    guard let self, self.viewIfLoaded?.window != nil else { return }
-                    self.hideBars()
-                }
-            } else {
-                hideBars()
-            }
-        }
 
         disableSwipeGestures()
         configureNavigationBarDismissTapGesture(enabled: isDictionarySingleTapLookupActiveForCurrentChapter)
@@ -615,6 +604,7 @@ extension ReaderViewController {
                 case "_UIContentSwipeDismissGestureRecognizer": // swipe down gesture
                     recognizer.isEnabled = !isVerticalReader
                     recognizer.delegate = self // ensure gesture only activates on swipe down, not swipe right
+                    contentSwipeDismissGesture = recognizer
 
 //                case "_UITransformGestureRecognizer": // pinch gesture
 //                    recognizer.isEnabled = true
@@ -717,28 +707,6 @@ extension ReaderViewController {
         reader?.setChapter(chapter, startPage: currentPage)
     }
 
-    func loadNavbarTitle() {
-        let volume: String? =
-            if chapter.chapterNumber != nil, let volumeNum = chapter.volumeNumber {
-                String(format: NSLocalizedString("VOLUME_X"), volumeNum)
-            } else {
-                nil
-            }
-
-        let title =
-            if let chapterNum = chapter.chapterNumber {
-                String(format: NSLocalizedString("CHAPTER_X"), chapterNum)
-            } else if let volumeNum = chapter.volumeNumber {
-                String(format: NSLocalizedString("VOLUME_X"), volumeNum)
-            } else {
-                chapter.title ?? ""
-            }
-
-        navigationItem.setTitle(upper: volume, lower: title)
-        // re-apply theme title colors, since setTitle recreates the title view
-        updateTextThemeOverride()
-    }
-
     func showLoadFailAlert() {
         let alert = UIAlertController(
             title: NSLocalizedString("FAILED_CHAPTER_LOAD"),
@@ -806,12 +774,6 @@ extension ReaderViewController {
         dismiss(animated: true)
     }
 
-    @objc func sliderMoved(_ sender: ReaderSliderView) {
-        reader?.sliderMoved(value: sender.currentValue)
-    }
-    @objc func sliderStopped(_ sender: ReaderSliderView) {
-        reader?.sliderStopped(value: sender.currentValue)
-    }
     @objc func thumbnailScrubberMoved(_ sender: ReaderThumbnailScrubberView) {
         reader?.sliderMoved(value: sender.currentValue)
     }
@@ -942,7 +904,6 @@ extension ReaderViewController {
         // so the theme colors are written into them directly
         let backgroundColor = ReaderTextTheme.getCurrentBackground()
         let textColor = ReaderTextTheme.getCurrentText()
-        let titleColor = themed ? textColor : nil
         if let navigationBar = navigationController?.navigationBar {
             func applyTheme(_ appearance: UINavigationBarAppearance) {
                 if themed {
@@ -971,14 +932,6 @@ extension ReaderViewController {
             if let scrollEdge = navigationBar.scrollEdgeAppearance {
                 applyTheme(scrollEdge)
                 navigationBar.scrollEdgeAppearance = scrollEdge
-            }
-        }
-        // the two-line title view (volume + chapter) uses plain labels instead
-        if let stackView = navigationItem.titleView as? UIStackView {
-            let labels = stackView.arrangedSubviews.compactMap { $0 as? UILabel }
-            if labels.count == 2 {
-                labels[0].textColor = titleColor?.withAlphaComponent(0.6) ?? .secondaryLabel
-                labels[1].textColor = titleColor ?? .label
             }
         }
     }
@@ -1201,7 +1154,6 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         configureBarToggleTapGestures()
         configureDictionaryLookupGesture()
         configureDictionaryOverlayInteractionMode()
-        loadNavbarTitle()
     }
 
     func setCurrentPage(_ page: Int, position: Double? = nil) {
@@ -1930,6 +1882,92 @@ extension ReaderViewController {
 
 // MARK: - Bar Visibility
 extension ReaderViewController {
+    /// The native zoom snapshot can retain its larger rounded corners for a
+    /// fraction of a second after the reader has filled the screen. On a dark
+    /// canvas, briefly mask that outer area so the system background cannot
+    /// show through.
+    private func scheduleDynamicOpeningCornerMaskIfNeeded(animated: Bool) {
+        guard
+            animated,
+            isBeingPresented || navigationController?.isBeingPresented == true,
+            let selectedBackground = UserDefaults.standard.string(forKey: "Reader.backgroundColor"),
+            ["systemBlackWhenHidden", "black"].contains(selectedBackground),
+            let coordinator = transitionCoordinator
+        else { return }
+
+        let duration = coordinator.transitionDuration
+        guard duration > 0 else { return }
+
+        // Start two display frames after UIKit reports the native zoom complete:
+        // this is the short interval where its rounded snapshot can linger.
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration + (2.0 / 60.0)) { [weak self] in
+            guard
+                let self,
+                let readerView = self.navigationController?.view,
+                let transitionContainer = readerView.superview
+            else { return }
+
+            self.openingTransitionCornerMask?.removeFromSuperview()
+            let mask = ReaderOpeningTransitionCornerMask(frame: transitionContainer.bounds)
+            mask.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            mask.alpha = 1
+            // Sit behind the complete presented reader, including its page
+            // image and the native zoom snapshot, rather than over either.
+            transitionContainer.insertSubview(mask, belowSubview: readerView)
+            self.openingTransitionCornerMask = mask
+
+            // Diagnostic only: no opacity animation. Keep it long enough to
+            // inspect the layer ordering and the post-transition snapshot.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
+                mask.removeFromSuperview()
+            }
+        }
+    }
+
+    private var hiddenControlsBackgroundColor: UIColor {
+        switch UserDefaults.standard.string(forKey: "Reader.backgroundColor") {
+            case "system":
+                .systemBackground
+            case "white":
+                .white
+            default:
+                // This includes Automatic, Black, and System (Black When
+                // Controls Are Hidden), which should all use a black canvas
+                // once the overlays are gone.
+                .black
+        }
+    }
+
+    private func hideBarsImmediately() {
+        guard let navigationController else { return }
+        cancelReaderProgressContrastUpdate()
+
+        NotificationCenter.default.post(name: .readerHidingBars, object: nil)
+        UIView.performWithoutAnimation {
+            statusBarHidden = true
+            setNeedsStatusBarAppearanceUpdate()
+            setNeedsUpdateOfHomeIndicatorAutoHidden()
+
+            navigationController.navigationBar.alpha = 0
+            if #available(iOS 27.0, *) {
+                navigationController.isNavigationBarHidden = true
+            } else {
+                navigationController.navigationBar.isHidden = true
+            }
+
+            if #available(iOS 26.0, *) {
+                readerToolbar.alpha = 0
+                readerToolbar.isHidden = true
+            } else {
+                navigationController.toolbar.alpha = 0
+                navigationController.toolbar.isHidden = true
+            }
+
+            node.backgroundColor = hiddenControlsBackgroundColor
+            node.layoutIfNeeded()
+        }
+    }
+
     @objc func toggleBarVisibility() {
         guard let navigationController else { return }
         if !navigationController.navigationBar.isHidden {
@@ -2010,14 +2048,7 @@ extension ReaderViewController {
                     navigationController.toolbar.alpha = 0
                 }
 
-                self.node.backgroundColor = switch UserDefaults.standard.string(forKey: "Reader.backgroundColor") {
-                    case "system":
-                        .systemBackground
-                    case "white":
-                        .white
-                    default:
-                        .black
-                }
+                self.node.backgroundColor = self.hiddenControlsBackgroundColor
                 self.node.layoutIfNeeded()
             } completion: { _ in
                 if #available(iOS 27.0, *) {
@@ -2032,6 +2063,42 @@ extension ReaderViewController {
                 }
             }
         }
+    }
+}
+
+private final class ReaderOpeningTransitionCornerMask: UIView {
+    private let maskLayer = CAShapeLayer()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+        layer.addSublayer(maskLayer)
+        maskLayer.fillColor = UIColor.black.cgColor
+        maskLayer.fillRule = .evenOdd
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        maskLayer.frame = bounds
+
+        #if DEBUG
+        // Diagnostic only. Once confirmed, restore the corner-only path below.
+        maskLayer.path = UIBezierPath(rect: bounds).cgPath
+        return
+        #endif
+
+        let path = UIBezierPath(rect: bounds)
+        // UIKit does not expose the physical display radius on this deployment
+        // target. This is intentionally conservative: it only covers the tiny
+        // outer region left by the zoom snapshot on rounded iPhone displays.
+        let cornerRadius: CGFloat = traitCollection.userInterfaceIdiom == .phone ? 44 : 0
+        path.append(UIBezierPath(roundedRect: bounds, cornerRadius: cornerRadius))
+        maskLayer.path = path.cgPath
     }
 }
 
@@ -2060,6 +2127,25 @@ extension ReaderViewController: UIGestureRecognizerDelegate {
             view = currentView.superview
         }
         return true
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        guard
+            AppSettings.reader.pageTurnEffect.get() == .curl,
+            let dismissGesture = contentSwipeDismissGesture,
+            gestureRecognizer === dismissGesture || otherGestureRecognizer === dismissGesture,
+            let pagedReader = reader as? ReaderPagedViewController
+        else {
+            return false
+        }
+
+        let competingGesture = gestureRecognizer === dismissGesture
+            ? otherGestureRecognizer
+            : gestureRecognizer
+        return competingGesture.view?.isDescendant(of: pagedReader.view) == true
     }
 }
 
