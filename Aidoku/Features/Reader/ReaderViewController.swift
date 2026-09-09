@@ -49,9 +49,11 @@ class ReaderViewController: BaseObservingViewController {
     private var sessionStartDate: Date?
     private var sessionLastInteraction: Date?
     private weak var contentSwipeDismissGesture: UIGestureRecognizer?
+    private weak var observedContentSwipeDismissGesture: UIGestureRecognizer?
     private weak var openingTransitionCornerMask: UIView?
     private var openingTransitionCornerMaskDisplayLink: CADisplayLink?
     private var openingTransitionCornerMaskFramesRemaining = 0
+    private var openingTransitionCornerMaskGeneration = 0
 
     weak var reader: ReaderReaderDelegate?
 
@@ -554,8 +556,7 @@ class ReaderViewController: BaseObservingViewController {
         super.viewWillDisappear(animated)
 
         cancelReaderProgressContrastUpdate()
-        openingTransitionCornerMaskDisplayLink?.invalidate()
-        openingTransitionCornerMaskDisplayLink = nil
+        removeOpeningTransitionCornerMaskImmediately()
         (reader as? ReaderWebtoonViewController)?.stopAutoScroll()
 
         if !chaptersToRemoveDownload.isEmpty {
@@ -611,6 +612,7 @@ extension ReaderViewController {
                     recognizer.isEnabled = !isVerticalReader
                     recognizer.delegate = self // ensure gesture only activates on swipe down, not swipe right
                     contentSwipeDismissGesture = recognizer
+                    observeContentSwipeDismissGesture(recognizer)
 
 //                case "_UITransformGestureRecognizer": // pinch gesture
 //                    recognizer.isEnabled = true
@@ -618,6 +620,25 @@ extension ReaderViewController {
                 default:
                     break
             }
+        }
+    }
+
+    private func observeContentSwipeDismissGesture(_ gestureRecognizer: UIGestureRecognizer) {
+        guard observedContentSwipeDismissGesture !== gestureRecognizer else { return }
+
+        observedContentSwipeDismissGesture?.removeTarget(
+            self,
+            action: #selector(handleContentSwipeDismissGesture(_:))
+        )
+        gestureRecognizer.addTarget(self, action: #selector(handleContentSwipeDismissGesture(_:)))
+        observedContentSwipeDismissGesture = gestureRecognizer
+    }
+
+    @objc private func handleContentSwipeDismissGesture(_ gestureRecognizer: UIGestureRecognizer) {
+        // This gesture starts before UIKit's dismissal callback. Clear the
+        // temporary Library backdrop while the reader first starts to move.
+        if gestureRecognizer.state == .began {
+            removeOpeningTransitionCornerMaskImmediately()
         }
     }
 
@@ -774,6 +795,7 @@ extension ReaderViewController {
     }
 
     @objc func close() {
+        removeOpeningTransitionCornerMaskImmediately()
         Task {
             await temporaryPageStore.removeAll()
         }
@@ -1907,10 +1929,23 @@ extension ReaderViewController {
         let transitionPhase = 1.50
         let additionalDisplayFrames = 0
         let revealDelay = coordinator.transitionDuration * transitionPhase
+        let generation = openingTransitionCornerMaskGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + revealDelay) { [weak self] in
-            guard let self, !self.isBeingDismissed else { return }
+            guard
+                let self,
+                !self.isBeingDismissed,
+                self.openingTransitionCornerMaskGeneration == generation
+            else { return }
             self.showOpeningCornerMask(afterDisplayFrames: additionalDisplayFrames)
         }
+    }
+
+    func removeOpeningTransitionCornerMaskImmediately() {
+        openingTransitionCornerMaskGeneration += 1
+        openingTransitionCornerMaskDisplayLink?.invalidate()
+        openingTransitionCornerMaskDisplayLink = nil
+        openingTransitionCornerMask?.removeFromSuperview()
+        openingTransitionCornerMask = nil
     }
 
     private func showOpeningCornerMask(afterDisplayFrames frameCount: Int) {
@@ -1942,8 +1977,11 @@ extension ReaderViewController {
         libraryView.addSubview(mask)
         openingTransitionCornerMask = mask
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
-            mask.removeFromSuperview()
+        let generation = openingTransitionCornerMaskGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.50) { [weak self, weak mask] in
+            guard self?.openingTransitionCornerMaskGeneration == generation else { return }
+            mask?.removeFromSuperview()
+            self?.openingTransitionCornerMask = nil
         }
     }
 

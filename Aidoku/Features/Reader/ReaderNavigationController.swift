@@ -37,6 +37,13 @@ class ReaderNavigationController: UINavigationController {
             default: .all
         }
     }
+
+    override func dismiss(animated flag: Bool, completion: (() -> Void)? = nil) {
+        // UIKit can dismiss the presented navigation controller directly for
+        // interactive gestures, bypassing ReaderViewController.close().
+        readerViewController.removeOpeningTransitionCornerMaskImmediately()
+        super.dismiss(animated: flag, completion: completion)
+    }
 }
 
 struct SwiftUIReaderNavigationController: View {
