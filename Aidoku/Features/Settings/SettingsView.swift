@@ -154,15 +154,6 @@ extension SettingsView {
                     let history = UIHostingController(rootView: HistoryView().environmentObject(path))
                     history.navigationItem.largeTitleDisplayMode = .never
                     history.navigationItem.title = NSLocalizedString("HISTORY")
-                    history.navigationItem.rightBarButtonItem = UIBarButtonItem(
-                        systemItem: .trash,
-                        primaryAction: UIAction { _ in
-                            NotificationCenter.default.post(name: .init("history.clearRequested"), object: nil)
-                        }
-                    )
-                    if #available(iOS 26.0, *) {
-                        history.navigationItem.rightBarButtonItem?.sharesBackground = false
-                    }
                     path.push(history)
                 default:
                     break
