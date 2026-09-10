@@ -1918,7 +1918,6 @@ extension ReaderViewController {
         guard
             animated,
             isBeingPresented || navigationController?.isBeingPresented == true,
-            UserDefaults.standard.string(forKey: "Reader.backgroundColor") == "black",
             let coordinator = transitionCoordinator
         else { return }
 
@@ -1952,7 +1951,10 @@ extension ReaderViewController {
         openingTransitionCornerMaskDisplayLink?.invalidate()
         openingTransitionCornerMaskFramesRemaining = frameCount
 
-        let displayLink = CADisplayLink(target: self, selector: #selector(handleOpeningCornerMaskDisplayLink))
+        let displayLink = CADisplayLink(
+            target: self,
+            selector: #selector(handleOpeningCornerMaskDisplayLink)
+        )
         openingTransitionCornerMaskDisplayLink = displayLink
         displayLink.add(to: .main, forMode: .common)
     }
@@ -1972,7 +1974,12 @@ extension ReaderViewController {
         // This lives on the presenting Library view, below the reader and the
         // native zoom snapshot. It therefore supplies a solid backdrop for
         // the snapshot's rounded cutout without being clipped by it.
-        let mask = ReaderOpeningTransitionCornerMask(frame: libraryView.bounds, fillsBounds: true)
+        let mask = ReaderOpeningTransitionCornerMask(
+            frame: libraryView.bounds,
+            fillColor: (node.backgroundColor ?? hiddenControlsBackgroundColor)
+                .resolvedColor(with: traitCollection),
+            fillsBounds: true
+        )
         mask.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         libraryView.addSubview(mask)
         openingTransitionCornerMask = mask
@@ -1983,6 +1990,12 @@ extension ReaderViewController {
             mask?.removeFromSuperview()
             self?.openingTransitionCornerMask = nil
         }
+    }
+
+    private func updateOpeningTransitionCornerMaskColor() {
+        guard let mask = openingTransitionCornerMask as? ReaderOpeningTransitionCornerMask else { return }
+        mask.fillColor = (node.backgroundColor ?? hiddenControlsBackgroundColor)
+            .resolvedColor(with: traitCollection)
     }
 
     private var hiddenControlsBackgroundColor: UIColor {
@@ -2081,6 +2094,7 @@ extension ReaderViewController {
                         .black
                     }
                 }
+                self.updateOpeningTransitionCornerMaskColor()
                 self.node.layoutIfNeeded()
             } completion: { _ in
                 self.scheduleReaderProgressContrastUpdate()
@@ -2109,6 +2123,7 @@ extension ReaderViewController {
                 }
 
                 self.node.backgroundColor = self.hiddenControlsBackgroundColor
+                self.updateOpeningTransitionCornerMaskColor()
                 self.node.layoutIfNeeded()
             } completion: { _ in
                 if #available(iOS 27.0, *) {
@@ -2129,14 +2144,24 @@ extension ReaderViewController {
 private final class ReaderOpeningTransitionCornerMask: UIView {
     private let maskLayer = CAShapeLayer()
     private let fillsBounds: Bool
+    var fillColor: UIColor {
+        didSet {
+            maskLayer.fillColor = fillColor.cgColor
+        }
+    }
 
-    init(frame: CGRect, fillsBounds: Bool = false) {
+    init(
+        frame: CGRect,
+        fillColor: UIColor,
+        fillsBounds: Bool = false
+    ) {
+        self.fillColor = fillColor
         self.fillsBounds = fillsBounds
         super.init(frame: frame)
         isUserInteractionEnabled = false
         backgroundColor = .clear
         layer.addSublayer(maskLayer)
-        maskLayer.fillColor = UIColor.black.cgColor
+        maskLayer.fillColor = fillColor.cgColor
         maskLayer.fillRule = .evenOdd
     }
 
@@ -2190,24 +2215,6 @@ extension ReaderViewController: UIGestureRecognizerDelegate {
         return true
     }
 
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
-        guard
-            AppSettings.reader.pageTurnEffect.get() == .curl,
-            let dismissGesture = contentSwipeDismissGesture,
-            gestureRecognizer === dismissGesture || otherGestureRecognizer === dismissGesture,
-            let pagedReader = reader as? ReaderPagedViewController
-        else {
-            return false
-        }
-
-        let competingGesture = gestureRecognizer === dismissGesture
-            ? otherGestureRecognizer
-            : gestureRecognizer
-        return competingGesture.view?.isDescendant(of: pagedReader.view) == true
-    }
 }
 
 // MARK: - Keyboard Shortcuts

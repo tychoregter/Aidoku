@@ -712,15 +712,6 @@ extension Settings {
                     ))
                 ),
                 .init(
-                    key: AppSettings.reader.pageTurnEffect.key,
-                    title: NSLocalizedString("PAGE_TURN_EFFECT"),
-                    notification: .init(Notification.Name.readerPageTurnEffect.rawValue),
-                    value: .select(.init(
-                        values: ReaderSettings.PageTurnEffect.allCases.map(\.rawValue),
-                        titles: ReaderSettings.PageTurnEffect.allCases.map(\.title)
-                    ))
-                ),
-                .init(
                     key: "Reader.pagedPageOffset",
                     title: NSLocalizedString("PAGE_OFFSET"),
                     notification: .init("Reader.pagedPageOffset"),

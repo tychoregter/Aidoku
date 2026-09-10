@@ -482,19 +482,6 @@ extension ReaderSettingsView {
                     ))
                 )
             )
-            if readingMode == .rtl || readingMode == .ltr || readingMode == nil {
-                SettingView(
-                    setting: .init(
-                        key: AppSettings.reader.pageTurnEffect.key,
-                        title: NSLocalizedString("PAGE_TURN_EFFECT"),
-                        notification: .init(Notification.Name.readerPageTurnEffect.rawValue),
-                        value: .select(.init(
-                            values: ReaderSettings.PageTurnEffect.allCases.map(\.rawValue),
-                            titles: ReaderSettings.PageTurnEffect.allCases.map(\.title)
-                        ))
-                    )
-                )
-            }
             let pageOffsetKey = "Reader.pagedPageOffset.\(mangaId)"
             SettingView(
                 setting: .init(

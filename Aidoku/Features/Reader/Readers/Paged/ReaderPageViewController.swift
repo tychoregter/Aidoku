@@ -52,16 +52,10 @@ class ReaderPageViewController: BaseObservingViewController {
     }
 
     var page: Page?
-    var usesPageCurl = false {
-        didSet {
-            guard isViewLoaded else { return }
-            loadPageBackground()
-        }
-    }
     private var pageSet = false
     private var didLoadPageSuccessfully = false
     private var sourceId: String?
-    private(set) var imageAspectRatio: CGFloat? // Aspect ratio of the image, > 1 means wide image
+    private var imageAspectRatio: CGFloat? // Aspect ratio of the image, > 1 means wide image
     private var pageBackground: PageBackground?
 
     // disable auto page background in double page controller
@@ -228,7 +222,6 @@ class ReaderPageViewController: BaseObservingViewController {
         view.layer.sublayers?.removeAll(where: { $0 is CAGradientLayer })
 
         if
-            !usesPageCurl,
             UserDefaults.standard.string(forKey: "Reader.backgroundColor") == "auto",
             !isInDoublePageController,
             pageBackground != nil || pageView?.imageView.image != nil
@@ -257,7 +250,7 @@ class ReaderPageViewController: BaseObservingViewController {
                     view.layer.insertSublayer(gradient, at: 0)
             }
         } else {
-            view.backgroundColor = usesPageCurl ? .clear : nil
+            view.backgroundColor = nil
         }
     }
 

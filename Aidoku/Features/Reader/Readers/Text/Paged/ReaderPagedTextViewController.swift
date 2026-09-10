@@ -60,7 +60,7 @@ class ReaderPagedTextViewController: BaseObservingViewController {
 
     // Page view controller
     private lazy var pageViewController: UIPageViewController = {
-        // Scroll is more reliable than pageCurl
+        // Scroll is more reliable here.
         UIPageViewController(
             transitionStyle: .scroll,
             navigationOrientation: .horizontal,

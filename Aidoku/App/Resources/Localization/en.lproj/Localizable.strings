@@ -732,9 +732,6 @@
 "PAGES_TO_PRELOAD" = "Pages to Preload";
 "SINGLE_PAGE" = "Single Page";
 "PAGED" = "Paged";
-"PAGE_TURN_EFFECT" = "Page Turn Effect";
-"PAGE_TURN_EFFECT_SLIDE" = "Slide";
-"PAGE_TURN_EFFECT_CURL" = "Curl";
 "PAGE_LAYOUT" = "Page Layout";
 "DOUBLE_PAGE" = "Double Page";
 "PAGE_OFFSET" = "Page Offset";
