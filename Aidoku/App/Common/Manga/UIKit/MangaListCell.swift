@@ -45,6 +45,7 @@ class MangaListCell: UICollectionViewCell {
     lazy var coverImageView = {
         let imageView = GIFImageView()
         imageView.image = UIImage(named: "MangaPlaceholder")
+        imageView.backgroundColor = Self.coverBackgroundColor
         imageView.clipsToBounds = true
         imageView.contentMode = .scaleAspectFill
         imageView.layer.cornerRadius = 5
@@ -52,6 +53,12 @@ class MangaListCell: UICollectionViewCell {
         imageView.layer.borderColor = UIColor.quaternarySystemFill.cgColor
         return imageView
     }()
+
+    private static let coverBackgroundColor = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 30.0 / 255.0, alpha: 1)
+            : UIColor(red: 241.0 / 255.0, green: 241.0 / 255.0, blue: 246.0 / 255.0, alpha: 1)
+    }
 
     private lazy var bookmarkImageView = {
         let bookmarkImageView = UIImageView()

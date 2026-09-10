@@ -20,13 +20,13 @@ final class ReaderThumbnailScrubberView: UIControl {
 
     private enum Metrics {
         static let horizontalInset: CGFloat = 22
-        static let trackHeight: CGFloat = 20
-        static let selectedPageHeight: CGFloat = 30
+        static let trackHeight: CGFloat = 22
+        static let selectedPageHeight: CGFloat = 33
         static let pageAspectRatio: CGFloat = 0.70
         static let previewWidth: CGFloat = 82
         static let previewImageHeight: CGFloat = 108
         static let previewLabelHeight: CGFloat = 30
-        static let previewSpacing: CGFloat = 8
+        static let previewSpacing: CGFloat = 12
     }
 
     var direction: Direction = .forward {
@@ -47,6 +47,7 @@ final class ReaderThumbnailScrubberView: UIControl {
                 currentValue = boundedValue
                 return
             }
+            layoutThumbnailViews()
             updatePreviewPosition()
         }
     }
@@ -139,16 +140,20 @@ final class ReaderThumbnailScrubberView: UIControl {
         super.layoutSubviews()
 
         let trackWidth = max(0, bounds.width - Metrics.horizontalInset * 2)
-        let opticalCenterOffset = 0.5 / max(traitCollection.displayScale, 1)
-        trackView.frame = CGRect(
+        let borderWidth = 1 / max(traitCollection.displayScale, 1)
+        trackView.frame = pixelAligned(CGRect(
             x: Metrics.horizontalInset,
-            y: (bounds.height - Metrics.trackHeight) / 2 + opticalCenterOffset,
+            y: (bounds.height - Metrics.trackHeight) / 2 - 0.125,
             width: trackWidth,
             height: Metrics.trackHeight
-        )
+        ))
         thumbnailContainer.frame = trackView.bounds
-        trackView.layer.cornerRadius = 2
-        selectionView.layer.cornerRadius = 2
+        trackView.layer.cornerRadius = 0
+        trackView.layer.borderWidth = borderWidth
+        trackView.layer.borderColor = Self.activePageBorderColor.cgColor
+        selectionView.layer.cornerRadius = 0
+        selectionView.layer.borderWidth = borderWidth
+        selectionView.layer.borderColor = Self.activePageBorderColor.cgColor
         layoutThumbnailViews()
 
         let previewHeight = Metrics.previewImageHeight + Metrics.previewLabelHeight
@@ -202,8 +207,6 @@ final class ReaderThumbnailScrubberView: UIControl {
             return base.withAlphaComponent(0.16)
         }
         trackView.layer.cornerCurve = .continuous
-        trackView.layer.borderWidth = 0.5
-        trackView.layer.borderColor = UIColor.separator.cgColor
         trackView.clipsToBounds = true
         addSubview(trackView)
 
@@ -211,13 +214,12 @@ final class ReaderThumbnailScrubberView: UIControl {
         trackView.addSubview(thumbnailContainer)
 
         selectionView.backgroundColor = .clear
-        selectionView.layer.borderWidth = 1.5
         selectionView.layer.cornerCurve = .continuous
         selectionView.clipsToBounds = true
         selectionView.isUserInteractionEnabled = false
         addSubview(selectionView)
 
-        selectedThumbnailView.backgroundColor = .tertiarySystemFill
+        selectedThumbnailView.backgroundColor = Self.loadingPlaceholderColor
         // Fill the fixed page-shaped frame by height, cropping unusually wide
         // pages at the sides instead of shrinking them inside the outline.
         selectedThumbnailView.contentMode = .scaleAspectFill
@@ -257,18 +259,31 @@ final class ReaderThumbnailScrubberView: UIControl {
     private func layoutThumbnailViews() {
         guard pageCount > 0, thumbnailContainer.bounds.width > 0 else { return }
         let contentFrame = thumbnailContentFrame
-        let itemWidth = contentFrame.width / CGFloat(pageCount)
+        let activeLogicalIndex = pageIndex(for: currentValue)
+        let activeVisualIndex = direction == .forward
+            ? activeLogicalIndex
+            : pageCount - activeLogicalIndex - 1
+        let activeWidth = Metrics.selectedPageHeight * Metrics.pageAspectRatio
+        let fittedActiveWidth = min(activeWidth, contentFrame.width)
+        let otherWidth = pageCount > 1
+            ? max(0, (contentFrame.width - fittedActiveWidth) / CGFloat(pageCount - 1))
+            : fittedActiveWidth
+        var x = contentFrame.minX
 
-        for logicalIndex in 0..<pageCount {
-            let visualIndex = direction == .forward ? logicalIndex : pageCount - logicalIndex - 1
+        for visualIndex in 0..<pageCount {
+            let logicalIndex = direction == .forward
+                ? visualIndex
+                : pageCount - visualIndex - 1
+            let width = visualIndex == activeVisualIndex ? fittedActiveWidth : otherWidth
             thumbnailViews[logicalIndex].frame = CGRect(
-                x: contentFrame.minX + CGFloat(visualIndex) * itemWidth,
+                x: x,
                 y: 0,
-                width: ceil(itemWidth) + 0.5,
+                width: width,
                 height: thumbnailContainer.bounds.height
             )
+            x += width
         }
-        updateSelectionFrame(itemWidth: itemWidth)
+        updateSelectionFrame()
     }
 
     private func updateValue(at location: CGPoint) {
@@ -276,25 +291,22 @@ final class ReaderThumbnailScrubberView: UIControl {
         let contentFrame = thumbnailContentFrame
         guard contentFrame.width > 0 else { return }
         let x = min(max(location.x - trackView.frame.minX, contentFrame.minX), contentFrame.maxX)
-        let visualProgress = (x - contentFrame.minX) / contentFrame.width
-        let logicalProgress = direction == .forward ? visualProgress : 1 - visualProgress
+        let logicalIndex = (0..<pageCount).min { lhs, rhs in
+            abs(thumbnailViews[lhs].frame.midX - x) < abs(thumbnailViews[rhs].frame.midX - x)
+        } ?? 0
+        let logicalProgress = CGFloat(logicalIndex) / CGFloat(max(pageCount - 1, 1))
         currentValue = minimumValue + logicalProgress * (maximumValue - minimumValue)
     }
 
     private func updatePreviewPosition() {
         guard pageCount > 0, trackView.bounds.width > 0 else { return }
         let logicalIndex = pageIndex(for: currentValue)
-        let visualIndex = direction == .forward ? logicalIndex : pageCount - logicalIndex - 1
-        let contentFrame = thumbnailContentFrame
-        let itemWidth = contentFrame.width / CGFloat(pageCount)
-        updateSelectionFrame(itemWidth: itemWidth)
+        updateSelectionFrame()
 
-        let proposedCenterX = trackView.frame.minX + contentFrame.minX + (CGFloat(visualIndex) + 0.5) * itemWidth
-        let halfWidth = Metrics.previewWidth / 2
-        let centerX = min(max(proposedCenterX, halfWidth), bounds.width - halfWidth)
+        let proposedCenterX = selectionView.center.x
         previewContainer.center = CGPoint(
-            x: centerX,
-            y: trackView.frame.minY - Metrics.previewSpacing - previewContainer.bounds.height / 2
+            x: proposedCenterX,
+            y: selectionView.frame.minY - Metrics.previewSpacing - previewContainer.bounds.height / 2
         )
 
         guard displayedPreviewIndex != logicalIndex else { return }
@@ -305,26 +317,43 @@ final class ReaderThumbnailScrubberView: UIControl {
         prefetchPreviewImages(around: logicalIndex)
     }
 
-    private func updateSelectionFrame(itemWidth: CGFloat) {
+    private func updateSelectionFrame() {
         guard pageCount > 0 else { return }
         let logicalIndex = pageIndex(for: currentValue)
-        let visualIndex = direction == .forward ? logicalIndex : pageCount - logicalIndex - 1
         let height = Metrics.selectedPageHeight
         let width = height * Metrics.pageAspectRatio
-        let contentFrame = thumbnailContentFrame
-        selectionView.frame = CGRect(
-            x: trackView.frame.minX + contentFrame.minX + (CGFloat(visualIndex) + 0.5) * itemWidth - width / 2,
+        let activeFrame = thumbnailViews[logicalIndex].frame
+        let proposedCenterX = trackView.frame.minX + activeFrame.midX
+        let centerX = min(
+            max(proposedCenterX, trackView.frame.minX + width / 2),
+            trackView.frame.maxX - width / 2
+        )
+        selectionView.frame = pixelAligned(CGRect(
+            x: centerX - width / 2,
             y: trackView.frame.midY - height / 2,
             width: width,
             height: height
-        )
-        selectedThumbnailView.frame = selectionView.bounds.insetBy(dx: 1.5, dy: 1.5)
+        ))
+        selectedThumbnailView.frame = selectionView.bounds
         selectedThumbnailView.image = closestLoadedPreview(to: logicalIndex)
             ?? closestLoadedThumbnail(to: logicalIndex)
     }
 
     private var maximumThumbnailWidth: CGFloat {
         Metrics.trackHeight * Metrics.pageAspectRatio
+    }
+
+    private func pixelAligned(_ rect: CGRect) -> CGRect {
+        let scale = max(traitCollection.displayScale, 1)
+        func aligned(_ value: CGFloat) -> CGFloat {
+            round(value * scale) / scale
+        }
+        return CGRect(
+            x: aligned(rect.origin.x),
+            y: aligned(rect.origin.y),
+            width: aligned(rect.width),
+            height: aligned(rect.height)
+        )
     }
 
     /// Centers a run of fixed, page-proportioned thumbnail slots inside the
@@ -476,11 +505,13 @@ final class ReaderThumbnailScrubberView: UIControl {
     }
 
     func setContrastColor(_ color: UIColor) {
-        let color = color.withAlphaComponent(0.95)
-        selectionView.layer.borderColor = color.cgColor
-        selectionView.backgroundColor = color
-        selectedThumbnailView.backgroundColor = color
+        selectionView.layer.borderColor = Self.activePageBorderColor.cgColor
+        selectionView.backgroundColor = .clear
+        selectedThumbnailView.backgroundColor = Self.loadingPlaceholderColor
     }
+
+    private static let loadingPlaceholderColor = UIColor.systemGray.withAlphaComponent(0.35)
+    private static let activePageBorderColor = UIColor.systemGray.withAlphaComponent(0.6)
 
     func setOverlayAppearance(_ style: UIUserInterfaceStyle) {
         previewContainer.overrideUserInterfaceStyle = style

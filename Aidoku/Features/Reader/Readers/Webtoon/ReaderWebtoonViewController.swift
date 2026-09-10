@@ -849,13 +849,27 @@ extension ReaderWebtoonViewController: ReaderReaderDelegate {
             animated: false
         )
 
-        let page = getCurrentPage()
+        let page = value >= 0.999
+            ? lastImagePage(in: currentPages)
+            : getCurrentPage()
         delegate?.displayPage(page)
     }
 
     func sliderStopped(value: CGFloat) {
         isSliding = false
         scrollViewDidScroll(collectionNode.view)
+        if value >= 0.999,
+           let chapter,
+           let chapterIndex = chapters.firstIndex(of: chapter),
+           let currentPages = pages[safe: chapterIndex] {
+            delegate?.displayPage(lastImagePage(in: currentPages))
+        }
+    }
+
+    private func lastImagePage(in pages: [Page]) -> Int {
+        let hasStartInfo = pages.first?.type != .imagePage
+        let hasEndInfo = pages.last?.type != .imagePage
+        return max(1, pages.count - (hasStartInfo ? 1 : 0) - (hasEndInfo ? 1 : 0))
     }
 
     func setChapter(_ chapter: AidokuRunner.Chapter, startPage: Int) {

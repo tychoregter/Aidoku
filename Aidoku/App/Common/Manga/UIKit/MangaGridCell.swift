@@ -92,6 +92,7 @@ class MangaGridCell: UICollectionViewCell {
         updatePosterBorderAppearance()
 
         imageView.image = UIImage(named: "MangaPlaceholder")
+        imageView.backgroundColor = Self.coverBackgroundColor
         imageView.contentMode = .scaleAspectFill
         contentView.addSubview(imageView)
 
@@ -151,6 +152,12 @@ class MangaGridCell: UICollectionViewCell {
 
         contentView.addSubview(shadowOverlayView)
         contentView.addSubview(selectionView)
+    }
+
+    private static let coverBackgroundColor = UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 30.0 / 255.0, alpha: 1)
+            : UIColor(red: 241.0 / 255.0, green: 241.0 / 255.0, blue: 246.0 / 255.0, alpha: 1)
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {

@@ -1368,13 +1368,13 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
     private func updateReaderToolbarMetrics(usesThumbnailScrubber: Bool) {
         guard #available(iOS 26.0, *), readerToolbar.superview != nil else { return }
         let usesCompactThumbnailScrubber = usesThumbnailScrubber
-        let height: CGFloat = usesThumbnailScrubber ? 49 : 44
+        let height: CGFloat = usesThumbnailScrubber ? 48 : 44
         readerToolbarLeadingConstraint?.constant = usesThumbnailScrubber ? 28 : 21
         readerToolbarTrailingConstraint?.constant = usesThumbnailScrubber ? -28 : -21
         readerToolbarHeightConstraint?.constant = height
         // The thumbnail style sits 7pt lower, matching the roughly 82px
         // bottom clearance of the Books reader on a 3x display.
-        readerToolbarBottomConstraint?.constant = usesThumbnailScrubber ? 7 : 0
+        readerToolbarBottomConstraint?.constant = usesThumbnailScrubber ? 6 : 0
         readerToolbar.layer.cornerRadius = height / 2
         readerToolbarBackgroundEffectView.layer.cornerRadius = height / 2
 
