@@ -6,6 +6,7 @@
 //
 
 import Combine
+import AidokuRunner
 import SwiftUI
 import SwiftUIIntrospect
 
@@ -204,6 +205,69 @@ class TabBarController: UITabBarController {
         }
 
         previousSelectedIndex = selectedIndex
+    }
+
+    @MainActor
+    func openLibraryShortcut(sourceKey: String, mangaKey: String) async -> Bool {
+        guard let libraryNavigationController else { return false }
+
+        if #available(iOS 26.0, *) {
+            selectedTab = tabs.first { $0.identifier == "library" }
+        } else {
+            selectedViewController = libraryNavigationController
+        }
+
+        guard
+            let source = await SourceManager.shared.source(for: sourceKey),
+            let infoManga = try? await source.getMangaUpdate(
+                manga: AidokuRunner.Manga(sourceKey: sourceKey, key: mangaKey, title: ""),
+                needsDetails: true,
+                needsChapters: false
+            )
+        else {
+            return false
+        }
+
+        let mangaInfo = MangaInfo(
+            id: MangaIdentifier(sourceKey: sourceKey, mangaKey: mangaKey),
+            coverUrl: infoManga.cover.flatMap(URL.init(string:)),
+            title: infoManga.title,
+            author: infoManga.authors?.joined(separator: ", "),
+            url: infoManga.url
+        )
+        let (sortedChapters, nextChapter) = await MangaManager.shared.getNextChapter(mangaId: mangaInfo.id)
+
+        if let nextChapter {
+            let manga = AidokuRunner.Manga(
+                sourceKey: sourceKey,
+                key: mangaKey,
+                title: infoManga.title,
+                chapters: sortedChapters
+            )
+            let readerController = ReaderViewController(
+                source: source,
+                manga: manga,
+                chapter: nextChapter
+            )
+            let readerNavigationController = ReaderNavigationController(
+                readerViewController: readerController,
+                mangaInfo: mangaInfo
+            )
+            if #available(iOS 18.0, *) {
+                readerNavigationController.preferredTransition = .zoom { [weak self] _ in
+                    self?.libraryViewController?.transitionSourceView(for: mangaInfo.id)
+                }
+            }
+            readerNavigationController.modalPresentationStyle = .fullScreen
+            libraryNavigationController.present(readerNavigationController, animated: true)
+        } else {
+            let parent = libraryNavigationController.topViewController
+            libraryNavigationController.pushViewController(
+                MangaViewController(source: source, manga: infoManga, parent: parent),
+                animated: true
+            )
+        }
+        return true
     }
 
     @available(iOS 26.0, *)

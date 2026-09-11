@@ -290,6 +290,45 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
     }
 
+    func updateHomeScreenQuickActions(for pinnedManga: [MangaInfo]) {
+        let items = pinnedManga.prefix(4).map { manga in
+            UIApplicationShortcutItem(
+                type: "open-library-manga",
+                localizedTitle: manga.title ?? NSLocalizedString("UNTITLED"),
+                localizedSubtitle: nil,
+                icon: UIApplicationShortcutIcon(systemImageName: "book"),
+                userInfo: [
+                    "sourceKey": manga.id.sourceKey as NSSecureCoding,
+                    "mangaKey": manga.id.mangaKey as NSSecureCoding
+                ]
+            )
+        }
+        UIApplication.shared.shortcutItems = Array(items)
+    }
+
+    func handleHomeScreenQuickAction(
+        _ shortcutItem: UIApplicationShortcutItem,
+        completion: @escaping (Bool) -> Void
+    ) {
+        guard
+            shortcutItem.type == "open-library-manga",
+            let sourceKey = shortcutItem.userInfo?["sourceKey"] as? String,
+            let mangaKey = shortcutItem.userInfo?["mangaKey"] as? String,
+            let tabBarController = UIApplication.shared.firstKeyWindow?.rootViewController as? TabBarController
+        else {
+            completion(false)
+            return
+        }
+
+        Task { @MainActor in
+            let success = await tabBarController.openLibraryShortcut(
+                sourceKey: sourceKey,
+                mangaKey: mangaKey
+            )
+            completion(success)
+        }
+    }
+
     func applicationWillTerminate(_ application: UIApplication) {
         LibraryPagePreviewCache.removeSessionFiles()
         guard let networkObserverId else { return }

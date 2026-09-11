@@ -52,6 +52,10 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let url = connectionOptions.urlContexts.first?.url {
             UIApplication.shared.appDelegate?.handleUrl(url: url)
         }
+
+        if let shortcutItem = connectionOptions.shortcutItem {
+            UIApplication.shared.appDelegate?.handleHomeScreenQuickAction(shortcutItem) { _ in }
+        }
     }
 
     let contentHideView: UIView = {
@@ -79,6 +83,17 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if let url = URLContexts.first?.url {
             UIApplication.shared.appDelegate?.handleUrl(url: url)
         }
+    }
+
+    func windowScene(
+        _ windowScene: UIWindowScene,
+        performActionFor shortcutItem: UIApplicationShortcutItem,
+        completionHandler: @escaping (Bool) -> Void
+    ) {
+        UIApplication.shared.appDelegate?.handleHomeScreenQuickAction(
+            shortcutItem,
+            completion: completionHandler
+        )
     }
 
     func windowScene(

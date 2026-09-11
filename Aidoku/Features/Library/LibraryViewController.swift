@@ -966,6 +966,8 @@ extension LibraryViewController {
             self?.updateVisibleSectionHeaders()
         }
 
+        UIApplication.shared.appDelegate?.updateHomeScreenQuickActions(for: viewModel.pinnedManga)
+
         // handle empty library or category
         emptyStackView.isHidden = !snapshot.itemIdentifiers.isEmpty
         collectionView.isScrollEnabled = emptyStackView.isHidden && lockedStackView.isHidden
@@ -2334,6 +2336,10 @@ extension LibraryViewController {
             return cell.contentView
         }
         return nil
+    }
+
+    func transitionSourceView(for mangaId: MangaIdentifier) -> UIView? {
+        libraryTransitionSourceView(for: mangaId)
     }
 }
 
