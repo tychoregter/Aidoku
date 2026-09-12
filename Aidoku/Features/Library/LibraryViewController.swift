@@ -967,6 +967,7 @@ extension LibraryViewController {
         }
 
         UIApplication.shared.appDelegate?.updateHomeScreenQuickActions(for: viewModel.pinnedManga)
+        Task { await AidokuWidgetSnapshotStore.update() }
 
         // handle empty library or category
         emptyStackView.isHidden = !snapshot.itemIdentifiers.isEmpty

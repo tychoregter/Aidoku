@@ -235,6 +235,16 @@ class TabBarController: UITabBarController {
             author: infoManga.authors?.joined(separator: ", "),
             url: infoManga.url
         )
+
+        if !AppSettings.library.opensReaderView.get() {
+            let parent = libraryNavigationController.topViewController
+            libraryNavigationController.pushViewController(
+                MangaViewController(source: source, manga: infoManga, parent: parent),
+                animated: true
+            )
+            return true
+        }
+
         let (sortedChapters, nextChapter) = await MangaManager.shared.getNextChapter(mangaId: mangaInfo.id)
 
         if let nextChapter {

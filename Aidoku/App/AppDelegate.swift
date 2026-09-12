@@ -542,7 +542,15 @@ extension AppDelegate {
 
     func handleUrl(url: URL) {
         if url.scheme == "aidoku" { // aidoku://
-            if url.host == "addSourceList" { // addSourceList?url=
+            if url.host == "widget", url.pathComponents.count >= 3 {
+                let sourceKey = url.pathComponents[1]
+                let mangaKey = url.pathComponents[2]
+                if let tabBarController = UIApplication.shared.firstKeyWindow?.rootViewController as? TabBarController {
+                    Task { @MainActor in
+                        _ = await tabBarController.openLibraryShortcut(sourceKey: sourceKey, mangaKey: mangaKey)
+                    }
+                }
+            } else if url.host == "addSourceList" { // addSourceList?url=
                 let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
                 if
                     let listUrlString = components?.queryItems?.first(where: { $0.name == "url" })?.value,

@@ -678,7 +678,7 @@ extension ReaderViewController {
             chapterId: chapterId,
             chapter: chapter,
             progress: currentPage,
-            totalPages: totalPages,
+            totalPages: effectiveTotalPages,
             scrollPosition: currentPosition,
             completed: completed
         )
