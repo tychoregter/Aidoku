@@ -176,12 +176,10 @@
 				FB1B4832277CE1920056D02C /* Frameworks */,
 				FB1B4833277CE1920056D02C /* Resources */,
 				FBED233627C3C4D70095D0C0 /* ShellScript */,
-				AIDW00000000000000000012 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				AIDW00000000000000000015 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				FB77CD38303A838B00DF3DA3 /* Aidoku */,
@@ -426,7 +424,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = AidokuWidget/AidokuWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 93;
+				CURRENT_PROJECT_VERSION = 94;
 				DEVELOPMENT_TEAM = 7FJM32M2RU;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = AidokuWidget/Info.plist;
@@ -446,7 +444,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = AidokuWidget/AidokuWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 93;
+				CURRENT_PROJECT_VERSION = 94;
 				DEVELOPMENT_TEAM = 7FJM32M2RU;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = AidokuWidget/Info.plist;
@@ -601,7 +599,7 @@
 				CODE_SIGN_ENTITLEMENTS = Aidoku/Aidoku.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 93;
+				CURRENT_PROJECT_VERSION = 94;
 				DEVELOPMENT_TEAM = 7FJM32M2RU;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -647,7 +645,7 @@
 				CODE_SIGN_ENTITLEMENTS = Aidoku/Aidoku.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 93;
+				CURRENT_PROJECT_VERSION = 94;
 				DEVELOPMENT_TEAM = 7FJM32M2RU;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;

@@ -301,7 +301,7 @@ extension MangaListCell {
 
         self.url = (urlRequest.url ?? url).absoluteString
 
-        var processors: [ImageProcessing] = [DownsampleProcessor(width: bounds.width)]
+        var processors: [ImageProcessing] = [CoverDownsampleProcessor(shortestSide: 630)]
         if let source, source.features.processesCovers {
             processors.append(CoverInterceptorProcessor(source: source))
         }
