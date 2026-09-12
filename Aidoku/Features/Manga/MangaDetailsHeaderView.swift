@@ -479,28 +479,10 @@ struct MangaDetailsHeaderView: View {
                 } else {
                     title = NSLocalizedString("CONTINUE_READING")
                 }
-                switch chapterTitleDisplayMode {
-                    case .volume:
-                        if let volumeNum = chapter.volumeNumber {
-                            title += " " + String(format: NSLocalizedString("VOL_X"), volumeNum)
-                        } else if let chapterNum = chapter.chapterNumber {
-                            // Force display as volume if no volume number
-                            title += " " + String(format: NSLocalizedString("VOL_X"), chapterNum)
-                        }
-                    case .chapter:
-                        if let chapterNum = chapter.chapterNumber {
-                            title += " " + String(format: NSLocalizedString("CH_X"), chapterNum)
-                        } else if let volumeNum = chapter.volumeNumber {
-                            // Force display as chapter if no chapter number
-                            title += " " + String(format: NSLocalizedString("CH_X"), volumeNum)
-                        }
-                    case .default:
-                        if let volumeNum = chapter.volumeNumber {
-                            title += " " + String(format: NSLocalizedString("VOL_X"), volumeNum)
-                        }
-                        if let chapterNum = chapter.chapterNumber {
-                            title += " " + String(format: NSLocalizedString("CH_X"), chapterNum)
-                        }
+                // The primary reader action always uses the full Chapter label,
+                // regardless of how source metadata labels the entry.
+                if let chapterNum = chapter.chapterNumber ?? chapter.volumeNumber {
+                    title += " " + String(format: NSLocalizedString("CHAPTER_X"), chapterNum)
                 }
             } else {
                 title = NSLocalizedString("NO_CHAPTERS_AVAILABLE")

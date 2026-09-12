@@ -94,9 +94,9 @@ enum AidokuWidgetSnapshotStore {
             let currentChapter = historyChapter ?? chapters.min { $0.sourceOrder < $1.sourceOrder }
             let position = currentChapter.flatMap { chapter in
                 if let volume = chapter.volume, let number = chapter.chapter {
-                    return "Volume \(volume), Chapter \(number)"
+                    return "Chapter \(volume), Chapter \(number)"
                 }
-                if let volume = chapter.volume { return "Volume \(volume)" }
+                if let volume = chapter.volume { return "Chapter \(volume)" }
                 if let number = chapter.chapter { return "Chapter \(number)" }
                 return chapter.title
             }
@@ -106,8 +106,12 @@ enum AidokuWidgetSnapshotStore {
             // as volume 1 when the source does not provide an explicit volume,
             // so the widget still has a useful start-status string.
             let volume = currentChapter?.volume?.stringValue ?? (latestHistory == nil && currentChapter != nil ? "1" : nil)
+            // Store the current volume's progress as a percentage. The field
+            // name is retained so existing widget snapshots remain decodable.
             let pagesLeft: Int? = latestHistory.flatMap { history in
-                history.total > 0 ? max(Int(history.total) - Int(history.progress), 0) : nil
+                guard history.total > 0 else { return nil }
+                let percentage = (Double(history.progress) / Double(history.total) * 100).rounded()
+                return min(max(Int(percentage), 0), 100)
             }
             let completionStatus: String? = if latestHistory?.completed == true && isFinalChapter {
                 manga.status == AidokuRunner.PublishingStatus.completed.rawValue ? "Finished" : "Caught Up"

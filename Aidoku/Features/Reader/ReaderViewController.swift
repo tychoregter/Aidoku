@@ -201,6 +201,7 @@ class ReaderViewController: BaseObservingViewController {
         readerProgressContrastUpdateWorkItem?.cancel()
         openingTransitionCornerMaskDisplayLink?.invalidate()
         openingTransitionCornerMask?.removeFromSuperview()
+        toolbarView.thumbnailPageCounterView.removeFromSuperview()
         readerToolbar.removeFromSuperview()
         Task { [temporaryPageStore] in
             await temporaryPageStore.removeAll()
@@ -302,9 +303,10 @@ class ReaderViewController: BaseObservingViewController {
             readerToolbarEffectView.contentView.addSubview(readerToolbarBackgroundEffectView)
             readerToolbar.addSubview(toolbarView)
             toolbarView.moveThumbnailPageCounter(
-                to: readerToolbarEffectView.contentView,
-                centeredOn: readerToolbar.centerXAnchor,
-                above: readerToolbar.topAnchor
+                to: overlayHost,
+                trailingTo: overlayHost.safeAreaLayoutGuide.trailingAnchor,
+                topTo: overlayHost.safeAreaLayoutGuide.topAnchor,
+                topOffset: 70
             )
 
             let leadingConstraint = readerToolbar.leadingAnchor.constraint(
@@ -1059,6 +1061,19 @@ extension ReaderViewController {
 // MARK: - Reader Holding Delegate
 extension ReaderViewController: @MainActor ReaderHoldingDelegate {
     var barsHidden: Bool { statusBarHidden }
+
+    var readerCanvasUsesDarkAppearance: Bool {
+        guard barsHidden else { return readerControlsUseDarkAppearance }
+
+        return switch UserDefaults.standard.string(forKey: "Reader.backgroundColor") {
+            case "system":
+                readerControlsUseDarkAppearance
+            case "white":
+                false
+            default:
+                true
+        }
+    }
 
     private func areDuplicates(_ a: AidokuRunner.Chapter, _ b: AidokuRunner.Chapter) -> Bool {
         a.chapterNumber == b.chapterNumber
@@ -1992,6 +2007,19 @@ extension ReaderViewController {
         }
     }
 
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+
+        guard previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle else {
+            return
+        }
+
+        // UIKit updates the navigation controls in the same trait pass. Update
+        // our custom counter here as well, rather than waiting for the
+        // thumbnail contrast sampler to run on its debounce timer.
+        toolbarView.setPageCounterAppearance(isDark: readerControlsUseDarkAppearance)
+    }
+
     private func updateOpeningTransitionCornerMaskColor() {
         guard let mask = openingTransitionCornerMask as? ReaderOpeningTransitionCornerMask else { return }
         mask.fillColor = (node.backgroundColor ?? hiddenControlsBackgroundColor)
@@ -2011,6 +2039,13 @@ extension ReaderViewController {
         }
     }
 
+    private var readerControlsUseDarkAppearance: Bool {
+        if AppSettings.appearance.useSystemAppearance.get() {
+            return traitCollection.userInterfaceStyle == .dark
+        }
+        return AppSettings.appearance.appearance.get() != 0
+    }
+
     private func hideBarsImmediately() {
         guard let navigationController else { return }
         cancelReaderProgressContrastUpdate()
@@ -2022,6 +2057,8 @@ extension ReaderViewController {
             setNeedsUpdateOfHomeIndicatorAutoHidden()
 
             navigationController.navigationBar.alpha = 0
+            self.toolbarView.thumbnailPageCounterView.alpha = 0
+            self.toolbarView.finishHidingPageCounter()
             if #available(iOS 27.0, *) {
                 navigationController.isNavigationBarHidden = true
             } else {
@@ -2077,9 +2114,13 @@ extension ReaderViewController {
                 }
             }
             navigationController.navigationBar.isHidden = false
+            self.toolbarView.setPageCounterAppearance(isDark: self.readerControlsUseDarkAppearance)
+            self.toolbarView.preparePageCounterForShowing()
+            self.toolbarView.thumbnailPageCounterView.alpha = 0
             UIView.setAnimationsEnabled(true)
             UIView.animate(withDuration: CATransaction.animationDuration()) {
                 navigationController.navigationBar.alpha = 1
+                self.toolbarView.thumbnailPageCounterView.alpha = 1
                 if #available(iOS 26.0, *) {
                     self.readerToolbar.alpha = 1
                 } else {
@@ -2115,6 +2156,7 @@ extension ReaderViewController {
 
             UIView.animate(withDuration: CATransaction.animationDuration()) {
                 navigationController.navigationBar.alpha = 0
+                self.toolbarView.thumbnailPageCounterView.alpha = 0
 
                 if #available(iOS 26.0, *) {
                     self.readerToolbar.alpha = 0
@@ -2136,6 +2178,7 @@ extension ReaderViewController {
                 } else {
                     navigationController.toolbar.isHidden = true
                 }
+                self.toolbarView.finishHidingPageCounter()
             }
         }
     }

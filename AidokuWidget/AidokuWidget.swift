@@ -262,9 +262,9 @@ private extension WidgetItem {
     func widgetPosition(for small: Bool) -> String {
         if let completionStatus { return completionStatus }
         if let volume {
-            if atVolumeStart == true { return small ? "Start volume \(volume)" : "Start reading volume \(volume)" }
-            if let pagesLeft { return "Volume \(volume), \(pagesLeft) pages left" }
-            return "Volume \(volume)"
+            if atVolumeStart == true { return small ? "Start chapter \(volume)" : "Start reading chapter \(volume)" }
+            if let pagesLeft { return "Chapter \(volume), \(pagesLeft)% read" }
+            return "Chapter \(volume)"
         }
         return position ?? ""
     }

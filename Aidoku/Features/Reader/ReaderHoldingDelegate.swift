@@ -10,6 +10,7 @@ import AidokuRunner
 
 protocol ReaderHoldingDelegate: AnyObject {
     var barsHidden: Bool { get }
+    var readerCanvasUsesDarkAppearance: Bool { get }
 
     func hideBars()
 

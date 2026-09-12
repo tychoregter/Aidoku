@@ -105,6 +105,11 @@ class ReaderPageViewController: BaseObservingViewController {
             case .info:
                 // info view
                 guard let infoView else { return }
+                // Do not duplicate the reader's background here. Transparency
+                // keeps this page directly linked to the live reader canvas.
+                view.backgroundColor = .clear
+                infoView.backgroundColor = .clear
+                updateInfoPageTextAppearance()
                 infoView.translatesAutoresizingMaskIntoConstraints = false
                 view.addSubview(infoView)
 
@@ -157,6 +162,13 @@ class ReaderPageViewController: BaseObservingViewController {
     override func observe() {
         addObserver(forName: "Reader.backgroundColor") { [weak self] _ in
             self?.loadPageBackground()
+            self?.updateInfoPageTextAppearance()
+        }
+        addObserver(forName: .readerShowingBars) { [weak self] _ in
+            self?.updateInfoPageTextAppearance()
+        }
+        addObserver(forName: .readerHidingBars) { [weak self] _ in
+            self?.updateInfoPageTextAppearance()
         }
         addObserver(forName: .orientationDidChange) { [weak self] _ in
             self?.loadPageBackground(forceReload: true)
@@ -177,6 +189,19 @@ class ReaderPageViewController: BaseObservingViewController {
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
         loadPageBackground() // fix page background resetting on system appearance change
+        updateInfoPageTextAppearance()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        updateInfoPageTextAppearance()
+    }
+
+    private func updateInfoPageTextAppearance() {
+        guard let infoView else { return }
+        let usesDarkAppearance = delegate?.readerCanvasUsesDarkAppearance
+            ?? (traitCollection.userInterfaceStyle == .dark)
+        infoView.overrideUserInterfaceStyle = usesDarkAppearance ? .dark : .light
     }
 
     func setPage(_ page: Page, sourceId: String? = nil, skipProcessing: Bool = false) {

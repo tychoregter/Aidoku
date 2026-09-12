@@ -27,10 +27,11 @@ class ReaderToolbarView: UIView {
     var onScrubberStyleChange: ((Bool) -> Void)?
     var onThumbnailScrubberPreferredWidthChange: ((CGFloat?) -> Void)?
     private(set) var usesThumbnailScrubber = false
-    let thumbnailPageCounterView = UIVisualEffectView()
+    let thumbnailPageCounterView = UIView()
     private let thumbnailPageCounterLabel = UILabel()
     private var thumbnailPageCounterPositionConstraints: [NSLayoutConstraint] = []
     private var supportsThumbnailScrubber = false
+    private var pageCounterControlsVisible = true
 
     init() {
         super.init(frame: .zero)
@@ -55,22 +56,25 @@ class ReaderToolbarView: UIView {
         }
         addSubview(thumbnailScrubberView)
 
-        if #available(iOS 26.0, *) {
-            thumbnailPageCounterView.effect = UIGlassEffect(style: .regular)
-        } else {
-            thumbnailPageCounterView.effect = UIBlurEffect(style: .systemMaterial)
+        // Use a neutral gray rather than systemGray6, whose slight blue tint is
+        // noticeably different from the document-viewer counter.
+        thumbnailPageCounterView.backgroundColor = UIColor { traits in
+            if traits.userInterfaceStyle == .dark {
+                return UIColor(white: 0.22, alpha: 1)
+            }
+            return UIColor(white: 0.953, alpha: 1)
         }
-        thumbnailPageCounterView.layer.cornerRadius = 10
+        thumbnailPageCounterView.layer.cornerRadius = 8
         thumbnailPageCounterView.layer.cornerCurve = .continuous
         thumbnailPageCounterView.clipsToBounds = true
         thumbnailPageCounterView.isUserInteractionEnabled = false
         thumbnailPageCounterView.isHidden = true
         addSubview(thumbnailPageCounterView)
 
-        thumbnailPageCounterLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+        thumbnailPageCounterLabel.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
         thumbnailPageCounterLabel.textColor = .secondaryLabel
         thumbnailPageCounterLabel.textAlignment = .center
-        thumbnailPageCounterView.contentView.addSubview(thumbnailPageCounterLabel)
+        thumbnailPageCounterView.addSubview(thumbnailPageCounterLabel)
     }
 
     func constrain() {
@@ -89,30 +93,41 @@ class ReaderToolbarView: UIView {
             thumbnailScrubberView.topAnchor.constraint(equalTo: topAnchor),
             thumbnailScrubberView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
-            thumbnailPageCounterView.heightAnchor.constraint(equalToConstant: 34),
-            thumbnailPageCounterView.widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
-            thumbnailPageCounterLabel.leadingAnchor.constraint(equalTo: thumbnailPageCounterView.contentView.leadingAnchor, constant: 12),
-            thumbnailPageCounterLabel.trailingAnchor.constraint(equalTo: thumbnailPageCounterView.contentView.trailingAnchor, constant: -12),
-            thumbnailPageCounterLabel.topAnchor.constraint(equalTo: thumbnailPageCounterView.contentView.topAnchor),
-            thumbnailPageCounterLabel.bottomAnchor.constraint(equalTo: thumbnailPageCounterView.contentView.bottomAnchor)
+            thumbnailPageCounterView.heightAnchor.constraint(equalToConstant: 30),
+            thumbnailPageCounterLabel.leadingAnchor.constraint(equalTo: thumbnailPageCounterView.leadingAnchor, constant: 11),
+            thumbnailPageCounterLabel.trailingAnchor.constraint(equalTo: thumbnailPageCounterView.trailingAnchor, constant: -11),
+            thumbnailPageCounterLabel.topAnchor.constraint(equalTo: thumbnailPageCounterView.topAnchor),
+            thumbnailPageCounterLabel.bottomAnchor.constraint(equalTo: thumbnailPageCounterView.bottomAnchor)
         ] + thumbnailPageCounterPositionConstraints)
     }
 
-    /// Places the counter inside the same glass container as the reader bar.
-    /// Keeping its positional constraints here also makes this easy to reverse.
+    /// Places the counter in the reader overlay, matching the position used by
+    /// native document viewers while keeping it independent of the scrubber.
     func moveThumbnailPageCounter(
         to container: UIView,
-        centeredOn centerXAnchor: NSLayoutXAxisAnchor,
-        above topAnchor: NSLayoutYAxisAnchor
+        trailingTo trailingAnchor: NSLayoutXAxisAnchor,
+        topTo topAnchor: NSLayoutYAxisAnchor,
+        topOffset: CGFloat
     ) {
         NSLayoutConstraint.deactivate(thumbnailPageCounterPositionConstraints)
         thumbnailPageCounterView.removeFromSuperview()
         container.addSubview(thumbnailPageCounterView)
         thumbnailPageCounterPositionConstraints = [
-            thumbnailPageCounterView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            thumbnailPageCounterView.bottomAnchor.constraint(equalTo: topAnchor, constant: -10)
+            thumbnailPageCounterView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            thumbnailPageCounterView.topAnchor.constraint(equalTo: topAnchor, constant: topOffset)
         ]
         NSLayoutConstraint.activate(thumbnailPageCounterPositionConstraints)
+        container.bringSubviewToFront(thumbnailPageCounterView)
+    }
+
+    func preparePageCounterForShowing() {
+        pageCounterControlsVisible = true
+        thumbnailPageCounterView.isHidden = !usesThumbnailScrubber
+    }
+
+    func finishHidingPageCounter() {
+        pageCounterControlsVisible = false
+        thumbnailPageCounterView.isHidden = true
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -148,8 +163,14 @@ class ReaderToolbarView: UIView {
 
     func setProgressOverlayAppearance(isDark: Bool) {
         let style: UIUserInterfaceStyle = isDark ? .dark : .light
-        thumbnailPageCounterView.overrideUserInterfaceStyle = style
         thumbnailScrubberView.setOverlayAppearance(style)
+    }
+
+    /// The counter belongs to the top reader controls, so its light/dark state
+    /// follows those controls immediately rather than the delayed scrubber
+    /// contrast sampling used for page thumbnails.
+    func setPageCounterAppearance(isDark: Bool) {
+        thumbnailPageCounterView.overrideUserInterfaceStyle = isDark ? .dark : .light
     }
 
     func updatePageLabels() {
@@ -198,7 +219,7 @@ class ReaderToolbarView: UIView {
         usesThumbnailScrubber = usesThumbnails
         thumbnailScrubberView.isHidden = !usesThumbnails
         thumbnailScrubberView.setLoadingEnabled(usesThumbnails)
-        thumbnailPageCounterView.isHidden = !usesThumbnails
+        thumbnailPageCounterView.isHidden = !usesThumbnails || !pageCounterControlsVisible
         if styleChanged {
             onScrubberStyleChange?(usesThumbnails)
         }

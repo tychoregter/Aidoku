@@ -85,6 +85,15 @@ class ReaderPagedViewController: BaseObservingViewController {
     }
 
     override func configure() {
+        // The outer ReaderViewController owns the reader canvas color. Keep
+        // the paging hierarchy transparent so chapter transition pages show
+        // that exact background, including its controls-visible animation.
+        view.backgroundColor = .clear
+        pageViewController.view.backgroundColor = .clear
+        pageViewController.view.subviews
+            .compactMap { $0 as? UIScrollView }
+            .forEach { $0.backgroundColor = .clear }
+
         pageViewController.delegate = self
         pageViewController.dataSource = self
         add(child: pageViewController)

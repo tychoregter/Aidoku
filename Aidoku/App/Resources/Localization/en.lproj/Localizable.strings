@@ -239,7 +239,7 @@
 "NEW_SERIES_TEXT" = "Create a new series for this file";
 "SELECT_SERIES" = "Select Series";
 "VOLUME_CHAPTER_INVALID_ERROR" = "A chapter with this configuration already exists.";
-"VOLUME_CHAPTER_EMPTY_ERROR" = "A volume and/or chapter number is required.";
+"VOLUME_CHAPTER_EMPTY_ERROR" = "A chapter number is required.";
 "SERIES_TITLE_UNIQUE_ERROR" = "A series with this title already exists.";
 "SERIES_TITLE_EMPTY_ERROR" = "A title must be provided for a new series.";
 "CREATE_NEW_SERIES_INFO" = "A new series will be created on the next page, or you can select an existing series to add this file to.";
@@ -271,9 +271,9 @@
 "OTHER_SETTINGS" = "Other Settings";
 "DISPLAY_DEFAULT" = "Default";
 "DISPLAY_CHAPTER" = "Chapter";
-"DISPLAY_VOLUME" = "Volume";
+"DISPLAY_VOLUME" = "Chapter";
 "USE_CHAPTERS" = "Use Chapters";
-"USE_CHAPTERS_TEXT" = "Treat books as chapters instead of volumes";
+"USE_CHAPTERS_TEXT" = "Treat books as chapters";
 "%@_BOOKS" = "%@ Books";
 "1_BOOK" = "1 Book";
 "ON_DECK" = "On Deck";
@@ -362,14 +362,14 @@
 "REFRESH_DETAILS" = "Refresh Details";
 
 // Reader
-"VOLUME" = "Volume";
+"VOLUME" = "Chapter";
 "CHAPTER" = "Chapter";
 "CHAPTERS" = "Chapters";
-"VOLUME_X" = "Volume %g";
+"VOLUME_X" = "Chapter %g";
 "CHAPTER_X" = "Chapter %g";
-"VOL_X" = "Vol.%g";
+"VOL_X" = "Ch.%g";
 "CH_X" = "Ch.%g";
-"VOL_SPACE_X" = "Vol. %g";
+"VOL_SPACE_X" = "Ch. %g";
 "CH_SPACE_X" = "Ch. %g";
 "NO_CHAPTERS" = "No Chapters";
 "NO_CHAPTERS_AVAILABLE" = "No Chapters Available";
@@ -743,7 +743,7 @@
 "TRACKING" = "Tracking";
 "TRACKERS" = "Trackers";
 "STATUS" = "Status";
-"VOLUMES" = "Volumes";
+"VOLUMES" = "Chapters";
 "START_TRACKING" = "Start Tracking";
 "SCORE" = "Score";
 "TRACK_READING" = "Reading";
@@ -776,9 +776,9 @@
 "SEARCH_OPTIONS" = "Search Options";
 "SHOW_NSFW_RESULTS" = "Show NSFW Results";
 "UPDATE_AFTER_READING" = "Update After Reading";
-"UPDATE_AFTER_READING_INFO" = "After reading a chapter, update the tracker to match the currently read chapter and/or volume.";
+"UPDATE_AFTER_READING_INFO" = "After reading a chapter, update the tracker to match the current chapter.";
 "AUTO_SYNC_HISTORY" = "Automatically Sync History";
-"AUTO_SYNC_HISTORY_INFO" = "When a newer chapter and/or volume is detected on the tracker, update the local history to match.";
+"AUTO_SYNC_HISTORY_INFO" = "When a newer chapter is detected on the tracker, update the local history to match.";
 "SYNC_WITH_TRACKER" = "Sync with Tracker";
 "SYNC_WITH_TRACKER_INFO_%i" = "%i chapters were determined to be already read by the tracker. Would you like to mark these chapters as read?";
 "SYNC_WITH_TRACKER_INFO_1" = "1 chapter was determined to be already read by the tracker. Would you like to mark this chapter as read?";

@@ -7,8 +7,12 @@
 
 import AidokuRunner
 import CloudKit
+import CoreData
+import CoreSpotlight
 import Nuke
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 import UserNotifications
 
 @main
@@ -208,6 +212,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
         Task {
             await SourceManager.shared.start()
+            LibrarySpotlightIndexer.indexLibrary()
             Task(priority: .utility) {
                 await LibraryPagePreviewCache.shared.prewarmLibrary()
             }
@@ -261,8 +266,31 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             name: Notification.Name(AppSettings.library.notifyNewChapters.key),
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(indexLibraryForSpotlight),
+            name: .updateLibrary,
+            object: nil
+        )
 
         return true
+    }
+
+    @objc private func indexLibraryForSpotlight() {
+        LibrarySpotlightIndexer.indexLibrary()
+    }
+
+    func handleSpotlightActivity(_ userActivity: NSUserActivity) {
+        guard
+            userActivity.activityType == CSSearchableItemActionType,
+            let identifier = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+            let (sourceKey, mangaKey) = LibrarySpotlightIndexer.parse(identifier: identifier),
+            let tabBarController = UIApplication.shared.firstKeyWindow?.rootViewController as? TabBarController
+        else { return }
+
+        Task { @MainActor in
+            _ = await tabBarController.openLibraryShortcut(sourceKey: sourceKey, mangaKey: mangaKey)
+        }
     }
 
     @objc private func handleNotifyNewChaptersToggle(_ note: Notification) {
@@ -290,18 +318,28 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
     }
 
-    func updateHomeScreenQuickActions(for pinnedManga: [MangaInfo]) {
-        let items = pinnedManga.prefix(4).map { manga in
-            UIApplicationShortcutItem(
-                type: "open-library-manga",
-                localizedTitle: manga.title ?? NSLocalizedString("UNTITLED"),
-                localizedSubtitle: nil,
-                icon: UIApplicationShortcutIcon(systemImageName: "book"),
-                userInfo: [
-                    "sourceKey": manga.id.sourceKey as NSSecureCoding,
-                    "mangaKey": manga.id.mangaKey as NSSecureCoding
-                ]
-            )
+    func updateHomeScreenQuickActions(for pinnedManga: [MangaInfo], isReadingPin: Bool) {
+        let context = CoreDataManager.shared.container.viewContext
+        let items = context.performAndWait {
+            pinnedManga.prefix(4).map { manga in
+                let libraryManga = CoreDataManager.shared.getLibraryManga(mangaId: manga.id, context: context)
+                return UIApplicationShortcutItem(
+                    type: "open-library-manga",
+                    localizedTitle: manga.title ?? NSLocalizedString("UNTITLED"),
+                    localizedSubtitle: libraryManga.flatMap {
+                        LibraryReadingStatus.homeScreenSubtitle(
+                            for: $0,
+                            isReadingPin: isReadingPin,
+                            context: context
+                        )
+                    },
+                    icon: UIApplicationShortcutIcon(systemImageName: "book"),
+                    userInfo: [
+                        "sourceKey": manga.id.sourceKey as NSSecureCoding,
+                        "mangaKey": manga.id.mangaKey as NSSecureCoding
+                    ]
+                )
+            }
         }
         UIApplication.shared.shortcutItems = Array(items)
     }
@@ -928,3 +966,374 @@ extension AppDelegate: @MainActor UNUserNotificationCenterDelegate {
         completionHandler()
     }
 }
+
+private enum LibraryReadingStatus {
+    static func homeScreenSubtitle(
+        for libraryManga: LibraryMangaObject,
+        isReadingPin: Bool,
+        context: NSManagedObjectContext
+    ) -> String? {
+        guard let manga = libraryManga.manga else { return nil }
+        let chapters = ((manga.chapters?.allObjects as? [ChapterObject]) ?? [])
+            .sorted { $0.sourceOrder < $1.sourceOrder }
+
+        guard isReadingPin else {
+            return "\(chapters.count) chapters"
+        }
+
+        let identifier = manga.identifier
+        let history = CoreDataManager.shared.getHistoryForManga(mangaId: identifier, context: context)
+            .sorted { ($0.dateRead ?? .distantPast) > ($1.dateRead ?? .distantPast) }
+        guard let latestHistory = history.first else { return "\(chapters.count) chapters" }
+        let historyChapter = latestHistory.chapter ?? CoreDataManager.shared.getChapter(
+            chapterId: ChapterIdentifier(
+                sourceKey: identifier.sourceKey,
+                mangaKey: identifier.mangaKey,
+                chapterKey: latestHistory.chapterId
+            ),
+            context: context
+        )
+        guard let historyChapter else { return "\(chapters.count) chapters" }
+
+        guard let currentIndex = chapters.firstIndex(where: { $0.sourceOrder == historyChapter.sourceOrder }) else {
+            return "\(chapters.count) chapters"
+        }
+
+        if latestHistory.completed {
+            let nextIndex = chapters.index(after: currentIndex)
+            guard nextIndex < chapters.endIndex else {
+                return manga.status == AidokuRunner.PublishingStatus.completed.rawValue ? "Finished" : "Caught up"
+            }
+            return chapterSubtitle(for: chapters[nextIndex])
+        }
+
+        guard latestHistory.total > 0 else {
+            return chapterSubtitle(for: historyChapter)
+        }
+        return chapterSubtitle(for: historyChapter)
+    }
+
+    static func spotlightSubtitle(for libraryManga: LibraryMangaObject) -> String? {
+        guard let manga = libraryManga.manga else { return nil }
+        let chapterCount = manga.chapters?.count ?? 0
+        return "\(chapterCount) chapters"
+    }
+
+    private static func chapterSubtitle(for chapter: ChapterObject) -> String {
+        let number = chapter.chapter?.stringValue ?? chapter.volume?.stringValue ?? chapter.title ?? "?"
+        return "Chapter \(number)"
+    }
+}
+
+private enum LibrarySpotlightIndexer {
+    private static let domainIdentifier = "library"
+    private static let identifierPrefix = "library:"
+    private static let separator = "\u{1F}"
+
+    private struct ItemMetadata: Sendable {
+        let sourceKey: String
+        let mangaKey: String
+        let title: String
+        let author: String?
+        let artist: String?
+        let readingStatus: String?
+        let tags: [String]
+        let cover: String?
+    }
+
+    static func indexLibrary() {
+        Task(priority: .utility) {
+            let metadata = await CoreDataManager.shared.container.performBackgroundTask { context in
+                CoreDataManager.shared.getLibraryManga(context: context).compactMap { object -> ItemMetadata? in
+                    guard let manga = object.manga, !manga.title.isEmpty else { return nil }
+                    return ItemMetadata(
+                        sourceKey: manga.sourceId,
+                        mangaKey: manga.id,
+                        title: manga.title,
+                        author: manga.author,
+                        artist: manga.artist,
+                        readingStatus: LibraryReadingStatus.spotlightSubtitle(for: object),
+                        tags: manga.tags ?? [],
+                        cover: manga.cover
+                    )
+                }
+            }
+
+            // Publish the text metadata immediately, then update each result as
+            // its cover becomes available through the app's normal image path.
+            try? await CSSearchableIndex.default().indexSearchableItems(
+                metadata.map { searchableItem(for: $0) }
+            )
+
+            for item in metadata {
+                guard let cover = item.cover,
+                      let thumbnail = await thumbnailData(for: cover, sourceKey: item.sourceKey) else {
+                    continue
+                }
+                try? await CSSearchableIndex.default().indexSearchableItems([
+                    searchableItem(for: item, thumbnailData: thumbnail)
+                ])
+            }
+        }
+    }
+
+    private static func searchableItem(for item: ItemMetadata, thumbnailData: Data? = nil) -> CSSearchableItem {
+        let identifier = makeIdentifier(sourceKey: item.sourceKey, mangaKey: item.mangaKey)
+        let attributes = CSSearchableItemAttributeSet(contentType: .image)
+        attributes.title = item.title
+        attributes.displayName = item.title
+        attributes.keywords = [item.title, item.author, item.artist].compactMap { $0 } + item.tags
+        // Spotlight shows contentDescription as the result subtitle. Retain
+        // artist and author as keywords without presenting them as the subtitle.
+        attributes.contentDescription = item.readingStatus
+        attributes.thumbnailData = thumbnailData
+        return CSSearchableItem(
+            uniqueIdentifier: identifier,
+            domainIdentifier: domainIdentifier,
+            attributeSet: attributes
+        )
+    }
+
+    private static func thumbnailData(for cover: String, sourceKey: String) async -> Data? {
+        guard let url = URL(string: cover) else { return nil }
+
+        let image: UIImage?
+        if let fileURL = url.toAidokuFileUrl() {
+            image = UIImage(contentsOfFile: fileURL.path)
+        } else {
+            let source = await SourceManager.shared.source(for: sourceKey)
+            let urlRequest = if let source {
+                await source.getModifiedImageRequest(url: url, context: nil)
+            } else {
+                URLRequest(url: url)
+            }
+            var processors: [ImageProcessing] = []
+            if let source, source.features.processesCovers {
+                processors.append(CoverInterceptorProcessor(source: source))
+            }
+            var request = ImageRequest(
+                urlRequest: urlRequest,
+                processors: processors,
+                userInfo: [.processesKey: source?.features.processesCovers ?? false]
+            )
+            request.thumbnail = ImageRequest.ThumbnailOptions(maxPixelSize: 512)
+            image = try? await ImagePipeline.shared.image(for: request)
+        }
+        guard let image else { return nil }
+
+        let targetSize = CGSize(width: 320, height: 480)
+        let scale = max(targetSize.width / image.size.width, targetSize.height / image.size.height)
+        let drawSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let drawRect = CGRect(
+            x: (targetSize.width - drawSize.width) / 2,
+            y: (targetSize.height - drawSize.height) / 2,
+            width: drawSize.width,
+            height: drawSize.height
+        )
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let thumbnail = UIGraphicsImageRenderer(size: targetSize, format: format).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(origin: .zero, size: targetSize))
+            image.draw(in: drawRect)
+        }
+        return thumbnail.jpegData(compressionQuality: 0.85)
+    }
+
+    static func parse(identifier: String) -> (sourceKey: String, mangaKey: String)? {
+        guard identifier.hasPrefix(identifierPrefix) else { return nil }
+        let encoded = String(identifier.dropFirst(identifierPrefix.count))
+        guard
+            let data = Data(base64Encoded: encoded),
+            let value = String(data: data, encoding: .utf8),
+            let separatorIndex = value.firstIndex(of: Character(separator))
+        else { return nil }
+
+        let sourceKey = String(value[..<separatorIndex])
+        let mangaKey = String(value[value.index(after: separatorIndex)...])
+        guard !sourceKey.isEmpty, !mangaKey.isEmpty else { return nil }
+        return (sourceKey, mangaKey)
+    }
+
+private static func makeIdentifier(sourceKey: String, mangaKey: String) -> String {
+        let value = "\(sourceKey)\(separator)\(mangaKey)"
+        let encoded = Data(value.utf8).base64EncodedString()
+        return identifierPrefix + encoded
+    }
+}
+
+/*
+        let historyChapter = latestHistory?.chapter ?? latestHistory.flatMap {
+            CoreDataManager.shared.getChapter(
+                chapterId: ChapterIdentifier(
+                    sourceKey: identifier.sourceKey,
+                    mangaKey: identifier.mangaKey,
+                    chapterKey: $0.chapterId
+                ),
+                context: context
+            )
+        }
+        let chapters = (manga.chapters?.allObjects as? [ChapterObject]) ?? []
+        let currentChapter = historyChapter ?? chapters.min { $0.sourceOrder < $1.sourceOrder }
+        let finalChapter = chapters.max { $0.sourceOrder < $1.sourceOrder }
+        let isFinalChapter = currentChapter != nil && currentChapter?.sourceOrder == finalChapter?.sourceOrder
+
+        if latestHistory?.completed == true && isFinalChapter {
+            return manga.status == AidokuRunner.PublishingStatus.completed.rawValue ? "Finished" : "Caught Up"
+        }
+
+        let volume = currentChapter?.volume?.stringValue
+            ?? (latestHistory == nil && currentChapter != nil ? "1" : nil)
+        guard let volume else { return currentChapter?.title }
+
+        if (latestHistory?.progress ?? 0) <= 1 {
+            return "Start reading volume \(volume)"
+        }
+
+        guard let latestHistory, latestHistory.total > 0 else {
+            return "Volume \(volume)"
+        }
+        let percentage = (Double(latestHistory.progress) / Double(latestHistory.total) * 100).rounded()
+        return "Volume \(volume), \(min(max(Int(percentage), 0), 100))% read"
+    }
+}
+
+private enum LibrarySpotlightIndexer {
+    private static let domainIdentifier = "library"
+    private static let identifierPrefix = "library:"
+    private static let separator = "\u{1F}"
+
+    private struct ItemMetadata: Sendable {
+        let sourceKey: String
+        let mangaKey: String
+        let title: String
+        let author: String?
+        let artist: String?
+        let readingStatus: String?
+        let tags: [String]
+        let cover: String?
+    }
+
+    static func indexLibrary() {
+        Task(priority: .utility) {
+            let metadata = await CoreDataManager.shared.container.performBackgroundTask { context in
+                CoreDataManager.shared.getLibraryManga(context: context).compactMap { object -> ItemMetadata? in
+                    guard let manga = object.manga, !manga.title.isEmpty else { return nil }
+                    return ItemMetadata(
+                        sourceKey: manga.sourceId,
+                        mangaKey: manga.id,
+                        title: manga.title,
+                        author: manga.author,
+                        artist: manga.artist,
+                        readingStatus: LibraryReadingStatus.subtitle(for: object, context: context),
+                        tags: manga.tags ?? [],
+                        cover: manga.cover
+                    )
+                }
+            }
+
+            // Publish the text metadata immediately, then update each result as
+            // its cover becomes available through the app's normal image path.
+            try? await CSSearchableIndex.default().indexSearchableItems(
+                metadata.map { searchableItem(for: $0) }
+            )
+
+            for item in metadata {
+                guard let cover = item.cover,
+                      let thumbnail = await thumbnailData(for: cover, sourceKey: item.sourceKey) else {
+                    continue
+                }
+                try? await CSSearchableIndex.default().indexSearchableItems([
+                    searchableItem(for: item, thumbnailData: thumbnail)
+                ])
+            }
+        }
+    }
+
+    private static func searchableItem(for item: ItemMetadata, thumbnailData: Data? = nil) -> CSSearchableItem {
+        let identifier = makeIdentifier(sourceKey: item.sourceKey, mangaKey: item.mangaKey)
+        let attributes = CSSearchableItemAttributeSet(contentType: .image)
+        attributes.title = item.title
+        attributes.displayName = item.title
+        attributes.keywords = [item.title, item.author, item.artist].compactMap { $0 } + item.tags
+        // Spotlight shows contentDescription as the result subtitle. Retain
+        // artist and author as keywords without presenting them as the subtitle.
+        attributes.contentDescription = item.readingStatus
+        attributes.thumbnailData = thumbnailData
+        return CSSearchableItem(
+            uniqueIdentifier: identifier,
+            domainIdentifier: domainIdentifier,
+            attributeSet: attributes
+        )
+    }
+
+    private static func thumbnailData(for cover: String, sourceKey: String) async -> Data? {
+        guard let url = URL(string: cover) else { return nil }
+
+        let image: UIImage?
+        if let fileURL = url.toAidokuFileUrl() {
+            image = UIImage(contentsOfFile: fileURL.path)
+        } else {
+            let source = await SourceManager.shared.source(for: sourceKey)
+            let urlRequest = if let source {
+                await source.getModifiedImageRequest(url: url, context: nil)
+            } else {
+                URLRequest(url: url)
+            }
+            var processors: [ImageProcessing] = []
+            if let source, source.features.processesCovers {
+                processors.append(CoverInterceptorProcessor(source: source))
+            }
+            var request = ImageRequest(
+                urlRequest: urlRequest,
+                processors: processors,
+                userInfo: [.processesKey: source?.features.processesCovers ?? false]
+            )
+            request.thumbnail = ImageRequest.ThumbnailOptions(maxPixelSize: 512)
+            image = try? await ImagePipeline.shared.image(for: request)
+        }
+        guard let image else { return nil }
+
+        let targetSize = CGSize(width: 320, height: 480)
+        let scale = max(targetSize.width / image.size.width, targetSize.height / image.size.height)
+        let drawSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let drawRect = CGRect(
+            x: (targetSize.width - drawSize.width) / 2,
+            y: (targetSize.height - drawSize.height) / 2,
+            width: drawSize.width,
+            height: drawSize.height
+        )
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let thumbnail = UIGraphicsImageRenderer(size: targetSize, format: format).image { context in
+            UIColor.black.setFill()
+            context.fill(CGRect(origin: .zero, size: targetSize))
+            image.draw(in: drawRect)
+        }
+        return thumbnail.jpegData(compressionQuality: 0.85)
+    }
+
+    static func parse(identifier: String) -> (sourceKey: String, mangaKey: String)? {
+        guard identifier.hasPrefix(identifierPrefix) else { return nil }
+        let encoded = String(identifier.dropFirst(identifierPrefix.count))
+        guard
+            let data = Data(base64Encoded: encoded),
+            let value = String(data: data, encoding: .utf8),
+            let separatorIndex = value.firstIndex(of: Character(separator))
+        else { return nil }
+
+        let sourceKey = String(value[..<separatorIndex])
+        let mangaKey = String(value[value.index(after: separatorIndex)...])
+        guard !sourceKey.isEmpty, !mangaKey.isEmpty else { return nil }
+        return (sourceKey, mangaKey)
+    }
+
+    private static func makeIdentifier(sourceKey: String, mangaKey: String) -> String {
+        let value = "\(sourceKey)\(separator)\(mangaKey)"
+        let encoded = Data(value.utf8).base64EncodedString()
+        return identifierPrefix + encoded
+    }
+}
+*/

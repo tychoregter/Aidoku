@@ -966,7 +966,10 @@ extension LibraryViewController {
             self?.updateVisibleSectionHeaders()
         }
 
-        UIApplication.shared.appDelegate?.updateHomeScreenQuickActions(for: viewModel.pinnedManga)
+        UIApplication.shared.appDelegate?.updateHomeScreenQuickActions(
+            for: viewModel.pinnedManga,
+            isReadingPin: viewModel.pinType == .started
+        )
         Task { await AidokuWidgetSnapshotStore.update() }
 
         // handle empty library or category
