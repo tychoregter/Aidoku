@@ -22,6 +22,10 @@ struct MangaInfo: Hashable, Sendable {
     var downloads: Int = 0
     var lastRead: Date?
 
+    // Pin-specific event date. Reading combines eligible updates with reads;
+    // Recently Updated uses the chapter-update date.
+    var pinSortDate: Date?
+
     // Position in the library's selected sort order. Pinned sections can use
     // their own ordering while duplicate entries retain normal library order.
     var librarySortIndex: Int = 0

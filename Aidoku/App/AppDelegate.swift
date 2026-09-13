@@ -318,7 +318,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
     }
 
-    func updateHomeScreenQuickActions(for pinnedManga: [MangaInfo], isReadingPin: Bool) {
+    func updateHomeScreenQuickActions(
+        for pinnedManga: [MangaInfo],
+        isReadingPin: Bool,
+        isFavoritesPin: Bool
+    ) {
         let context = CoreDataManager.shared.container.viewContext
         let items = context.performAndWait {
             pinnedManga.prefix(4).map { manga in
@@ -333,7 +337,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                             context: context
                         )
                     },
-                    icon: UIApplicationShortcutIcon(systemImageName: "book"),
+                    icon: UIApplicationShortcutIcon(systemImageName: isFavoritesPin ? "star" : "book"),
                     userInfo: [
                         "sourceKey": manga.id.sourceKey as NSSecureCoding,
                         "mangaKey": manga.id.mangaKey as NSSecureCoding
@@ -1021,7 +1025,7 @@ private enum LibraryReadingStatus {
 
     private static func chapterSubtitle(for chapter: ChapterObject) -> String {
         let number = chapter.chapter?.stringValue ?? chapter.volume?.stringValue ?? chapter.title ?? "?"
-        return "Chapter \(number)"
+        return "Continue chapter \(number)"
     }
 }
 

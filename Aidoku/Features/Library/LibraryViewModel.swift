@@ -369,6 +369,29 @@ extension LibraryViewModel {
                 info.lastRead = libraryObject.lastRead
                 info.librarySortIndex = librarySortIndex
 
+                if pinType == .started {
+                    let chapters = ((mangaObject.chapters?.allObjects as? [ChapterObject]) ?? [])
+                        .filter { !$0.locked }
+                        .sorted { $0.sourceOrder < $1.sourceOrder }
+                    let newestCompletedIndex = chapters.firstIndex { $0.history?.completed == true }
+                    let wasCaughtUpBeforeUpdate = newestCompletedIndex.map { index in
+                        chapters[index...].allSatisfy { $0.history?.completed == true }
+                    } ?? false
+                    if wasCaughtUpBeforeUpdate {
+                        if let lastRead = libraryObject.lastRead {
+                            info.pinSortDate = libraryObject.lastUpdatedChapters > lastRead
+                                ? libraryObject.lastUpdatedChapters
+                                : lastRead
+                        } else {
+                            info.pinSortDate = libraryObject.lastUpdatedChapters
+                        }
+                    } else {
+                        info.pinSortDate = libraryObject.lastRead
+                    }
+                } else if pinType == .updatedChapters {
+                    info.pinSortDate = libraryObject.lastUpdatedChapters
+                }
+
                 sourceKeys.insert(mangaObject.sourceId)
 
                 let isPinnedIgnoringFilters = switch pinType {
@@ -542,12 +565,12 @@ extension LibraryViewModel {
                 }
             }
 
-            if pinType == .started {
+            if pinType == .started || pinType == .updatedChapters {
                 pinnedManga.sort {
-                    if let lhs = $0.lastRead, let rhs = $1.lastRead {
+                    if let lhs = $0.pinSortDate, let rhs = $1.pinSortDate {
                         return lhs > rhs
                     }
-                    return $0.lastRead != nil
+                    return $0.pinSortDate != nil
                 }
             }
 

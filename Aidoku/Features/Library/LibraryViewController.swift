@@ -968,7 +968,8 @@ extension LibraryViewController {
 
         UIApplication.shared.appDelegate?.updateHomeScreenQuickActions(
             for: viewModel.pinnedManga,
-            isReadingPin: viewModel.pinType == .started
+            isReadingPin: viewModel.pinType == .started,
+            isFavoritesPin: viewModel.pinType == .favorites
         )
         Task { await AidokuWidgetSnapshotStore.update() }
 
@@ -1006,9 +1007,15 @@ extension LibraryViewController {
     }
 
     private var pinnedSectionTitle: String {
-        viewModel.pinType == .started
-            ? NSLocalizedString("CONTINUE_READING")
-            : viewModel.pinType.title
+        switch viewModel.pinType {
+            case .started: NSLocalizedString("CONTINUE_READING")
+            case .updatedChapters: NSLocalizedString(
+                "RECENTLY_UPDATED",
+                value: "Recently Updated",
+                comment: "Pinned library section title for recently updated manga"
+            )
+            default: viewModel.pinType.title
+        }
     }
 
     private var emptyPinnedPlaceholderTitle: String {

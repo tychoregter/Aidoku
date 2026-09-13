@@ -33,10 +33,10 @@ enum WidgetPin: String, AppEnum {
     case all, favorites, started, unread, completed, updatedChapters
     static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Library Content")
     static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
-        .all: "Full Library", .favorites: "Favorites", .started: "Continue Reading", .unread: "Unread", .completed: "Ended", .updatedChapters: "Updated"
+        .all: "Full Library", .favorites: "Favorites", .started: "Continue Reading", .unread: "Unread", .completed: "Ended", .updatedChapters: "Recently Updated"
     ]
     var title: String {
-        switch self { case .all: "Library"; case .favorites: "Favorites"; case .started: "Continue Reading"; case .unread: "Unread"; case .completed: "Ended"; case .updatedChapters: "Updated" }
+        switch self { case .all: "Library"; case .favorites: "Favorites"; case .started: "Continue Reading"; case .unread: "Unread"; case .completed: "Ended"; case .updatedChapters: "Recently Updated" }
     }
 }
 
