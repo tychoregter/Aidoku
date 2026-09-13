@@ -435,6 +435,13 @@ class LibraryViewController: OldMangaCollectionViewController {
                 self.updateDataSource()
             }
         }
+        addObserver(forName: AppSettings.library.hideCaughtUpPinnedTitles.key) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.viewModel.loadLibrary()
+                self.updateDataSource()
+            }
+        }
         addObserver(forName: AppSettings.library.pinTitlesIgnoredFilters.key) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in

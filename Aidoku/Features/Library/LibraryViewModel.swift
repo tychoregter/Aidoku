@@ -286,6 +286,8 @@ extension LibraryViewModel {
         let filters = self.activeFilters
         let currentCategory = (isInUncategorizedCategory || isInRealCategory) ? self.currentCategory : nil
         let pinTitlesIgnoreFilters = AppSettings.library.pinTitlesIgnoreFilters.get()
+        let hideCaughtUpPinnedTitles = AppSettings.library.hideCaughtUpPinnedTitles.get()
+            && AppSettings.appearance.separatePinnedTitles.get()
         let ignoredPinFilterMethods = Set(
             AppSettings.library.pinTitlesIgnoredFilters.get().compactMap(
                 LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethod(for:)
@@ -606,6 +608,10 @@ extension LibraryViewModel {
             self.libraryPinnedManga = self.pinnedManga.filter {
                 libraryPinnedIDs.contains($0.id)
             }
+        }
+
+        if hideCaughtUpPinnedTitles {
+            self.pinnedManga.removeAll { $0.unread == 0 }
         }
 
         if !unappliedFilters.isEmpty {

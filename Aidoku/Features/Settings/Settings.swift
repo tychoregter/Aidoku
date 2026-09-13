@@ -288,6 +288,12 @@ extension Settings {
                 ))
             ),
             .init(
+                key: AppSettings.library.hideCaughtUpPinnedTitles.key,
+                title: "Hide Caught Up Titles",
+                requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
+                value: .toggle(.init(subtitle: "Hide caught-up titles from the pinned section only."))
+            ),
+            .init(
                 key: AppSettings.library.pinTitlesIgnoreFilters.key,
                 title: "Ignore Filters",
                 requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
