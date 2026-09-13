@@ -272,12 +272,23 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             name: .updateLibrary,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(removeLibraryItemFromSpotlight(_:)),
+            name: .removeFromLibrary,
+            object: nil
+        )
 
         return true
     }
 
     @objc private func indexLibraryForSpotlight() {
         LibrarySpotlightIndexer.indexLibrary()
+    }
+
+    @objc private func removeLibraryItemFromSpotlight(_ notification: Notification) {
+        guard let mangaId = notification.object as? MangaIdentifier else { return }
+        LibrarySpotlightIndexer.remove(mangaId: mangaId)
     }
 
     func handleSpotlightActivity(_ userActivity: NSUserActivity) {
@@ -1029,10 +1040,24 @@ private enum LibraryReadingStatus {
     }
 }
 
+private actor SpotlightIndexingCoordinator {
+    private var generation = 0
+
+    func begin() -> Int {
+        generation += 1
+        return generation
+    }
+
+    func isCurrent(_ generation: Int) -> Bool {
+        self.generation == generation
+    }
+}
+
 private enum LibrarySpotlightIndexer {
     private static let domainIdentifier = "library"
     private static let identifierPrefix = "library:"
     private static let separator = "\u{1F}"
+    private static let indexingCoordinator = SpotlightIndexingCoordinator()
 
     private struct ItemMetadata: Sendable {
         let sourceKey: String
@@ -1047,6 +1072,7 @@ private enum LibrarySpotlightIndexer {
 
     static func indexLibrary() {
         Task(priority: .utility) {
+            let generation = await indexingCoordinator.begin()
             let metadata = await CoreDataManager.shared.container.performBackgroundTask { context in
                 CoreDataManager.shared.getLibraryManga(context: context).compactMap { object -> ItemMetadata? in
                     guard let manga = object.manga, !manga.title.isEmpty else { return nil }
@@ -1063,6 +1089,15 @@ private enum LibrarySpotlightIndexer {
                 }
             }
 
+            guard await indexingCoordinator.isCurrent(generation) else { return }
+
+            // Rebuild the app-owned Spotlight domain from the current library.
+            // Indexing the current items alone does not remove titles that were
+            // deleted from the library since the previous indexing pass.
+            try? await CSSearchableIndex.default().deleteSearchableItems(
+                withDomainIdentifiers: [domainIdentifier]
+            )
+
             // Publish the text metadata immediately, then update each result as
             // its cover becomes available through the app's normal image path.
             try? await CSSearchableIndex.default().indexSearchableItems(
@@ -1070,6 +1105,7 @@ private enum LibrarySpotlightIndexer {
             )
 
             for item in metadata {
+                guard await indexingCoordinator.isCurrent(generation) else { return }
                 guard let cover = item.cover,
                       let thumbnail = await thumbnailData(for: cover, sourceKey: item.sourceKey) else {
                     continue
@@ -1078,6 +1114,13 @@ private enum LibrarySpotlightIndexer {
                     searchableItem(for: item, thumbnailData: thumbnail)
                 ])
             }
+        }
+    }
+
+    static func remove(mangaId: MangaIdentifier) {
+        let identifier = makeIdentifier(sourceKey: mangaId.sourceKey, mangaKey: mangaId.mangaKey)
+        Task(priority: .utility) {
+            try? await CSSearchableIndex.default().deleteSearchableItems(withIdentifiers: [identifier])
         }
     }
 
