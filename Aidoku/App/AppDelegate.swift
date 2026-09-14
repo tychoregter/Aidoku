@@ -238,22 +238,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                 }
             }
 
+            // Do not interrupt launch with a prompt when a previous refresh
+            // was interrupted. Clear the stale marker and continue normally.
             if AppSettings.flags.libraryRefreshInProgress.get() {
-                presentAlert(
-                    title: NSLocalizedString("LIBRARY_REFRESH_INTERRUPTED"),
-                    message: NSLocalizedString("LIBRARY_REFRESH_INTERRUPTED_TEXT"),
-                    actions: [
-                        .init(title: NSLocalizedString("CANCEL"), style: .cancel) { _ in
-                            AppSettings.flags.libraryRefreshInProgress.reset()
-                        },
-                        .init(title: NSLocalizedString("RESUME"), style: .default) { _ in
-                            AppSettings.flags.libraryRefreshInProgress.reset()
-                            Task {
-                                await MangaManager.shared.refreshLibrary()
-                            }
-                        }
-                    ]
-                )
+                AppSettings.flags.libraryRefreshInProgress.reset()
+                await MangaManager.shared.refreshLibrary()
             } else {
                 await MangaManager.shared.scheduleLibraryRefresh()
             }
