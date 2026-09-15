@@ -8,7 +8,6 @@
 import Combine
 import AidokuRunner
 import SwiftUI
-import SwiftUIIntrospect
 
 extension UIScrollView {
     /// Invokes the same private UIKit path used by the status-bar scroll-to-top gesture.
@@ -69,24 +68,15 @@ class TabBarController: UITabBarController {
         historyNavigationController = historyViewController
 
         let settingsPath = NavigationCoordinator(rootViewController: nil)
-        let settingsViewController: UIViewController
-        if #available(iOS 26.0, *), UIDevice.current.userInterfaceIdiom != .pad {
-            settingsViewController = UIHostingController(
-                rootView: NavigationStack {
-                    SettingsView()
-                        .environmentObject(settingsPath)
-                }.introspect(.navigationStack, on: .iOS(.v26, .v27)) { entity in
-                    settingsPath.rootViewController = entity
-                }
-            )
-        } else {
-            // this breaks the zoom transitions from the toolbar buttons in the backups setting page on ios 18 / ipads
-            let hosting = UIHostingController(rootView: SettingsView().environmentObject(settingsPath))
-            let entity = NavigationController(rootViewController: hosting)
-            entity.navigationBar.prefersLargeTitles = true
-            settingsPath.rootViewController = entity
-            settingsViewController = entity
-        }
+        // Browse, source, and manga-info screens are UIKit controllers.  Keeping
+        // Settings in a UIKit navigation controller too gives that route one stack
+        // owner; pushing those screens into SwiftUI's NavigationStack allowed iOS
+        // to reconcile and remove the source screen on the first return.
+        let hosting = UIHostingController(rootView: SettingsView().environmentObject(settingsPath))
+        let settingsNavigationController = NavigationController(rootViewController: hosting)
+        settingsNavigationController.navigationBar.prefersLargeTitles = true
+        settingsPath.rootViewController = settingsNavigationController
+        let settingsViewController: UIViewController = settingsNavigationController
         self.settingsPath = settingsPath
         self.settingsViewController = settingsViewController
 

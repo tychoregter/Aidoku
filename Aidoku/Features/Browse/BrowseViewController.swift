@@ -29,13 +29,6 @@ class BrowseViewController: BaseTableViewController {
         title = NSLocalizedString("BROWSE")
 
         navigationController?.navigationBar.prefersLargeTitles = true
-        navigationItem.hidesSearchBarWhenScrolling = false
-
-        // search controller
-        let searchController = UISearchController(searchResultsController: nil)
-        searchController.searchResultsUpdater = self
-        searchController.obscuresBackgroundDuringPresentation = false
-        navigationItem.searchController = searchController
 
         // toolbar buttons
         let deleteButton = UIBarButtonItem(
@@ -124,9 +117,6 @@ class BrowseViewController: BaseTableViewController {
                 await self.viewModel.loadInstalledSources()
                 await self.viewModel.loadPinnedSources()
                 self.viewModel.loadUpdates()
-                if let query = self.navigationItem.searchController?.searchBar.text, !query.isEmpty {
-                    self.viewModel.search(query: query)
-                }
                 self.updateDataSource()
             }
         }
@@ -167,11 +157,6 @@ class BrowseViewController: BaseTableViewController {
 
         // fix refresh control snapping height
         refreshControl.didMoveToSuperview()
-
-        // hack to show search bar on initial presentation
-        if !navigationItem.hidesSearchBarWhenScrolling {
-            navigationItem.hidesSearchBarWhenScrolling = true
-        }
     }
 
     override func setEditing(_ editing: Bool, animated: Bool) {
@@ -587,9 +572,7 @@ extension BrowseViewController {
         }
 
         Task { @MainActor in
-            if navigationItem.searchController?.searchBar.text?.isEmpty ?? true {
-                emptyStackView.isHidden = !snapshot.itemIdentifiers.isEmpty
-            }
+            emptyStackView.isHidden = !snapshot.itemIdentifiers.isEmpty
             checkUpdateCount()
         }
     }
@@ -620,14 +603,6 @@ extension BrowseViewController {
             emptyStackView.isHidden = !snapshot.itemIdentifiers.isEmpty
             checkUpdateCount()
         }
-    }
-}
-
-// MARK: - Search Results
-extension BrowseViewController: UISearchResultsUpdating {
-    func updateSearchResults(for searchController: UISearchController) {
-        viewModel.search(query: searchController.searchBar.text)
-        updateDataSource()
     }
 }
 

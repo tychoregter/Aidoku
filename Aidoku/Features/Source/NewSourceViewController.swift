@@ -406,6 +406,27 @@ class NewSourceViewController: UIViewController {
             self.setNavigationBarOpaque(true)
         }
     }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+
+        guard
+            let coordinator = transitionCoordinator,
+            coordinator.isInteractive,
+            coordinator.viewController(forKey: .from) === self,
+            coordinator.viewController(forKey: .to) is BrowseViewController
+        else { return }
+
+        let searchBar = searchController.searchBar
+        let layoutDirection = UIView.userInterfaceLayoutDirection(for: view.semanticContentAttribute)
+        let horizontalOffset = view.bounds.width * (layoutDirection == .rightToLeft ? -1 : 1)
+
+        coordinator.animate { _ in
+            searchBar.transform = CGAffineTransform(translationX: horizontalOffset, y: 0)
+        } completion: { _ in
+            searchBar.transform = .identity
+        }
+    }
 }
 
 extension NewSourceViewController: UINavigationControllerDelegate {

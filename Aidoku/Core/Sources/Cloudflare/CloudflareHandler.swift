@@ -50,7 +50,18 @@ actor CloudflareHandler: NSObject {
 
     @MainActor
     private var parent: UIViewController? {
-        UIApplication.shared.appDelegate?.visibleViewController
+        guard let root = UIApplication.shared.firstKeyWindow?.rootViewController else {
+            return nil
+        }
+
+        // Browse can be hosted by the Settings container rather than a
+        // UINavigationController. Resolve the selected tab generically so
+        // Cloudflare can attach its hidden web view in either layout.
+        var controller = (root as? UITabBarController)?.selectedViewController ?? root
+        while let presented = controller.presentedViewController {
+            controller = presented
+        }
+        return controller
     }
 
     @MainActor
