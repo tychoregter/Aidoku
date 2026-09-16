@@ -459,6 +459,10 @@
 "ICLOUD_SYNC" = "iCloud Sync";
 "ICLOUD_SYNC_TEXT_EXPERIMENTAL" = "iCloud Sync is an experimental feature. Enabling or disabling it may trigger data loss.";
 "ICLOUD_SYNC_TEXT_SIDELOADED" = "iCloud Sync is only available when installed through TestFlight.";
+"FLARESOLVERR_URL" = "FlareSolverr URL";
+"FLARESOLVERR" = "FlareSolverr";
+"FLARESOLVERR_TEXT" = "Use an optional FlareSolverr server to solve Cloudflare challenges automatically.";
+"FLARESOLVERR_FALLBACK" = "Allow Manual Fallback";
 "INCOGNITO_MODE" = "Incognito Mode";
 "INCOGNITO_MODE_TEXT" = "Pauses reading history when enabled";
 "APPEARANCE" = "Appearance";

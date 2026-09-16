@@ -6,7 +6,6 @@
 //
 
 import AidokuRunner
-import CloudKit
 import CoreData
 import CoreSpotlight
 import Nuke
@@ -166,18 +165,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // launch (no window ever appears). Forcing first init on the main thread here
         // makes the main thread win the race deterministically.
         _ = CoreDataManager.shared
-
-        // check for icloud availability
-        // https://developer.apple.com/documentation/foundation/filemanager/url(forubiquitycontaineridentifier:)
-        // Do not call this method from your app’s main thread. Because this method might take a nontrivial amount of
-        // time to set up iCloud and return the requested URL, you should always call it from a secondary thread.
-        Task.detached {
-            let isiCloudAvailable = FileManager.default.url(forUbiquityContainerIdentifier: nil) != nil
-            if !isiCloudAvailable {
-                LogManager.logger.info("iCloud unavailable")
-            }
-            AppSettings.flags.isiCloudAvailable.register(isiCloudAvailable)
-        }
 
         DataLoader.sharedUrlCache.diskCapacity = 0
 

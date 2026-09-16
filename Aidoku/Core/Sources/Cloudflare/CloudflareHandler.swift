@@ -6,6 +6,7 @@
 //
 
 import AidokuRunner
+import Foundation
 import SwiftSoup
 import WebKit
 
@@ -36,6 +37,7 @@ actor CloudflareHandler: NSObject {
     private var proxy: Proxy?
     private var isChallengeActive = false
     private var challengeWaiters: [CheckedContinuation<Void, Never>] = []
+    private var flareSolverrUserAgents: [String: String] = [:]
 
     @MainActor
     private lazy var webView = WKWebView(frame: .zero)
@@ -100,6 +102,14 @@ actor CloudflareHandler: NSObject {
     }
 
     func handle(request: URLRequest) async throws -> (Data, URLResponse) {
+        do {
+            return try await solveWithFlareSolverr(request: request)
+        } catch {
+            guard AppSettings.general.flareSolverrFallback.get() else {
+                throw error
+            }
+        }
+
         // handle challenges one at a time, waiting for a solution for the request url host
         try await awaitChallenge(for: request)
 
@@ -118,6 +128,113 @@ actor CloudflareHandler: NSObject {
         }
         return (data, response)
     }
+
+    private func solveWithFlareSolverr(request: URLRequest) async throws -> (Data, URLResponse) {
+        let configuredURL = AppSettings.general.flareSolverrURL.get().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard
+            !configuredURL.isEmpty,
+            let apiURL = Self.flareSolverrAPIURL(from: configuredURL),
+            let targetURL = request.url
+        else {
+            throw HandleError.solveFailed
+        }
+
+        let isPost = request.httpMethod?.uppercased() == "POST"
+        var body: [String: Any] = [
+            "cmd": isPost ? "request.post" : "request.get",
+            "url": targetURL.absoluteString,
+            "maxTimeout": 120_000
+        ]
+        if let host = targetURL.host?.lowercased(), let userAgent = flareSolverrUserAgents[host] {
+            body["userAgent"] = userAgent
+        }
+        if isPost, let httpBody = request.httpBody {
+            guard let postData = String(data: httpBody, encoding: .utf8) else {
+                throw HandleError.solveFailed
+            }
+            body["postData"] = postData
+        }
+
+        var solverRequest = URLRequest(url: apiURL)
+        solverRequest.httpMethod = "POST"
+        solverRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        solverRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: solverRequest)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw HandleError.solveFailed
+        }
+
+        let result = try JSONDecoder().decode(FlareSolverrResponse.self, from: data)
+        guard result.status == "ok", let solution = result.solution, solution.status < 400 else {
+            throw HandleError.solveFailed
+        }
+
+        if let host = targetURL.host?.lowercased(), let userAgent = solution.userAgent {
+            flareSolverrUserAgents[host] = userAgent
+        }
+        storeFlareSolverrCookies(solution.cookies, for: targetURL)
+
+        guard let responseData = solution.response.data(using: .utf8) else {
+            throw HandleError.solveFailed
+        }
+        var headers = solution.headers ?? [:]
+        headers.removeValue(forKey: "content-encoding")
+        headers.removeValue(forKey: "content-length")
+        let solvedResponse = HTTPURLResponse(
+            url: URL(string: solution.url) ?? targetURL,
+            statusCode: solution.status,
+            httpVersion: "HTTP/1.1",
+            headerFields: headers
+        ) ?? httpResponse
+        return (responseData, solvedResponse)
+    }
+
+    private func storeFlareSolverrCookies(_ cookies: [FlareSolverrCookie], for url: URL) {
+        for cookie in cookies {
+            var properties: [HTTPCookiePropertyKey: Any] = [
+                .name: cookie.name,
+                .value: cookie.value,
+                .domain: cookie.domain ?? url.host ?? "",
+                .path: cookie.path ?? "/"
+            ]
+            if let expires = cookie.expires {
+                properties[.expires] = Date(timeIntervalSince1970: expires)
+            }
+            if let httpCookie = HTTPCookie(properties: properties) {
+                HTTPCookieStorage.shared.setCookie(httpCookie)
+            }
+        }
+    }
+
+    private static func flareSolverrAPIURL(from value: String) -> URL? {
+        let trimmed = value.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let normalized = trimmed.hasSuffix("/v1") ? trimmed : trimmed + "/v1"
+        guard let url = URL(string: normalized), url.scheme != nil, url.host != nil else { return nil }
+        return url
+    }
+}
+
+private struct FlareSolverrResponse: Decodable {
+    let status: String
+    let solution: FlareSolverrSolution?
+}
+
+private struct FlareSolverrSolution: Decodable {
+    let url: String
+    let status: Int
+    let headers: [String: String]?
+    let response: String
+    let cookies: [FlareSolverrCookie]
+    let userAgent: String?
+}
+
+private struct FlareSolverrCookie: Decodable {
+    let name: String
+    let value: String
+    let domain: String?
+    let path: String?
+    let expires: TimeInterval?
 }
 
 extension CloudflareHandler {

@@ -41,12 +41,12 @@ enum Settings {
     private static let sourceLanguageTitles = sourceLanguageCodes.map { SourceLanguage.displayName(for: $0) }
 
     static let settings: [Setting] = [
-        .init(value: .group(.init(items: [
+            .init(value: .group(.init(items: [
             .init(
                 key: AppSettings.general.incognitoMode.key,
                 title: NSLocalizedString("INCOGNITO_MODE"),
                 value: .toggle(.init(subtitle: NSLocalizedString("INCOGNITO_MODE_TEXT")))
-            )
+            ),
         ]))),
         .init(value: .group(.init(items: [
             .init(
@@ -1008,6 +1008,30 @@ extension Settings {
     ]
 
     private static let advancedSettings: [Setting] = [
+        .init(
+            title: NSLocalizedString("FLARESOLVERR"),
+            value: .group(.init(
+                footer: NSLocalizedString("FLARESOLVERR_TEXT"),
+                items: [
+                    .init(
+                        key: AppSettings.general.flareSolverrURL.key,
+                        title: NSLocalizedString("FLARESOLVERR_URL"),
+                        value: .text(.init(
+                            placeholder: "http://127.0.0.1:8191",
+                            autocapitalizationType: 0,
+                            keyboardType: 3,
+                            returnKeyType: 9,
+                            autocorrectionDisabled: true
+                        ))
+                    ),
+                    .init(
+                        key: AppSettings.general.flareSolverrFallback.key,
+                        title: NSLocalizedString("FLARESOLVERR_FALLBACK"),
+                        value: .toggle(.init())
+                    )
+                ]
+            ))
+        ),
         .init(
             title: NSLocalizedString("LOGGING"),
             value: .group(.init(items: [

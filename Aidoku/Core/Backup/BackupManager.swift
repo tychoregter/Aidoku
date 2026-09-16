@@ -22,8 +22,7 @@ actor BackupManager {
     private static let maxAutoBackups = 4
 
     private static let excludedSettings: Set<String> = [
-        AppSettings.browse.sourceLists.key, // stored separately
-        AppSettings.general.icloudSync.key
+        AppSettings.browse.sourceLists.key // stored separately
     ]
     private static let additionalSettings: Set<String> = [
         "library.favoriteMangaIdentifiers"

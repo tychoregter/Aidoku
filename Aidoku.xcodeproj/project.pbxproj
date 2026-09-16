@@ -12,7 +12,6 @@
 		FB17114B296770CC00AD523D /* NukeUI in Frameworks */ = {isa = PBXBuildFile; productRef = FB17114A296770CC00AD523D /* NukeUI */; };
 		FB2C83992E43F074003CA85F /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = FB2C83982E43F074003CA85F /* SwiftSoup */; };
 		FB3737D12D17458400AB1551 /* AidokuRunner in Frameworks */ = {isa = PBXBuildFile; productRef = FB3737D02D17458400AB1551 /* AidokuRunner */; };
-		FB4EEBE027A4F5C1005081A3 /* CloudKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FB4EEBDF27A4F5C1005081A3 /* CloudKit.framework */; };
 		FB662EDE2DA816CF00007514 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = FB662EDD2DA816CF00007514 /* MarkdownUI */; };
 		FB7B7ED8278CE949001E6EAF /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = FB7B7ED7278CE949001E6EAF /* ZIPFoundation */; };
 		FBAED40C2E3A762800B81E74 /* SwiftUIIntrospect in Frameworks */ = {isa = PBXBuildFile; productRef = FBAED40B2E3A762800B81E74 /* SwiftUIIntrospect */; };
@@ -37,7 +36,6 @@
 		AIDW00000000000000000007 /* AidokuWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AidokuWidget.entitlements; sourceTree = "<group>"; };
 		AIDW00000000000000000008 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		FB1B4835277CE1920056D02C /* Aidoku.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Aidoku.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		FB4EEBDF27A4F5C1005081A3 /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS15.2.sdk/System/Library/Frameworks/CloudKit.framework; sourceTree = DEVELOPER_DIR; };
 		FBB44E722EC635620032EFBB /* AidokuTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AidokuTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -75,7 +73,6 @@
 				FBAED40C2E3A762800B81E74 /* SwiftUIIntrospect in Frameworks */,
 				EE7A41CB2F5CF7710044AF4C /* CHoshiDicts in Frameworks */,
 				FBFDF5F82DF799180064F603 /* AidokuRunner in Frameworks */,
-				FB4EEBE027A4F5C1005081A3 /* CloudKit.framework in Frameworks */,
 				FBBCB31D2E08D6B000ED5CAB /* Gifu in Frameworks */,
 				FBE53F0C29CC015E00899601 /* AsyncDisplayKit in Frameworks */,
 				FB7B7ED8278CE949001E6EAF /* ZIPFoundation in Frameworks */,
@@ -130,7 +127,6 @@
 		FB1B4875277CE7FE0056D02C /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				FB4EEBDF27A4F5C1005081A3 /* CloudKit.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";

@@ -10,7 +10,6 @@ struct FlagSettings: Sendable {
         [
             currentVersion,
             isSideloaded,
-            isiCloudAvailable,
             showedLegacySourceListNotice,
             libraryRefreshInProgress,
             downloadChapterSortAscending,
@@ -20,7 +19,6 @@ struct FlagSettings: Sendable {
 
     let currentVersion = SettingsKey<String?>("Flag.currentVersion")
     let isSideloaded = SettingsKey<Bool>("Flag.isSideloaded", default: AppDelegate.isSideloaded)
-    let isiCloudAvailable = SettingsKey<Bool>("Flag.isiCloudAvailable", default: false)
     let showedLegacySourceListNotice = SettingsKey<Bool>("Flag.showedLegacySourceListNotice", default: false)
     let libraryRefreshInProgress = SettingsKey<Bool>("Flag.libraryRefreshInProgress", default: false)
     let downloadChapterSortAscending = SettingsKey<Bool>("Flag.downloadChapterSortAscending", default: false)

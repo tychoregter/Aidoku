@@ -11,10 +11,12 @@ struct GeneralSettings: Sendable {
     var keys: [any SettingsDefault] {
         [
             incognitoMode,
-            icloudSync
+            flareSolverrURL,
+            flareSolverrFallback
         ]
     }
 
     let incognitoMode = SettingsKey<Bool>("General.incognitoMode", default: false)
-    let icloudSync = SettingsKey<Bool>("General.icloudSync", default: false)
+    let flareSolverrURL = SettingsKey<String>("General.flareSolverrURL", default: "")
+    let flareSolverrFallback = SettingsKey<Bool>("General.flareSolverrFallback", default: true)
 }
