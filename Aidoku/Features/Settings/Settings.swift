@@ -210,6 +210,19 @@ extension Settings {
                 key: AppSettings.appearance.useSystemAppearance.key,
                 title: NSLocalizedString("USE_SYSTEM_APPEARANCE"),
                 value: .toggle(.init())
+            ),
+            .init(
+                key: AppSettings.appearance.blurNSFWCovers.key,
+                title: Bundle.main.localizedString(
+                    forKey: "BLUR_NSFW_COVERS",
+                    value: "Hide NSFW Covers",
+                    table: nil
+                ),
+                value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                    forKey: "BLUR_NSFW_COVERS_TEXT",
+                    value: "Replace covers marked as NSFW with their dominant color in the Library.",
+                    table: nil
+                )))
             )
         ]))),
         .init(
@@ -288,6 +301,19 @@ extension Settings {
                 ))
             ),
             .init(
+                key: AppSettings.appearance.dedicatedContinueReadingSection.key,
+                title: Bundle.main.localizedString(
+                    forKey: "DEDICATED_CONTINUE_READING_SECTION",
+                    value: "Continue Reading",
+                    table: nil
+                ),
+                value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                    forKey: "DEDICATED_CONTINUE_READING_SECTION_TEXT",
+                    value: "Always show Continue Reading above the selected pinned section.",
+                    table: nil
+                )))
+            ),
+            .init(
                 key: AppSettings.library.hideCaughtUpPinnedTitles.key,
                 title: "Hide Caught Up Titles",
                 requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
@@ -347,6 +373,20 @@ extension Settings {
                         )))
                     ),
                     .init(
+                        key: AppSettings.appearance.horizontalPinnedTitles.key,
+                        title: Bundle.main.localizedString(
+                            forKey: "HORIZONTAL_PINNED_TITLES",
+                            value: "Horizontal Pinned Row",
+                            table: nil
+                        ),
+                        requires: AppSettings.appearance.separatePinnedTitles.key,
+                        value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                            forKey: "HORIZONTAL_PINNED_TITLES_TEXT",
+                            value: "Show pinned titles in a single scrolling row in Grid View.",
+                            table: nil
+                        )))
+                    ),
+                    .init(
                         key: AppSettings.appearance.keepPinnedTitlesInLibrary.key,
                         title: Bundle.main.localizedString(
                             forKey: "KEEP_PINNED_TITLES_IN_LIBRARY",
@@ -360,20 +400,6 @@ extension Settings {
                             table: nil
                         )))
                     ),
-                    .init(
-                        key: AppSettings.appearance.horizontalPinnedTitles.key,
-                        title: Bundle.main.localizedString(
-                            forKey: "HORIZONTAL_PINNED_TITLES",
-                            value: "Horizontal Pinned Row",
-                            table: nil
-                        ),
-                        requires: AppSettings.appearance.separatePinnedTitles.key,
-                        value: .toggle(.init(subtitle: Bundle.main.localizedString(
-                            forKey: "HORIZONTAL_PINNED_TITLES_TEXT",
-                            value: "Show pinned titles in a single scrolling row in Grid View.",
-                            table: nil
-                        )))
-                    )
                 ]
             ))
         )
@@ -746,6 +772,12 @@ extension Settings {
                     .init(
                         key: "Reader.verticalInfiniteScroll",
                         title: NSLocalizedString("INFINITE_VERTICAL_SCROLL"),
+                        value: .toggle(.init())
+                    ),
+                    .init(
+                        key: AppSettings.reader.showWebtoonScrollPercentage.key,
+                        title: NSLocalizedString("SHOW_SCROLL_PERCENTAGE"),
+                        notification: .init(AppSettings.reader.showWebtoonScrollPercentage.key),
                         value: .toggle(.init())
                     ),
                     .init(

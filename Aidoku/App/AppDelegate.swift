@@ -250,6 +250,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         )
         NotificationCenter.default.addObserver(
             self,
+            selector: #selector(indexLibraryForSpotlight),
+            name: Notification.Name(AppSettings.appearance.blurNSFWCovers.key),
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
             selector: #selector(removeLibraryItemFromSpotlight(_:)),
             name: .removeFromLibrary,
             object: nil
@@ -1044,6 +1050,7 @@ private enum LibrarySpotlightIndexer {
         let readingStatus: String?
         let tags: [String]
         let cover: String?
+        let isNSFW: Bool
     }
 
     static func indexLibrary() {
@@ -1060,7 +1067,8 @@ private enum LibrarySpotlightIndexer {
                         artist: manga.artist,
                         readingStatus: LibraryReadingStatus.spotlightSubtitle(for: object),
                         tags: manga.tags ?? [],
-                        cover: manga.cover
+                        cover: manga.cover,
+                        isNSFW: manga.nsfw == MangaContentRating.nsfw.rawValue
                     )
                 }
             }
@@ -1076,12 +1084,18 @@ private enum LibrarySpotlightIndexer {
 
             // Publish the text metadata immediately, then update each result as
             // its cover becomes available through the app's normal image path.
-            try? await CSSearchableIndex.default().indexSearchableItems(
-                metadata.map { searchableItem(for: $0) }
-            )
+            let hidesNSFWCovers = AppSettings.appearance.blurNSFWCovers.get()
+            let hiddenThumbnail = hidesNSFWCovers ? hiddenThumbnailData() : nil
+            try? await CSSearchableIndex.default().indexSearchableItems(metadata.map {
+                searchableItem(
+                    for: $0,
+                    thumbnailData: hidesNSFWCovers && $0.isNSFW ? hiddenThumbnail : nil
+                )
+            })
 
             for item in metadata {
                 guard await indexingCoordinator.isCurrent(generation) else { return }
+                guard !(hidesNSFWCovers && item.isNSFW) else { continue }
                 guard let cover = item.cover,
                       let thumbnail = await thumbnailData(for: cover, sourceKey: item.sourceKey) else {
                     continue
@@ -1160,6 +1174,18 @@ private enum LibrarySpotlightIndexer {
             UIColor.black.setFill()
             context.fill(CGRect(origin: .zero, size: targetSize))
             image.draw(in: drawRect)
+        }
+        return thumbnail.jpegData(compressionQuality: 0.85)
+    }
+
+    private static func hiddenThumbnailData() -> Data? {
+        let size = CGSize(width: 320, height: 480)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        let thumbnail = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
         }
         return thumbnail.jpegData(compressionQuality: 0.85)
     }

@@ -55,6 +55,16 @@ struct SettingsTrackingView: View {
                 Text(NSLocalizedString("AUTO_SYNC_HISTORY_INFO"))
             }
 
+            Section {
+                SettingView(setting: .init(
+                    key: AppSettings.tracking.onlyUpdateLibraryItems.key,
+                    title: NSLocalizedString("ONLY_UPDATE_LIBRARY_ITEMS"),
+                    value: .toggle(.init())
+                ))
+            } footer: {
+                Text(NSLocalizedString("ONLY_UPDATE_LIBRARY_ITEMS_INFO"))
+            }
+
             Section(NSLocalizedString("TRACKERS")) {
                 ForEach(trackers.indices, id: \.self) { index in
                     let tracker = trackers[index]

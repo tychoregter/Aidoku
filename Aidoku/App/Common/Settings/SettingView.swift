@@ -299,6 +299,16 @@ struct SettingView: View {
                 default: break
             }
 
+            if setting.key == AppSettings.appearance.dedicatedContinueReadingSection.key,
+               toggleValue,
+               AppSettings.library.pinTitles.get() == LibraryViewModel.PinType.started.rawValue {
+                AppSettings.library.pinTitles.set(LibraryViewModel.PinType.none.rawValue)
+                NotificationCenter.default.post(
+                    name: .init(AppSettings.library.pinTitles.key),
+                    object: LibraryViewModel.PinType.none.rawValue
+                )
+            }
+
             let value: Any? = switch setting.value {
                 case .select: stringBinding
                 case .multiselect: stringListBinding
@@ -452,6 +462,9 @@ extension SettingView {
                         ForEach(value.values.indices, id: \.self) { offset in
                             let item = value.values[offset]
                             let selected = stringBinding == item
+                            let isDisabledReadingPin = setting.key == AppSettings.library.pinTitles.key
+                                && item == LibraryViewModel.PinType.started.rawValue
+                                && LibraryViewModel.isDedicatedContinueReadingEnabled
                             Button {
                                 stringBinding = item
                             } label: {
@@ -464,7 +477,8 @@ extension SettingView {
                                     }
                                 }
                             }
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(isDisabledReadingPin ? .secondary : .primary)
+                            .disabled(isDisabledReadingPin)
                         }
                     }
                     .onChange(of: stringBinding) { newValue in

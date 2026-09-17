@@ -8,14 +8,7 @@
 import UIKit
 
 class ReaderToolbarView: UIView {
-    var currentPageValue: Int? {
-        didSet {
-            if oldValue != currentPageValue {
-                let feedbackGenerator = UISelectionFeedbackGenerator()
-                feedbackGenerator.selectionChanged()
-            }
-        }
-    }
+    private var currentPageValue: Int?
     var currentPage: Int? {
         didSet { updatePageLabels() }
     }
@@ -27,11 +20,14 @@ class ReaderToolbarView: UIView {
     var onScrubberStyleChange: ((Bool) -> Void)?
     var onThumbnailScrubberPreferredWidthChange: ((CGFloat?) -> Void)?
     private(set) var usesThumbnailScrubber = false
-    let thumbnailPageCounterView = UIView()
+    let thumbnailPageCounterView = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
     private let thumbnailPageCounterLabel = UILabel()
     private var thumbnailPageCounterPositionConstraints: [NSLayoutConstraint] = []
     private var supportsThumbnailScrubber = false
     private var pageCounterControlsVisible = true
+    private var usesWebtoonProgress = false
+    private var showsWebtoonScrollPercentage = true
+    private var webtoonProgress: CGFloat = 0
 
     init() {
         super.init(frame: .zero)
@@ -56,13 +52,20 @@ class ReaderToolbarView: UIView {
         }
         addSubview(thumbnailScrubberView)
 
-        // Use a neutral gray rather than systemGray6, whose slight blue tint is
-        // noticeably different from the document-viewer counter.
-        thumbnailPageCounterView.backgroundColor = UIColor { traits in
-            if traits.userInterfaceStyle == .dark {
-                return UIColor(white: 0.22, alpha: 1)
+        if #available(iOS 26.0, *) {
+            // Match the native regular glass used by the reader scrubber.
+            thumbnailPageCounterView.effect = UIGlassEffect(style: .regular)
+            thumbnailPageCounterView.contentView.backgroundColor = .clear
+        } else {
+            // Preserve the previous subtly blurred neutral counter as the
+            // fallback (and as the direct revert path for the glass design).
+            thumbnailPageCounterView.effect = UIBlurEffect(style: .systemUltraThinMaterial)
+            thumbnailPageCounterView.contentView.backgroundColor = UIColor { traits in
+                if traits.userInterfaceStyle == .dark {
+                    return UIColor(white: 0.22, alpha: 0.62)
+                }
+                return UIColor(white: 0.953, alpha: 0.58)
             }
-            return UIColor(white: 0.953, alpha: 1)
         }
         thumbnailPageCounterView.layer.cornerRadius = 8
         thumbnailPageCounterView.layer.cornerCurve = .continuous
@@ -74,7 +77,7 @@ class ReaderToolbarView: UIView {
         thumbnailPageCounterLabel.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
         thumbnailPageCounterLabel.textColor = .secondaryLabel
         thumbnailPageCounterLabel.textAlignment = .center
-        thumbnailPageCounterView.addSubview(thumbnailPageCounterLabel)
+        thumbnailPageCounterView.contentView.addSubview(thumbnailPageCounterLabel)
     }
 
     func constrain() {
@@ -94,10 +97,10 @@ class ReaderToolbarView: UIView {
             thumbnailScrubberView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
             thumbnailPageCounterView.heightAnchor.constraint(equalToConstant: 30),
-            thumbnailPageCounterLabel.leadingAnchor.constraint(equalTo: thumbnailPageCounterView.leadingAnchor, constant: 11),
-            thumbnailPageCounterLabel.trailingAnchor.constraint(equalTo: thumbnailPageCounterView.trailingAnchor, constant: -11),
-            thumbnailPageCounterLabel.topAnchor.constraint(equalTo: thumbnailPageCounterView.topAnchor),
-            thumbnailPageCounterLabel.bottomAnchor.constraint(equalTo: thumbnailPageCounterView.bottomAnchor)
+            thumbnailPageCounterLabel.leadingAnchor.constraint(equalTo: thumbnailPageCounterView.contentView.leadingAnchor, constant: 11),
+            thumbnailPageCounterLabel.trailingAnchor.constraint(equalTo: thumbnailPageCounterView.contentView.trailingAnchor, constant: -11),
+            thumbnailPageCounterLabel.topAnchor.constraint(equalTo: thumbnailPageCounterView.contentView.topAnchor),
+            thumbnailPageCounterLabel.bottomAnchor.constraint(equalTo: thumbnailPageCounterView.contentView.bottomAnchor)
         ] + thumbnailPageCounterPositionConstraints)
     }
 
@@ -105,16 +108,16 @@ class ReaderToolbarView: UIView {
     /// native document viewers while keeping it independent of the scrubber.
     func moveThumbnailPageCounter(
         to container: UIView,
-        trailingTo trailingAnchor: NSLayoutXAxisAnchor,
-        topTo topAnchor: NSLayoutYAxisAnchor,
-        topOffset: CGFloat
+        centeredOn centerXAnchor: NSLayoutXAxisAnchor,
+        above topAnchor: NSLayoutYAxisAnchor,
+        spacing: CGFloat
     ) {
         NSLayoutConstraint.deactivate(thumbnailPageCounterPositionConstraints)
         thumbnailPageCounterView.removeFromSuperview()
         container.addSubview(thumbnailPageCounterView)
         thumbnailPageCounterPositionConstraints = [
-            thumbnailPageCounterView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            thumbnailPageCounterView.topAnchor.constraint(equalTo: topAnchor, constant: topOffset)
+            thumbnailPageCounterView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            thumbnailPageCounterView.bottomAnchor.constraint(equalTo: topAnchor, constant: -spacing)
         ]
         NSLayoutConstraint.activate(thumbnailPageCounterPositionConstraints)
         container.bringSubviewToFront(thumbnailPageCounterView)
@@ -143,8 +146,19 @@ class ReaderToolbarView: UIView {
             return
         }
         let boundedPage = min(max(page, 1), totalPages)
-        updatePageLabel(page: boundedPage, totalPages: totalPages)
+        if !usesWebtoonProgress || !showsWebtoonScrollPercentage {
+            updatePageLabel(page: boundedPage, totalPages: totalPages)
+        }
+        if currentPageValue != boundedPage,
+           (!usesWebtoonProgress || thumbnailScrubberView.isTracking) {
+            let feedbackGenerator = UISelectionFeedbackGenerator()
+            feedbackGenerator.selectionChanged()
+        }
         currentPageValue = boundedPage
+        if usesWebtoonProgress {
+            thumbnailScrubberView.accessibilityValue = "\(Int((webtoonProgress * 100).rounded())) percent"
+            return
+        }
         let value = CGFloat(boundedPage - 1) / max(CGFloat(totalPages - 1), 1)
         thumbnailScrubberView.move(toValue: value)
         thumbnailScrubberView.accessibilityValue = "\(boundedPage) of \(totalPages)"
@@ -164,12 +178,20 @@ class ReaderToolbarView: UIView {
     func setProgressOverlayAppearance(isDark: Bool) {
         let style: UIUserInterfaceStyle = isDark ? .dark : .light
         thumbnailScrubberView.setOverlayAppearance(style)
+        if #unavailable(iOS 26.0) {
+            thumbnailPageCounterView.overrideUserInterfaceStyle = style
+        }
     }
 
     /// The counter belongs to the top reader controls, so its light/dark state
     /// follows those controls immediately rather than the delayed scrubber
     /// contrast sampling used for page thumbnails.
     func setPageCounterAppearance(isDark: Bool) {
+        if #available(iOS 26.0, *) {
+            // Native glass follows the same sampled overlay appearance as the
+            // scrubber rather than the separate navigation-bar appearance.
+            return
+        }
         thumbnailPageCounterView.overrideUserInterfaceStyle = isDark ? .dark : .light
     }
 
@@ -179,7 +201,11 @@ class ReaderToolbarView: UIView {
             return
         }
 
-        updatePageLabel(page: min(max(currentPage, 1), totalPages), totalPages: totalPages)
+        if usesWebtoonProgress, showsWebtoonScrollPercentage {
+            updateWebtoonProgressLabel()
+        } else {
+            updatePageLabel(page: min(max(currentPage, 1), totalPages), totalPages: totalPages)
+        }
     }
 
     private func updatePageLabel(page: Int, totalPages: Int) {
@@ -188,7 +214,33 @@ class ReaderToolbarView: UIView {
 
     func updateSliderPosition() {
         guard let currentPage = currentPage, let totalPages = totalPages else { return }
-        moveSlider(to: CGFloat(currentPage - 1) / max(CGFloat(totalPages - 1), 1))
+        if usesWebtoonProgress {
+            moveSlider(to: webtoonProgress)
+        } else {
+            moveSlider(to: CGFloat(currentPage - 1) / max(CGFloat(totalPages - 1), 1))
+        }
+    }
+
+    func setWebtoonProgressMode(enabled: Bool, showsPercentage: Bool) {
+        usesWebtoonProgress = enabled
+        showsWebtoonScrollPercentage = showsPercentage
+        thumbnailScrubberView.usesContinuousProgress = enabled
+        updatePageLabels()
+        updateSliderPosition()
+    }
+
+    func setWebtoonProgress(_ progress: CGFloat) {
+        webtoonProgress = min(max(progress, 0), 1)
+        guard usesWebtoonProgress else { return }
+        moveSlider(to: webtoonProgress)
+        if showsWebtoonScrollPercentage {
+            updateWebtoonProgressLabel()
+        }
+        thumbnailScrubberView.accessibilityValue = "\(Int((webtoonProgress * 100).rounded())) percent"
+    }
+
+    private func updateWebtoonProgressLabel() {
+        thumbnailPageCounterLabel.text = "\(Int((webtoonProgress * 100).rounded()))%"
     }
 
     func setSliderDirection(_ direction: ReaderThumbnailScrubberView.Direction) {
@@ -207,7 +259,11 @@ class ReaderToolbarView: UIView {
         supportsThumbnailScrubber = supportsThumbnails
         thumbnailScrubberView.configure(pageCount: pageCount, thumbnailProvider: provider)
         onThumbnailScrubberPreferredWidthChange?(thumbnailScrubberView.preferredWidth)
-        thumbnailScrubberView.accessibilityValue = "\(currentPage ?? 1) of \(pageCount)"
+        if usesWebtoonProgress {
+            thumbnailScrubberView.accessibilityValue = "\(Int((webtoonProgress * 100).rounded())) percent"
+        } else {
+            thumbnailScrubberView.accessibilityValue = "\(currentPage ?? 1) of \(pageCount)"
+        }
         thumbnailScrubberView.isAccessibilityElement = true
         thumbnailScrubberView.accessibilityTraits = .adjustable
         refreshScrubberStyle()

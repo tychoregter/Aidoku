@@ -85,6 +85,9 @@ class LibraryViewController: OldMangaCollectionViewController {
     private var shouldRestoreLargeTitleAfterRefresh = false
     private let refreshDismissalDistance: CGFloat = 44
     private var usesSeparatedPinnedSections = false
+    private var usesDedicatedContinueReadingSection: Bool {
+        LibraryViewModel.isDedicatedContinueReadingEnabled
+    }
     private var isSeparatedPinnedLayoutEnabled: Bool {
         AppSettings.appearance.separatePinnedTitles.get() && viewModel.pinType != .none
     }
@@ -96,6 +99,26 @@ class LibraryViewController: OldMangaCollectionViewController {
     }
     private var shouldShowPinnedPlaceholder: Bool {
         showsPinnedSectionTitles && viewModel.pinnedManga.isEmpty
+    }
+    private var shouldShowContinueReadingPlaceholder: Bool {
+        usesDedicatedContinueReadingSection && viewModel.continueReadingManga.isEmpty
+    }
+    private var showsCombinedLibraryHeader: Bool {
+        usesDedicatedContinueReadingSection && !showsPinnedSectionTitles
+    }
+
+    private func showsHeader(for section: Section?) -> Bool {
+        switch section {
+            case .continueReading:
+                true
+            case .pinned:
+                showsPinnedSectionTitles || (showsCombinedLibraryHeader && usesSeparatedPinnedSections)
+            case .regular:
+                showsPinnedSectionTitles
+                    || (showsCombinedLibraryHeader && !usesSeparatedPinnedSections)
+            case nil:
+                false
+        }
     }
 
     private let libraryUndoManager = UndoManager()
@@ -214,11 +237,22 @@ class LibraryViewController: OldMangaCollectionViewController {
                 for: indexPath
             ) as? LibrarySectionHeader
             switch section {
-                case .pinned:
+                case .continueReading:
                     header?.configure(
-                        title: self.pinnedSectionTitle,
-                        menu: self.makePinTitlesMenu(forSectionHeader: true)
-                    )
+                        title: NSLocalizedString("CONTINUE_READING"),
+                        showsDisclosureIndicator: true
+                    ) { [weak self] in
+                        self?.openHistory()
+                    }
+                case .pinned:
+                    if self.showsCombinedLibraryHeader {
+                        header?.configure(title: NSLocalizedString("LIBRARY"))
+                    } else {
+                        header?.configure(
+                            title: self.pinnedSectionTitle,
+                            menu: self.makePinTitlesMenu(forSectionHeader: true)
+                        )
+                    }
                 case .regular:
                     header?.configure(title: NSLocalizedString("LIBRARY"))
             }
@@ -451,14 +485,19 @@ class LibraryViewController: OldMangaCollectionViewController {
         }
         addObserver(forName: AppSettings.appearance.separatePinnedTitles.key) { [weak self] _ in
             Task { @MainActor in
-                self?.updateDataSource()
+                guard let self else { return }
+                await self.viewModel.loadLibrary()
+                self.updateDataSource()
+                self.updateMoreMenu()
             }
         }
         addObserver(forName: AppSettings.appearance.showPinnedSectionTitles.key) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                await self.viewModel.loadLibrary()
                 self.collectionView.setCollectionViewLayout(self.makeCollectionViewLayout(), animated: false)
                 self.updateDataSource()
+                self.updateMoreMenu()
             }
         }
         addObserver(forName: AppSettings.appearance.keepPinnedTitlesInLibrary.key) { [weak self] _ in
@@ -469,7 +508,31 @@ class LibraryViewController: OldMangaCollectionViewController {
         addObserver(forName: AppSettings.appearance.horizontalPinnedTitles.key) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                await self.viewModel.loadLibrary()
                 self.collectionView.setCollectionViewLayout(self.makeCollectionViewLayout(), animated: false)
+                self.updateDataSource()
+                self.updateMoreMenu()
+            }
+        }
+        addObserver(forName: AppSettings.appearance.dedicatedContinueReadingSection.key) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                if LibraryViewModel.isDedicatedContinueReadingEnabled, self.viewModel.pinType == .started {
+                    self.viewModel.pinType = .none
+                    AppSettings.library.pinTitles.set(LibraryViewModel.PinType.none.rawValue)
+                }
+                await self.viewModel.loadLibrary()
+                self.collectionView.setCollectionViewLayout(self.makeCollectionViewLayout(), animated: false)
+                self.updateDataSource()
+                self.updateMoreMenu()
+            }
+        }
+        addObserver(forName: AppSettings.appearance.blurNSFWCovers.key) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                var snapshot = self.dataSource.snapshot()
+                snapshot.reconfigureItems(snapshot.itemIdentifiers)
+                self.dataSource.apply(snapshot)
             }
         }
 
@@ -566,11 +629,17 @@ class LibraryViewController: OldMangaCollectionViewController {
     override func makeCollectionViewLayout() -> UICollectionViewLayout {
         let layout = UICollectionViewCompositionalLayout { [weak self] sectionIndex, environment in
             guard let self else { return nil }
-            let isPinnedPlaceholderSection = sectionIndex == 0 && self.shouldShowPinnedPlaceholder
-            let usesHorizontalPinnedRow = sectionIndex == 0
-                && self.usesSeparatedPinnedSections
-                && !self.usesListLayout
-                && AppSettings.appearance.horizontalPinnedTitles.get()
+            let sectionIdentifier = self.dataSource.snapshot().sectionIdentifiers[safe: sectionIndex]
+            let isPinnedPlaceholderSection = switch sectionIdentifier {
+                case .continueReading: self.shouldShowContinueReadingPlaceholder
+                case .pinned: self.shouldShowPinnedPlaceholder
+                default: false
+            }
+            let usesHorizontalPinnedRow = sectionIdentifier == .continueReading
+                || (sectionIdentifier == .pinned
+                    && self.usesSeparatedPinnedSections
+                    && !self.usesListLayout
+                    && AppSettings.appearance.horizontalPinnedTitles.get())
             let section = if usesHorizontalPinnedRow {
                 Self.makeHorizontalGridLayoutSection(environment: environment)
             } else if self.usesListLayout && !isPinnedPlaceholderSection {
@@ -578,7 +647,7 @@ class LibraryViewController: OldMangaCollectionViewController {
             } else {
                 Self.makeGridLayoutSection(environment: environment)
             }
-            if self.showsPinnedSectionTitles {
+            if self.showsHeader(for: sectionIdentifier) {
                 let header = NSCollectionLayoutBoundarySupplementaryItem(
                     layoutSize: NSCollectionLayoutSize(
                         widthDimension: .fractionalWidth(1),
@@ -592,7 +661,7 @@ class LibraryViewController: OldMangaCollectionViewController {
             return section
         }
         let config = UICollectionViewCompositionalLayoutConfiguration()
-        config.interSectionSpacing = if showsPinnedSectionTitles {
+        config.interSectionSpacing = if usesDedicatedContinueReadingSection || showsPinnedSectionTitles {
             20
         } else if usesSeparatedPinnedSections {
             24
@@ -610,7 +679,11 @@ class LibraryViewController: OldMangaCollectionViewController {
             cell.identifier = nil
             cell.setPlaceholder(
                 info.title,
-                symbolName: pinTypeIconName(for: viewModel.pinType),
+                symbolName: pinTypeIconName(
+                    for: dataSource.snapshot().sectionIdentifiers[safe: indexPath.section] == .continueReading
+                        ? .started
+                        : viewModel.pinType
+                ),
                 horizontalPadding: AppSettings.appearance.layout.get() == .standard ? 20 : 12
             )
             cell.setEditing(false, animated: false)
@@ -940,14 +1013,26 @@ extension LibraryViewController {
         var snapshot = NSDiffableDataSourceSnapshot<Section, MangaInfo>()
 
         if !locked {
-            if usesSeparatedPinnedSections {
-                snapshot.appendSections([.pinned])
-                if shouldShowPinnedPlaceholder {
-                    snapshot.appendItems([
-                        .emptyPinnedPlaceholder(title: emptyPinnedPlaceholderTitle)
-                    ], toSection: .pinned)
+            if usesDedicatedContinueReadingSection {
+                snapshot.appendSections([.continueReading])
+                if shouldShowContinueReadingPlaceholder {
+                    var placeholder = MangaInfo.emptyPinnedPlaceholder(title: "Nothing to Continue")
+                    placeholder.displayVariant = "continue-reading-placeholder"
+                    snapshot.appendItems([placeholder], toSection: .continueReading)
                 } else {
-                    snapshot.appendItems(viewModel.pinnedManga, toSection: .pinned)
+                    snapshot.appendItems(viewModel.continueReadingManga, toSection: .continueReading)
+                }
+            }
+            if usesSeparatedPinnedSections {
+                if viewModel.pinType != .none {
+                    snapshot.appendSections([.pinned])
+                    if shouldShowPinnedPlaceholder {
+                        snapshot.appendItems([
+                            .emptyPinnedPlaceholder(title: emptyPinnedPlaceholderTitle)
+                        ], toSection: .pinned)
+                    } else {
+                        snapshot.appendItems(viewModel.pinnedManga, toSection: .pinned)
+                    }
                 }
                 let libraryManga = if keepsPinnedTitlesInLibrary {
                     (viewModel.libraryPinnedManga.map { manga in
@@ -964,8 +1049,11 @@ extension LibraryViewController {
                     snapshot.appendItems(libraryManga, toSection: .regular)
                 }
             } else {
-                snapshot.appendSections([.regular])
-                snapshot.appendItems(viewModel.pinnedManga + viewModel.manga, toSection: .regular)
+                let libraryManga = viewModel.pinnedManga + viewModel.manga
+                if !libraryManga.isEmpty {
+                    snapshot.appendSections([.regular])
+                    snapshot.appendItems(libraryManga, toSection: .regular)
+                }
             }
         }
 
@@ -973,11 +1061,19 @@ extension LibraryViewController {
             self?.updateVisibleSectionHeaders()
         }
 
-        UIApplication.shared.appDelegate?.updateHomeScreenQuickActions(
-            for: viewModel.pinnedManga,
-            isReadingPin: viewModel.pinType == .started,
-            isFavoritesPin: viewModel.pinType == .favorites
-        )
+        if usesDedicatedContinueReadingSection {
+            UIApplication.shared.appDelegate?.updateHomeScreenQuickActions(
+                for: viewModel.continueReadingManga,
+                isReadingPin: true,
+                isFavoritesPin: false
+            )
+        } else {
+            UIApplication.shared.appDelegate?.updateHomeScreenQuickActions(
+                for: viewModel.pinnedManga,
+                isReadingPin: viewModel.pinType == .started,
+                isFavoritesPin: viewModel.pinType == .favorites
+            )
+        }
         Task { await AidokuWidgetSnapshotStore.update() }
 
         // handle empty library or category
@@ -1001,16 +1097,37 @@ extension LibraryViewController {
                 continue
             }
             switch section {
-                case .pinned:
+                case .continueReading:
                     header.configure(
-                        title: pinnedSectionTitle,
-                        menu: makePinTitlesMenu(forSectionHeader: true),
+                        title: NSLocalizedString("CONTINUE_READING"),
+                        showsDisclosureIndicator: true,
                         animated: true
-                    )
+                    ) { [weak self] in
+                        self?.openHistory()
+                    }
+                case .pinned:
+                    if showsCombinedLibraryHeader {
+                        header.configure(title: NSLocalizedString("LIBRARY"), animated: true)
+                    } else {
+                        header.configure(
+                            title: pinnedSectionTitle,
+                            menu: makePinTitlesMenu(forSectionHeader: true),
+                            animated: true
+                        )
+                    }
                 case .regular:
                     header.configure(title: NSLocalizedString("LIBRARY"))
             }
         }
+    }
+
+    private func openHistory() {
+        guard let navigationController else { return }
+        let path = NavigationCoordinator(rootViewController: navigationController)
+        let history = UIHostingController(rootView: HistoryView().environmentObject(path))
+        history.navigationItem.largeTitleDisplayMode = .never
+        history.navigationItem.title = NSLocalizedString("HISTORY")
+        navigationController.pushViewController(history, animated: true)
     }
 
     private var pinnedSectionTitle: String {
@@ -1064,6 +1181,7 @@ private final class LibrarySectionHeader: UICollectionReusableView {
     static let reuseIdentifier = "LibrarySectionHeader"
 
     private let titleButton = UIButton(type: .system)
+    private var titleAction: UIAction?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -1090,23 +1208,41 @@ private final class LibrarySectionHeader: UICollectionReusableView {
         ])
     }
 
-    func configure(title: String, menu: UIMenu? = nil, animated: Bool = false) {
+    func configure(
+        title: String,
+        menu: UIMenu? = nil,
+        showsDisclosureIndicator: Bool = false,
+        animated: Bool = false,
+        action: (() -> Void)? = nil
+    ) {
+        if let titleAction {
+            titleButton.removeAction(titleAction, for: .touchUpInside)
+            self.titleAction = nil
+        }
+
         let titleChanged = titleButton.configuration?.title != title
         var configuration = titleButton.configuration
         configuration?.title = title
         let chevronConfiguration = UIImage.SymbolConfiguration(
-            pointSize: 10,
+            pointSize: 12.5,
             weight: .bold
         )
-        configuration?.image = menu == nil
-            ? nil
-            : UIImage(
-                systemName: "chevron.up.chevron.down",
+        let imageName: String? = if menu != nil {
+            "chevron.up.chevron.down"
+        } else if showsDisclosureIndicator {
+            "chevron.right"
+        } else {
+            nil
+        }
+        configuration?.image = imageName.flatMap {
+            UIImage(
+                systemName: $0,
                 withConfiguration: chevronConfiguration
             )?.withTintColor(
                 UIColor.secondaryLabel.withAlphaComponent(0.7),
                 renderingMode: .alwaysOriginal
             )
+        }
         let updatedConfiguration = configuration
         if animated && titleChanged {
             UIView.transition(
@@ -1121,7 +1257,12 @@ private final class LibrarySectionHeader: UICollectionReusableView {
         }
         titleButton.menu = menu
         titleButton.showsMenuAsPrimaryAction = menu != nil
-        titleButton.isUserInteractionEnabled = menu != nil
+        if let action {
+            let titleAction = UIAction { _ in action() }
+            self.titleAction = titleAction
+            titleButton.addAction(titleAction, for: .touchUpInside)
+        }
+        titleButton.isUserInteractionEnabled = menu != nil || action != nil
     }
 
     required init?(coder: NSCoder) {
@@ -1665,7 +1806,10 @@ extension LibraryViewController {
             subtitle: forSectionHeader || viewModel.pinType == .none ? nil : viewModel.pinType.title,
             image: forSectionHeader ? nil : UIImage(systemName: "pin"),
             children: LibraryViewModel.PinType.allCases
-                .filter { $0 != .none }
+                .filter {
+                    $0 != .none
+                        && (!usesDedicatedContinueReadingSection || $0 != .started)
+                }
                 .map { pinType in
                     UIAction(
                         title: pinType.title,

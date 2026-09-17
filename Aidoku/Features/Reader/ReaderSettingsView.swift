@@ -523,6 +523,14 @@ extension ReaderSettingsView {
             )
             SettingView(
                 setting: .init(
+                    key: AppSettings.reader.showWebtoonScrollPercentage.key,
+                    title: NSLocalizedString("SHOW_SCROLL_PERCENTAGE"),
+                    notification: .init(AppSettings.reader.showWebtoonScrollPercentage.key),
+                    value: .toggle(.init())
+                )
+            )
+            SettingView(
+                setting: .init(
                     key: "Reader.autoScroll",
                     title: NSLocalizedString("AUTO_SCROLL"),
                     notification: .init("Reader.autoScroll"),

@@ -625,6 +625,12 @@ extension MangaView.ViewModel {
     }
 
     private func checkTrackerSync(item: TrackItem) async {
+        if AppSettings.tracking.onlyUpdateLibraryItems.get() {
+            let inLibrary = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [manga] context in
+                CoreDataManager.shared.hasLibraryManga(mangaId: manga.identifier, context: context)
+            }
+            guard inLibrary else { return }
+        }
         guard let tracker = TrackerManager.getTracker(id: item.trackerId) else { return }
 
         if tracker is PageTracker {
@@ -686,6 +692,12 @@ extension MangaView.ViewModel {
 
     // mark given chapters as read in coredata
     func markRead(chapters: [AidokuRunner.Chapter]) async {
+        if AppSettings.tracking.onlyUpdateLibraryItems.get() {
+            let inLibrary = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [manga] context in
+                CoreDataManager.shared.hasLibraryManga(mangaId: manga.identifier, context: context)
+            }
+            guard inLibrary else { return }
+        }
         // only mark chapters that are readable as read
         let chapters = chapters.filter { !$0.locked || downloadStatus[$0.key] == .finished }
 

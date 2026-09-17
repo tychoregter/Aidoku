@@ -47,6 +47,7 @@ class MangaGridCell: UICollectionViewCell {
     private let placeholderStackView = UIStackView()
     private let overlayView = UIView()
     private let gradient = CAGradientLayer()
+    private let nsfwCoverView = NSFWCoverView()
 
     private lazy var badgeView = DoubleBadgeView()
 
@@ -57,6 +58,7 @@ class MangaGridCell: UICollectionViewCell {
     private var imageTask: ImageTask?
     var isEditing = false
     private var isPlaceholder = false
+    private var hidesNSFWCover = false
 
     // shadow shown when in selection mode
     private lazy var shadowOverlayView: UIView = {
@@ -95,6 +97,7 @@ class MangaGridCell: UICollectionViewCell {
         imageView.backgroundColor = Self.coverBackgroundColor
         imageView.contentMode = .scaleAspectFill
         contentView.addSubview(imageView)
+        contentView.addSubview(nsfwCoverView)
 
         placeholderIconView.tintColor = .tertiaryLabel
         placeholderIconView.contentMode = .scaleAspectFit
@@ -164,18 +167,33 @@ class MangaGridCell: UICollectionViewCell {
         super.traitCollectionDidChange(previousTraitCollection)
         if previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle {
             updatePosterBorderAppearance()
+            updatePlaceholderAppearance()
         }
     }
 
     private func updatePosterBorderAppearance() {
+        guard !hidesNSFWCover else {
+            contentView.layer.borderColor = UIColor.clear.cgColor
+            return
+        }
         let borderColor = traitCollection.userInterfaceStyle == .dark
             ? UIColor.white.withAlphaComponent(0.24)
             : UIColor.black.withAlphaComponent(0.18)
         contentView.layer.borderColor = borderColor.cgColor
     }
 
+    private func updatePlaceholderAppearance() {
+        guard isPlaceholder else { return }
+        let background = Self.coverBackgroundColor.resolvedColor(with: traitCollection)
+        let foreground = NSFWCoverView.foregroundColor(for: background)
+        contentView.backgroundColor = background
+        placeholderIconView.tintColor = foreground
+        placeholderLabel.textColor = foreground
+    }
+
     func constrain() {
         imageView.translatesAutoresizingMaskIntoConstraints = false
+        nsfwCoverView.translatesAutoresizingMaskIntoConstraints = false
         overlayView.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         placeholderStackView.translatesAutoresizingMaskIntoConstraints = false
@@ -189,6 +207,11 @@ class MangaGridCell: UICollectionViewCell {
             imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+            nsfwCoverView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            nsfwCoverView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            nsfwCoverView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            nsfwCoverView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
             placeholderStackView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             placeholderIconView.widthAnchor.constraint(equalToConstant: 22),
@@ -246,7 +269,22 @@ class MangaGridCell: UICollectionViewCell {
         imageTask?.cancel()
         imageTask = nil
         highlightView.alpha = 0
+        setNSFW(false, title: nil)
         setPlaceholder(nil)
+    }
+
+    func setNSFW(_ isNSFW: Bool, title: String?) {
+        hidesNSFWCover = isNSFW && AppSettings.appearance.blurNSFWCovers.get()
+        nsfwCoverView.isHidden = !hidesNSFWCover
+        updatePosterBorderAppearance()
+        guard hidesNSFWCover else { return }
+        nsfwCoverView.layer.cornerRadius = contentView.layer.cornerRadius
+        nsfwCoverView.layer.cornerCurve = .continuous
+        nsfwCoverView.configure(title: title, image: imageView.image)
+        contentView.bringSubviewToFront(nsfwCoverView)
+        contentView.bringSubviewToFront(highlightView)
+        contentView.bringSubviewToFront(shadowOverlayView)
+        contentView.bringSubviewToFront(selectionView)
     }
 
     func setPlaceholder(
@@ -270,14 +308,9 @@ class MangaGridCell: UICollectionViewCell {
         bookmarkView.isHidden = true
         selectionView.isHidden = isPlaceholder || !isEditing
         shadowOverlayView.isHidden = isPlaceholder
-        contentView.backgroundColor = isPlaceholder
-            ? UIColor { traits in
-                traits.userInterfaceStyle == .dark
-                    ? UIColor(red: 28.0 / 255.0, green: 28.0 / 255.0, blue: 30.0 / 255.0, alpha: 1)
-                    : UIColor(red: 241.0 / 255.0, green: 241.0 / 255.0, blue: 246.0 / 255.0, alpha: 1)
-            }
-            : .clear
+        contentView.backgroundColor = isPlaceholder ? Self.coverBackgroundColor : .clear
         if isPlaceholder {
+            updatePlaceholderAppearance()
             contentView.bringSubviewToFront(placeholderStackView)
         }
     }
@@ -392,6 +425,9 @@ extension MangaGridCell {
                         if response.container.type == .gif, let data = response.container.data {
                             self.imageView.animate(withGIFData: data)
                         }
+                        if self.hidesNSFWCover {
+                            self.nsfwCoverView.configure(title: self.title, image: response.image)
+                        }
                     }
                 case .failure(let error):
                     imageTask = nil
@@ -405,5 +441,119 @@ extension MangaGridCell {
                     }
             }
         }
+    }
+}
+
+final class NSFWCoverView: UIView {
+    private let iconView = UIImageView()
+    private let titleLabel = UILabel()
+    private let stackView = UIStackView()
+    private var coverColor = UIColor.secondarySystemBackground
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        isHidden = true
+
+        iconView.contentMode = .scaleAspectFit
+        iconView.image = UIImage(
+            systemName: "eye.slash",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
+        )
+
+        titleLabel.textAlignment = .center
+        titleLabel.font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(
+            for: .systemFont(ofSize: 14, weight: .medium)
+        )
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.numberOfLines = 2
+        titleLabel.lineBreakMode = .byTruncatingTail
+
+        stackView.axis = .vertical
+        stackView.alignment = .center
+        stackView.spacing = 8
+        stackView.addArrangedSubview(iconView)
+        stackView.addArrangedSubview(titleLabel)
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stackView)
+
+        NSLayoutConstraint.activate([
+            stackView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            stackView.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 12),
+            stackView.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
+            stackView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 22),
+            iconView.heightAnchor.constraint(equalToConstant: 22)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(title: String?, image: UIImage?) {
+        titleLabel.text = title ?? NSLocalizedString("UNTITLED")
+        coverColor = image?.dominantColor() ?? UIColor.secondarySystemBackground
+        updateAppearance()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle {
+            updateAppearance()
+        }
+    }
+
+    private func updateAppearance() {
+        let baseColor = coverColor.resolvedColor(with: traitCollection)
+        let isDark = traitCollection.userInterfaceStyle == .dark
+        let background = Self.blend(
+            baseColor,
+            toward: isDark ? .black : .white,
+            amount: isDark ? 0.18 : 0.20
+        )
+        backgroundColor = background
+
+        let foreground = Self.foregroundColor(for: background)
+        iconView.tintColor = foreground
+        titleLabel.textColor = foreground
+
+        layer.borderWidth = 1
+        layer.borderColor = Self.blend(
+            background,
+            toward: isDark ? .white : .black,
+            amount: isDark ? 0.24 : 0.18
+        ).withAlphaComponent(0.72).cgColor
+    }
+
+    static func foregroundColor(for color: UIColor) -> UIColor {
+        let components = rgbaComponents(of: color)
+        let luminance = 0.2126 * components.red
+            + 0.7152 * components.green
+            + 0.0722 * components.blue
+        return blend(
+            color,
+            toward: luminance > 0.58 ? .black : .white,
+            amount: luminance > 0.58 ? 0.68 : 0.72
+        ).withAlphaComponent(0.72)
+    }
+
+    private static func blend(_ color: UIColor, toward target: UIColor, amount: CGFloat) -> UIColor {
+        let source = rgbaComponents(of: color)
+        let destination = rgbaComponents(of: target)
+        return UIColor(
+            red: source.red + (destination.red - source.red) * amount,
+            green: source.green + (destination.green - source.green) * amount,
+            blue: source.blue + (destination.blue - source.blue) * amount,
+            alpha: 1
+        )
+    }
+
+    private static func rgbaComponents(of color: UIColor) -> (red: CGFloat, green: CGFloat, blue: CGFloat) {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: nil)
+        return (red, green, blue)
     }
 }

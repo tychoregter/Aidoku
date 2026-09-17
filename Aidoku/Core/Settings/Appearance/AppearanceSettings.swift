@@ -20,7 +20,9 @@ struct AppearanceSettings: Sendable {
             separatePinnedTitles,
             showPinnedSectionTitles,
             keepPinnedTitlesInLibrary,
-            horizontalPinnedTitles
+            horizontalPinnedTitles,
+            dedicatedContinueReadingSection,
+            blurNSFWCovers
         ]
     }
 
@@ -36,4 +38,6 @@ struct AppearanceSettings: Sendable {
     let showPinnedSectionTitles = SettingsKey<Bool>("Appearance.showPinnedSectionTitles", default: true)
     let keepPinnedTitlesInLibrary = SettingsKey<Bool>("Appearance.keepPinnedTitlesInLibrary", default: false)
     let horizontalPinnedTitles = SettingsKey<Bool>("Appearance.horizontalPinnedTitles", default: false)
+    let dedicatedContinueReadingSection = SettingsKey<Bool>("Appearance.dedicatedContinueReadingSection", default: false)
+    let blurNSFWCovers = SettingsKey<Bool>("Appearance.blurNSFWCovers", default: false)
 }

@@ -57,6 +57,7 @@ actor TrackerManager {
 
     /// Send chapter read update to logged in trackers.
     func setCompleted(mangaId: MangaIdentifier, chapter: AidokuRunner.Chapter, skipTracker: Tracker? = nil) async {
+        guard await isUpdateAllowed(for: mangaId) else { return }
         let chapterNum = chapter.chapterNumber
         let volumeNum = chapter.volumeNumber.flatMap { Int(floor($0)) }
         guard chapterNum != nil || volumeNum != nil else { return }
@@ -188,6 +189,7 @@ actor TrackerManager {
     }
 
     func setProgress(mangaId: MangaIdentifier, chapters: [AidokuRunner.Chapter], progress: ChapterReadProgress) async {
+        guard await isUpdateAllowed(for: mangaId) else { return }
         let trackItems: [TrackItem] = await CoreDataManager.shared.container.performBackgroundTask { context in
             CoreDataManager.shared.getTracks(
                 mangaId: mangaId,
@@ -222,6 +224,7 @@ actor TrackerManager {
     /// Register a new track item to a manga and save to the data store.
     func register(tracker: Tracker, manga: AidokuRunner.Manga, item: TrackSearchItem) async {
         let mangaId = manga.identifier
+        guard await isUpdateAllowed(for: mangaId) else { return }
         let (highestReadNumber, earliestReadDate) = await CoreDataManager.shared.container.performBackgroundTask { context in
             (
                 CoreDataManager.shared.getHighestReadNumber(
@@ -344,6 +347,7 @@ actor TrackerManager {
         manga: AidokuRunner.Manga,
         chapters: [AidokuRunner.Chapter]? = nil
     ) async {
+        guard await isUpdateAllowed(for: manga.identifier) else { return }
         if tracker is PageTracker {
             await syncPageTrackerHistory(
                 tracker: tracker,
@@ -373,6 +377,7 @@ actor TrackerManager {
         manga: AidokuRunner.Manga,
         chapters: [AidokuRunner.Chapter]? = nil
     ) async {
+        guard await isUpdateAllowed(for: manga.identifier) else { return }
         let chapters = if let chapters {
             chapters
         } else {
@@ -529,6 +534,15 @@ actor TrackerManager {
                     LogManager.logger.error("Unable to find track item from tracker \(tracker.id): \(error)")
                 }
             }
+        }
+    }
+}
+
+private extension TrackerManager {
+    func isUpdateAllowed(for mangaId: MangaIdentifier) async -> Bool {
+        guard AppSettings.tracking.onlyUpdateLibraryItems.get() else { return true }
+        return await CoreDataManager.shared.container.performBackgroundTask { context in
+            CoreDataManager.shared.hasLibraryManga(mangaId: mangaId, context: context)
         }
     }
 }

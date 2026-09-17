@@ -15,6 +15,9 @@ class MangaListCell: UICollectionViewCell {
     private var url: String?
     private var imageTask: ImageTask?
 
+    private let nsfwCoverView = NSFWCoverView()
+    private var hidesNSFWCover = false
+
     private var isEditing = false
 
     var badgeNumber: Int {
@@ -51,6 +54,7 @@ class MangaListCell: UICollectionViewCell {
         imageView.layer.cornerRadius = 5
         imageView.layer.borderWidth = 1
         imageView.layer.borderColor = UIColor.quaternarySystemFill.cgColor
+        imageView.addSubview(nsfwCoverView)
         return imageView
     }()
 
@@ -128,6 +132,7 @@ class MangaListCell: UICollectionViewCell {
 
     func constrain() {
         coverImageView.translatesAutoresizingMaskIntoConstraints = false
+        nsfwCoverView.translatesAutoresizingMaskIntoConstraints = false
         bookmarkImageView.translatesAutoresizingMaskIntoConstraints = false
         titleStackView.translatesAutoresizingMaskIntoConstraints = false
         selectionView.translatesAutoresizingMaskIntoConstraints = false
@@ -147,6 +152,11 @@ class MangaListCell: UICollectionViewCell {
             coverImageView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             coverImageView.widthAnchor.constraint(equalToConstant: 100 * 2/3),
             coverImageView.heightAnchor.constraint(equalToConstant: 100),
+
+            nsfwCoverView.topAnchor.constraint(equalTo: coverImageView.topAnchor),
+            nsfwCoverView.leadingAnchor.constraint(equalTo: coverImageView.leadingAnchor),
+            nsfwCoverView.trailingAnchor.constraint(equalTo: coverImageView.trailingAnchor),
+            nsfwCoverView.bottomAnchor.constraint(equalTo: coverImageView.bottomAnchor),
 
             bookmarkImageView.trailingAnchor.constraint(equalTo: coverImageView.trailingAnchor, constant: -8),
             bookmarkImageView.topAnchor.constraint(equalTo: coverImageView.topAnchor),
@@ -170,6 +180,7 @@ class MangaListCell: UICollectionViewCell {
         imageTask?.cancel()
         imageTask = nil
         setBadgeVisible(false)
+        setNSFW(false, title: nil)
         alpha = 1
     }
 
@@ -270,6 +281,19 @@ extension MangaListCell {
             await loadImage(url: info.coverUrl)
         }
     }
+
+    func setNSFW(_ isNSFW: Bool, title: String?) {
+        hidesNSFWCover = isNSFW && AppSettings.appearance.blurNSFWCovers.get()
+        nsfwCoverView.isHidden = !hidesNSFWCover
+        coverImageView.layer.borderColor = hidesNSFWCover
+            ? UIColor.clear.cgColor
+            : UIColor.quaternarySystemFill.cgColor
+        guard hidesNSFWCover else { return }
+        nsfwCoverView.layer.cornerRadius = coverImageView.layer.cornerRadius
+        nsfwCoverView.layer.cornerCurve = .continuous
+        nsfwCoverView.configure(title: title, image: coverImageView.image)
+        coverImageView.bringSubviewToFront(nsfwCoverView)
+    }
 }
 
 extension MangaListCell {
@@ -322,7 +346,7 @@ extension MangaListCell {
                         return
                     }
                     Task { @MainActor in
-                        if cached {
+                        if cached || self.hidesNSFWCover {
                             self.coverImageView.image = response.image
                         } else {
                             UIView.transition(
@@ -335,6 +359,9 @@ extension MangaListCell {
                         }
                         if response.container.type == .gif, let data = response.container.data {
                             self.coverImageView.animate(withGIFData: data)
+                        }
+                        if self.hidesNSFWCover {
+                            self.nsfwCoverView.configure(title: self.titleLabel.text, image: response.image)
                         }
                     }
                 case .failure(let error):

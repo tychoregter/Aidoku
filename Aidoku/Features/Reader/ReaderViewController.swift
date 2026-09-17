@@ -303,10 +303,10 @@ class ReaderViewController: BaseObservingViewController {
             readerToolbarEffectView.contentView.addSubview(readerToolbarBackgroundEffectView)
             readerToolbar.addSubview(toolbarView)
             toolbarView.moveThumbnailPageCounter(
-                to: overlayHost,
-                trailingTo: overlayHost.safeAreaLayoutGuide.trailingAnchor,
-                topTo: overlayHost.safeAreaLayoutGuide.topAnchor,
-                topOffset: 70
+                to: readerToolbarEffectView.contentView,
+                centeredOn: readerToolbarEffectView.contentView.centerXAnchor,
+                above: readerToolbar.topAnchor,
+                spacing: 10
             )
 
             let leadingConstraint = readerToolbar.leadingAnchor.constraint(
@@ -443,6 +443,9 @@ class ReaderViewController: BaseObservingViewController {
         }
         addObserver(forName: "Reader.autoScroll") { [weak self] _ in
             self?.updateAutoScrollButton()
+        }
+        addObserver(forName: AppSettings.reader.showWebtoonScrollPercentage.key) { [weak self] _ in
+            self?.updateWebtoonProgressMode()
         }
         addObserver(forName: .readerTapZones) { [weak self] _ in
             self?.updateTapZone()
@@ -647,7 +650,8 @@ extension ReaderViewController {
     func updateReadPosition(
         currentPage: Int? = nil,
         totalPages: Int? = nil,
-        chapter: AidokuRunner.Chapter? = nil
+        chapter: AidokuRunner.Chapter? = nil,
+        scrollPosition: Double? = nil
     ) async {
         let effectiveTotalPages = totalPages ?? toolbarView.totalPages ?? 0
         let effectiveCurrentPage = currentPage ?? self.currentPage
@@ -670,9 +674,10 @@ extension ReaderViewController {
             )
         }
         let hasHistory = completed || progress != nil
+        let effectiveScrollPosition = scrollPosition ?? currentPosition
 
         // don't add history if there is none and we're at the first page
-        if currentPage == 1 && !hasHistory {
+        if currentPage == 1 && !hasHistory && (effectiveScrollPosition ?? 0) <= 0 {
             return
         }
 
@@ -681,7 +686,7 @@ extension ReaderViewController {
             chapter: chapter,
             progress: currentPage,
             totalPages: effectiveTotalPages,
-            scrollPosition: currentPosition,
+            scrollPosition: effectiveScrollPosition,
             completed: completed
         )
         await saveReadingSession(chapter: chapter)
@@ -914,6 +919,7 @@ extension ReaderViewController {
             add(child: pageController, below: descriptionButtonController.view)
         }
         reader?.readingMode = readingMode
+        updateWebtoonProgressMode()
         configureDictionaryOverlayInteractionMode()
         configureDictionaryOverlayTapHandler()
         updateAutoScrollButton()
@@ -1185,14 +1191,21 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         let currentPage = currentPage
         let totalPages = toolbarView.totalPages
         let oldChapter = self.chapter
+        let oldScrollPosition = currentPosition
         Task {
-            await updateReadPosition(currentPage: currentPage, totalPages: totalPages, chapter: oldChapter)
+            await updateReadPosition(
+                currentPage: currentPage,
+                totalPages: totalPages,
+                chapter: oldChapter,
+                scrollPosition: oldScrollPosition
+            )
             sessionReadPages = [self.currentPage]
             sessionStartDate = Date.now
             sessionLastInteraction = nil
         }
 
         self.chapter = chapter
+        currentPosition = nil
         self.chaptersToMark = [chapter]
         configureBarToggleTapGestures()
         configureDictionaryLookupGesture()
@@ -1232,7 +1245,26 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         let isPrePaginationPlaceholder = totalPages == 1
             && self.pages.first?.isTextPage == true
             && !(reader is ReaderPagedTextViewController && (reader as? ReaderPagedTextViewController)?.hasPaginated == true)
-        if pages.upperBound >= totalPages && !isPrePaginationPlaceholder {
+        let reachedWebtoonEnd = readingMode != .webtoon || (position ?? currentPosition ?? 0) >= 0.999
+        if pages.upperBound >= totalPages && !isPrePaginationPlaceholder && reachedWebtoonEnd {
+            setCompleted()
+        }
+    }
+
+    func setWebtoonProgress(_ progress: CGFloat, page: Int) {
+        guard readingMode == .webtoon, let totalPages = toolbarView.totalPages else { return }
+        let boundedProgress = min(max(progress, 0), 1)
+        let boundedPage = min(max(page, 1), totalPages)
+
+        if currentPage != boundedPage {
+            setCurrentPages(boundedPage...boundedPage, position: Double(boundedProgress))
+        } else {
+            currentPosition = Double(boundedProgress)
+            sessionLastInteraction = Date.now
+        }
+        toolbarView.setWebtoonProgress(boundedProgress)
+        scheduleReaderProgressContrastUpdate()
+        if boundedPage >= totalPages && boundedProgress >= 0.999 {
             setCompleted()
         }
     }
@@ -1311,6 +1343,13 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
 
     func setSliderOffset(_ offset: CGFloat) {
         toolbarView.moveSlider(to: offset)
+    }
+
+    private func updateWebtoonProgressMode() {
+        toolbarView.setWebtoonProgressMode(
+            enabled: readingMode == .webtoon,
+            showsPercentage: AppSettings.reader.showWebtoonScrollPercentage.get()
+        )
     }
 
     private func configureThumbnailScrubber(with pages: [Page]) {

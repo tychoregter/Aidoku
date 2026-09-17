@@ -60,6 +60,7 @@ class OldMangaCollectionViewController: BaseCollectionViewController {
     func configure(cell: MangaGridCell, info: MangaInfo, indexPath: IndexPath) {
         cell.identifier = info.id
         cell.title = info.title
+        cell.setNSFW(info.isNSFW, title: info.title)
 
         Task {
             await cell.loadImage(url: info.coverUrl)
@@ -74,6 +75,7 @@ class OldMangaCollectionViewController: BaseCollectionViewController {
 
     func configure(cell: MangaListCell, info: MangaInfo, indexPath: IndexPath) {
         cell.configure(with: info)
+        cell.setNSFW(info.isNSFW, title: info.title)
         cell.setSelected(cell.isSelected, animated: false)
 
         if indexPath == focusedIndexPath {
@@ -86,7 +88,7 @@ class OldMangaCollectionViewController: BaseCollectionViewController {
         let layout = UICollectionViewCompositionalLayout { [weak self] sectionIndex, environment in
             guard let self else { return nil }
             switch Section(rawValue: sectionIndex) {
-                case .pinned, .regular:
+                case .continueReading, .pinned, .regular:
                     if self.usesListLayout {
                         return Self.makeListLayoutSection(environment: environment)
                     } else {
@@ -290,6 +292,7 @@ extension OldMangaCollectionViewController {
 // MARK: - Data Source
 extension OldMangaCollectionViewController {
     enum Section: Int, CaseIterable {
+        case continueReading
         case pinned
         case regular
     }
@@ -306,7 +309,8 @@ extension OldMangaCollectionViewController {
                 ) as! MangaGridCell
                 self?.configure(cell: cell, info: item, indexPath: indexPath)
                 return cell
-            } else if self?.usesListLayout ?? false {
+            } else if self?.usesListLayout ?? false,
+                      self?.dataSource.snapshot().sectionIdentifiers[safe: indexPath.section] != .continueReading {
                 let cell = collectionView.dequeueReusableCell(
                     withReuseIdentifier: "MangaListCell",
                     for: indexPath

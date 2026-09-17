@@ -10,6 +10,13 @@ import CoreData
 
 final class HistoryManager: Sendable {
     static let shared = HistoryManager()
+
+    private func isUpdateAllowed(for mangaId: MangaIdentifier) async -> Bool {
+        guard AppSettings.tracking.onlyUpdateLibraryItems.get() else { return true }
+        return await CoreDataManager.shared.container.performBackgroundTask { context in
+            CoreDataManager.shared.hasLibraryManga(mangaId: mangaId, context: context)
+        }
+    }
 }
 
 extension HistoryManager {
@@ -22,6 +29,7 @@ extension HistoryManager {
         completed: Bool
     ) async {
         let mangaId = chapterId.mangaIdentifier
+        guard await isUpdateAllowed(for: mangaId) else { return }
         await CoreDataManager.shared.container.performBackgroundTask { context in
             CoreDataManager.shared.setRead(mangaId: mangaId, context: context)
             CoreDataManager.shared.setProgress(
@@ -59,6 +67,7 @@ extension HistoryManager {
     }
 
     func addSession(chapterId: ChapterIdentifier, data: ReadingSessionData) async {
+        guard await isUpdateAllowed(for: chapterId.mangaIdentifier) else { return }
         await CoreDataManager.shared.container.performBackgroundTask { context in
             CoreDataManager.shared.createSession(
                 chapterId: chapterId,
@@ -79,6 +88,7 @@ extension HistoryManager {
         date: Date = Date(),
         skipTracker: Tracker? = nil
     ) async {
+        guard await isUpdateAllowed(for: mangaId) else { return }
         // mark each manga as read
         let success = await CoreDataManager.shared.container.performBackgroundTask { context in
             // mark chapters as read

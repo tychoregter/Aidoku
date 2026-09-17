@@ -40,6 +40,19 @@ final class ReaderThumbnailScrubberView: UIControl {
     var minimumValue: CGFloat = 0
     var maximumValue: CGFloat = 1
     var onPreviewVisibilityChange: ((Bool) -> Void)?
+    var usesContinuousProgress = false {
+        didSet {
+            guard oldValue != usesContinuousProgress else { return }
+            if usesContinuousProgress {
+                previewContainer.layer.removeAllAnimations()
+                previewContainer.isHidden = true
+                previewContainer.alpha = 0
+                onPreviewVisibilityChange?(false)
+            }
+            updateAccessibilityValue()
+            setNeedsLayout()
+        }
+    }
     var currentValue: CGFloat = 0 {
         didSet {
             let boundedValue = min(max(currentValue, minimumValue), maximumValue)
@@ -47,8 +60,11 @@ final class ReaderThumbnailScrubberView: UIControl {
                 currentValue = boundedValue
                 return
             }
-            layoutThumbnailViews()
+            if !usesContinuousProgress {
+                layoutThumbnailViews()
+            }
             updatePreviewPosition()
+            updateAccessibilityValue()
         }
     }
 
@@ -171,12 +187,16 @@ final class ReaderThumbnailScrubberView: UIControl {
 
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         guard pageCount > 0 else { return false }
-        previewContainer.isHidden = false
-        previewContainer.alpha = 0
-        onPreviewVisibilityChange?(true)
+        if !usesContinuousProgress {
+            previewContainer.isHidden = false
+            previewContainer.alpha = 0
+            onPreviewVisibilityChange?(true)
+        }
         updateValue(at: touch.location(in: self))
-        UIView.animate(withDuration: 0.18, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
-            self.previewContainer.alpha = 1
+        if !usesContinuousProgress {
+            UIView.animate(withDuration: 0.18, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
+                self.previewContainer.alpha = 1
+            }
         }
         sendActions(for: .valueChanged)
         return true
@@ -189,13 +209,27 @@ final class ReaderThumbnailScrubberView: UIControl {
     }
 
     override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
-        hidePreview()
+        if !usesContinuousProgress {
+            hidePreview()
+        }
         sendActions(for: .editingDidEnd)
     }
 
     override func cancelTracking(with event: UIEvent?) {
-        hidePreview()
+        if !usesContinuousProgress {
+            hidePreview()
+        }
         sendActions(for: .editingDidEnd)
+    }
+
+    override func accessibilityIncrement() {
+        guard usesContinuousProgress else { return }
+        adjustAccessibilityValue(by: 0.05)
+    }
+
+    override func accessibilityDecrement() {
+        guard usesContinuousProgress else { return }
+        adjustAccessibilityValue(by: -0.05)
     }
 
     private func configure() {
@@ -259,6 +293,12 @@ final class ReaderThumbnailScrubberView: UIControl {
     private func layoutThumbnailViews() {
         guard pageCount > 0, thumbnailContainer.bounds.width > 0 else { return }
         let contentFrame = thumbnailContentFrame
+        if usesContinuousProgress {
+            layoutStaticThumbnailViews(in: contentFrame)
+            updateSelectionFrame()
+            return
+        }
+
         let activeLogicalIndex = pageIndex(for: currentValue)
         let activeVisualIndex = direction == .forward
             ? activeLogicalIndex
@@ -286,11 +326,37 @@ final class ReaderThumbnailScrubberView: UIControl {
         updateSelectionFrame()
     }
 
+    /// Webtoon progress moves continuously rather than selecting one discrete
+    /// thumbnail at a time. Keep the strip itself stable so crossing a page
+    /// boundary only changes the moving selection overlay and its image.
+    private func layoutStaticThumbnailViews(in contentFrame: CGRect) {
+        let thumbnailWidth = contentFrame.width / CGFloat(pageCount)
+        for visualIndex in 0..<pageCount {
+            let logicalIndex = direction == .forward
+                ? visualIndex
+                : pageCount - visualIndex - 1
+            thumbnailViews[logicalIndex].frame = CGRect(
+                x: contentFrame.minX + CGFloat(visualIndex) * thumbnailWidth,
+                y: 0,
+                width: thumbnailWidth,
+                height: thumbnailContainer.bounds.height
+            )
+        }
+    }
+
     private func updateValue(at location: CGPoint) {
         guard pageCount > 0, trackView.bounds.width > 0 else { return }
         let contentFrame = thumbnailContentFrame
         guard contentFrame.width > 0 else { return }
         let x = min(max(location.x - trackView.frame.minX, contentFrame.minX), contentFrame.maxX)
+        if usesContinuousProgress {
+            var progress = (x - contentFrame.minX) / contentFrame.width
+            if direction == .backward {
+                progress = 1 - progress
+            }
+            currentValue = minimumValue + progress * (maximumValue - minimumValue)
+            return
+        }
         let logicalIndex = (0..<pageCount).min { lhs, rhs in
             abs(thumbnailViews[lhs].frame.midX - x) < abs(thumbnailViews[rhs].frame.midX - x)
         } ?? 0
@@ -322,8 +388,18 @@ final class ReaderThumbnailScrubberView: UIControl {
         let logicalIndex = pageIndex(for: currentValue)
         let height = Metrics.selectedPageHeight
         let width = height * Metrics.pageAspectRatio
-        let activeFrame = thumbnailViews[logicalIndex].frame
-        let proposedCenterX = trackView.frame.minX + activeFrame.midX
+        let proposedCenterX: CGFloat
+        if usesContinuousProgress, maximumValue > minimumValue {
+            var progress = (currentValue - minimumValue) / (maximumValue - minimumValue)
+            if direction == .backward {
+                progress = 1 - progress
+            }
+            let contentFrame = thumbnailContentFrame
+            proposedCenterX = trackView.frame.minX + contentFrame.minX + contentFrame.width * progress
+        } else {
+            let activeFrame = thumbnailViews[logicalIndex].frame
+            proposedCenterX = trackView.frame.minX + activeFrame.midX
+        }
         let centerX = min(
             max(proposedCenterX, trackView.frame.minX + width / 2),
             trackView.frame.maxX - width / 2
@@ -377,6 +453,24 @@ final class ReaderThumbnailScrubberView: UIControl {
         guard pageCount > 1, maximumValue > minimumValue else { return 0 }
         let progress = (value - minimumValue) / (maximumValue - minimumValue)
         return min(max(Int(round(progress * CGFloat(pageCount - 1))), 0), pageCount - 1)
+    }
+
+    private func adjustAccessibilityValue(by amount: CGFloat) {
+        let range = maximumValue - minimumValue
+        guard range > 0 else { return }
+        let progress = (currentValue - minimumValue) / range
+        let steppedProgress = amount > 0
+            ? min(1, floor(progress * 20 + 1) / 20)
+            : max(0, ceil(progress * 20 - 1) / 20)
+        currentValue = minimumValue + steppedProgress * range
+        sendActions(for: .valueChanged)
+        sendActions(for: .editingDidEnd)
+    }
+
+    private func updateAccessibilityValue() {
+        guard usesContinuousProgress, maximumValue > minimumValue else { return }
+        let progress = (currentValue - minimumValue) / (maximumValue - minimumValue)
+        accessibilityValue = "\(Int((progress * 100).rounded())) percent"
     }
 
     private func loadVisibleThumbnails() {

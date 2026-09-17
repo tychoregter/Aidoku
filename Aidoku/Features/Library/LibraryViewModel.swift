@@ -15,6 +15,7 @@ class LibraryViewModel {
 
     var manga: [MangaInfo] = []
     var pinnedManga: [MangaInfo] = []
+    var continueReadingManga: [MangaInfo] = []
     /// Pinned titles that also match the active Library filters. This is used
     /// for the optional duplicate copies in the regular Library section.
     var libraryPinnedManga: [MangaInfo] = []
@@ -177,6 +178,7 @@ class LibraryViewModel {
         currentCategory?.isEmpty ?? false
     }
     private(set) var actuallyEmpty = true
+    private let loadsDedicatedContinueReading: Bool
 
     // Several independent notifications can request a library reload at the
     // same time. Since this type is main-actor isolated, each load can suspend
@@ -187,7 +189,8 @@ class LibraryViewModel {
     private var libraryReloadPending = false
     private var libraryLoadWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init() {
+    init(loadsDedicatedContinueReading: Bool = true) {
+        self.loadsDedicatedContinueReading = loadsDedicatedContinueReading
         favoriteIds = Set(UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? [])
         let filtersData = AppSettings.library.filtersData.get()
         if let filtersData {
@@ -231,7 +234,16 @@ extension LibraryViewModel {
     }
 
     func getPinType() -> PinType {
-        PinType(rawValue: AppSettings.library.pinTitles.get()) ?? .none
+        let pinType = PinType(rawValue: AppSettings.library.pinTitles.get()) ?? .none
+        if Self.isDedicatedContinueReadingEnabled, pinType == .started {
+            AppSettings.library.pinTitles.set(PinType.none.rawValue)
+            return .none
+        }
+        return pinType
+    }
+
+    static var isDedicatedContinueReadingEnabled: Bool {
+        AppSettings.appearance.dedicatedContinueReadingSection.get()
     }
 
     func refreshCategories(skipDataLoad: Bool = false) async {
@@ -268,12 +280,39 @@ extension LibraryViewModel {
             libraryReloadPending = false
             await performLibraryLoad()
         } while libraryReloadPending
+
+        if loadsDedicatedContinueReading {
+            await loadDedicatedContinueReading()
+        }
         isLoadingLibrary = false
 
         let waiters = libraryLoadWaiters
         libraryLoadWaiters.removeAll(keepingCapacity: true)
         for waiter in waiters {
             waiter.resume()
+        }
+    }
+
+    private func loadDedicatedContinueReading() async {
+        guard Self.isDedicatedContinueReadingEnabled else {
+            continueReadingManga = []
+            return
+        }
+
+        let readingViewModel = LibraryViewModel(loadsDedicatedContinueReading: false)
+        readingViewModel.pinType = .started
+        readingViewModel.sortMethod = sortMethod
+        readingViewModel.sortAscending = sortAscending
+        readingViewModel.categories = categories
+        readingViewModel.filterGroups = filterGroups
+        readingViewModel.currentCategory = currentCategory
+        readingViewModel.filters = filters
+        await readingViewModel.loadLibrary()
+
+        continueReadingManga = readingViewModel.pinnedManga.map { manga in
+            var manga = manga
+            manga.displayVariant = "continue-reading"
+            return manga
         }
     }
 
@@ -368,6 +407,7 @@ extension LibraryViewModel {
                     author: mangaObject.author,
                     url: mangaObject.url.flatMap { URL(string: $0) }
                 )
+                info.isNSFW = mangaObject.nsfw == MangaContentRating.nsfw.rawValue
                 info.lastRead = libraryObject.lastRead
                 info.librarySortIndex = librarySortIndex
 
@@ -663,7 +703,7 @@ extension LibraryViewModel {
 
     // updates unread counts and manga sort order for history change
     func updateHistory(for manga: [MangaInfo], read: Bool) async {
-        let currentManga = self.manga + self.pinnedManga
+        let currentManga = self.manga + self.pinnedManga + self.continueReadingManga
         let unreadCounts = await withTaskGroup(of: (Int, Int)?.self, returning: [Int: Int].self) { group in
             for item in manga {
                 group.addTask {
@@ -712,7 +752,9 @@ extension LibraryViewModel {
                 }
             }
         }
-        if pinType == .unread || activeFilters.contains(where: { $0.type == .hasUnread || $0.type == .caughtUp }) {
+        if Self.isDedicatedContinueReadingEnabled
+            || pinType == .unread
+            || activeFilters.contains(where: { $0.type == .hasUnread || $0.type == .caughtUp }) {
             await loadLibrary()
         } else if sortMethod == .unreadChapters {
             await sortLibrary()
@@ -725,7 +767,7 @@ extension LibraryViewModel {
             return await loadLibrary()
         }
 
-        let currentManga = self.manga + self.pinnedManga
+        let currentManga = self.manga + self.pinnedManga + self.continueReadingManga
 
         // fetch new unread counts
         let unreadCounts = await withTaskGroup(of: (Int, Int).self) { group in
@@ -760,6 +802,10 @@ extension LibraryViewModel {
             guard let count = unreadCounts[manga.hashValue] else { continue }
             self.pinnedManga[i].unread = count
         }
+        for (i, manga) in self.continueReadingManga.enumerated() {
+            guard let count = unreadCounts[manga.hashValue] else { continue }
+            self.continueReadingManga[i].unread = count
+        }
 
         // re-sort library if needed
         if !skipSortCheck && sortMethod == .unreadChapters {
@@ -792,9 +838,15 @@ extension LibraryViewModel {
                 self.pinnedManga[index].unread = unreadCount
             }
         }
+        if let index = self.continueReadingManga.firstIndex(where: { $0.id == identifier }) {
+            if self.continueReadingManga[index].unread != unreadCount {
+                didUpdate = true
+                self.continueReadingManga[index].unread = unreadCount
+            }
+        }
         // re-sort library if needed
         if didUpdate {
-            if pinType == .unread {
+            if Self.isDedicatedContinueReadingEnabled || pinType == .unread {
                 await loadLibrary()
             } else if sortMethod == .unreadChapters {
                 await sortLibrary()
@@ -807,7 +859,7 @@ extension LibraryViewModel {
         if let identifier {
             downloadCounts[identifier] = await DownloadManager.shared.downloadsCount(for: identifier)
         } else {
-            let currentManga = self.manga + self.pinnedManga
+            let currentManga = self.manga + self.pinnedManga + self.continueReadingManga
             for manga in currentManga {
                 let identifier = manga.id
                 downloadCounts[identifier] = await DownloadManager.shared.downloadsCount(for: identifier)
@@ -821,6 +873,11 @@ extension LibraryViewModel {
         for (i, manga) in self.manga.enumerated() {
             if let count = downloadCounts[manga.id] {
                 self.manga[i].downloads = count
+            }
+        }
+        for (i, manga) in self.continueReadingManga.enumerated() {
+            if let count = downloadCounts[manga.id] {
+                self.continueReadingManga[i].downloads = count
             }
         }
     }
@@ -962,7 +1019,14 @@ extension LibraryViewModel {
     // returns true if library was reloaded
     @discardableResult
     func mangaOpened(mangaId: MangaIdentifier) async -> Bool {
-        guard sortMethod == .lastOpened || pinType.needsUpdateOnContentOpen else { return false }
+        guard sortMethod == .lastOpened || pinType.needsUpdateOnContentOpen || Self.isDedicatedContinueReadingEnabled else {
+            return false
+        }
+
+        if Self.isDedicatedContinueReadingEnabled {
+            await loadLibrary()
+            return true
+        }
 
         var libraryReloaded = false
 
@@ -999,7 +1063,9 @@ extension LibraryViewModel {
     }
 
     func mangaRead(mangaId: MangaIdentifier) async {
-        if pinType == .started || activeFilters.contains(where: { $0.type == .hasUnread || $0.type == .caughtUp }) {
+        if Self.isDedicatedContinueReadingEnabled
+            || pinType == .started
+            || activeFilters.contains(where: { $0.type == .hasUnread || $0.type == .caughtUp }) {
             // reload library in case all chapters were read and the manga should be filtered
             await loadLibrary()
             return
@@ -1018,6 +1084,7 @@ extension LibraryViewModel {
 
     func removeFromLibrary(manga: MangaInfo) async {
         pinnedManga.removeAll { $0.id == manga.id }
+        continueReadingManga.removeAll { $0.id == manga.id }
         self.manga.removeAll { $0.id == manga.id }
         await MangaManager.shared.removeFromLibrary(mangaId: manga.id)
     }
@@ -1025,6 +1092,7 @@ extension LibraryViewModel {
     func removeFromLibrary(mangaIds: [MangaIdentifier]) async {
         let set = Set(mangaIds)
         pinnedManga.removeAll { set.contains($0.id) }
+        continueReadingManga.removeAll { set.contains($0.id) }
         self.manga.removeAll { set.contains($0.id) }
         await MangaManager.shared.removeFromLibrary(mangaIds: mangaIds)
     }
@@ -1040,6 +1108,7 @@ extension LibraryViewModel {
     func removeFromCurrentCategory(manga: MangaInfo) async {
         guard let currentCategory, isInRealCategory else { return }
         pinnedManga.removeAll { $0.id == manga.id }
+        continueReadingManga.removeAll { $0.id == manga.id }
         self.manga.removeAll { $0.id == manga.id }
         await CoreDataManager.shared.removeCategoriesFromManga(
             mangaId: manga.id,

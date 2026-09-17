@@ -70,6 +70,21 @@ class ReaderWebtoonViewController: ZoomableCollectionViewController {
     var onAutoScrollStateChange: ((Bool) -> Void)?
     var onContentScrollingChange: ((Bool) -> Void)?
 
+    private func loadScrollPosition(for chapter: AidokuRunner.Chapter) async -> CGFloat? {
+        await CoreDataManager.shared.container.performBackgroundTask { [weak self] context in
+            guard let self else { return nil }
+            let object = CoreDataManager.shared.getHistory(
+                chapterId: .init(
+                    sourceKey: self.viewModel.manga.sourceKey,
+                    mangaKey: self.viewModel.manga.key,
+                    chapterKey: chapter.key
+                ),
+                context: context
+            )
+            return object?.scrollPosition.map { CGFloat($0.doubleValue) }
+        }
+    }
+
     init(
         source: AidokuRunner.Source?,
         manga: AidokuRunner.Manga,
@@ -362,9 +377,14 @@ extension ReaderWebtoonViewController {
             }
         }
 
-        // update page number
+        // Update the page and chapter-local scroll progress. Webtoon progress
+        // uses actual scrollable distance, while continuous mode retains the
+        // existing page-based behavior.
         let page = getCurrentPage()
-        if previousPage != page {
+        if readingMode == .webtoon, let progress = currentChapterScrollProgress() {
+            previousPage = page
+            delegate?.setWebtoonProgress(progress, page: page)
+        } else if previousPage != page {
             previousPage = page
             delegate?.setCurrentPage(page, position: nil)
         }
@@ -816,42 +836,21 @@ extension ReaderWebtoonViewController: ReaderReaderDelegate {
     func sliderMoved(value: CGFloat) {
         isSliding = true
 
-        // get slider area
-        guard
-            let chapter = chapter,
-            let chapterIndex = chapters.firstIndex(of: chapter),
-            let layout = self.collectionNode.collectionViewLayout as? VerticalContentOffsetPreservingLayout,
-            let currentPages = pages[safe: chapterIndex]
-        else { return }
-
-        var offset: CGFloat = 0
-        for idx in 0..<chapterIndex {
-            offset += layout.getHeightFor(section: idx)
-        }
-
-        let hasStartInfo = currentPages.first?.type != .imagePage
-        let hasEndInfo = currentPages.last?.type != .imagePage
-
-        if hasStartInfo {
-            offset += layout.getHeightFor(section: chapterIndex, range: 0..<1)
-        }
-
-        let height = max(
-            0,
-            layout.getHeightFor(
-                section: chapterIndex,
-                range: (hasStartInfo ? 1 : 0)..<currentPages.count - (hasEndInfo ? 1 : 0)
-            ) - collectionNode.bounds.height
-        )
+        guard let range = currentChapterScrollRange() else { return }
+        let boundedValue = min(max(value, 0), 1)
 
         scrollView.setContentOffset(
-            CGPoint(x: collectionNode.contentOffset.x, y: offset + height * value),
+            CGPoint(x: collectionNode.contentOffset.x, y: range.start + range.distance * boundedValue),
             animated: false
         )
 
-        let page = value >= 0.999
-            ? lastImagePage(in: currentPages)
-            : getCurrentPage()
+        guard
+            let chapter,
+            let chapterIndex = chapters.firstIndex(of: chapter),
+            let currentPages = pages[safe: chapterIndex]
+        else { return }
+        let page = boundedValue >= 0.999 ? lastImagePage(in: currentPages) : getCurrentPage()
+        delegate?.setWebtoonProgress(boundedValue, page: page)
         delegate?.displayPage(page)
     }
 
@@ -872,12 +871,51 @@ extension ReaderWebtoonViewController: ReaderReaderDelegate {
         return max(1, pages.count - (hasStartInfo ? 1 : 0) - (hasEndInfo ? 1 : 0))
     }
 
+    private func currentChapterScrollRange() -> (start: CGFloat, distance: CGFloat)? {
+        guard
+            let chapter,
+            let chapterIndex = chapters.firstIndex(of: chapter),
+            let layout = collectionNode.collectionViewLayout as? VerticalContentOffsetPreservingLayout,
+            let currentPages = pages[safe: chapterIndex]
+        else { return nil }
+
+        var start: CGFloat = 0
+        for index in 0..<chapterIndex {
+            start += layout.getHeightFor(section: index)
+        }
+
+        let firstImageIndex = currentPages.first?.type == .imagePage ? 0 : 1
+        let imageEndIndex = currentPages.last?.type == .imagePage
+            ? currentPages.count
+            : currentPages.count - 1
+        guard firstImageIndex < imageEndIndex else { return nil }
+
+        if firstImageIndex > 0 {
+            start += layout.getHeightFor(section: chapterIndex, range: 0..<firstImageIndex)
+        }
+        let imageHeight = layout.getHeightFor(
+            section: chapterIndex,
+            range: firstImageIndex..<imageEndIndex
+        )
+        return (start, max(0, imageHeight - collectionNode.bounds.height))
+    }
+
+    private func currentChapterScrollProgress() -> CGFloat? {
+        guard let range = currentChapterScrollRange() else { return nil }
+        guard range.distance > 0 else { return 0 }
+        return min(max((scrollView.contentOffset.y - range.start) / range.distance, 0), 1)
+    }
+
     func setChapter(_ chapter: AidokuRunner.Chapter, startPage: Int) {
         self.chapter = chapter
         updateDoubleTapZoomSetting()
         chapters = [chapter]
 
         Task {
+            var savedScrollPosition: CGFloat?
+            if readingMode == .webtoon && startPage > 0 {
+                savedScrollPosition = await loadScrollPosition(for: chapter)
+            }
             await viewModel.loadPages(chapter: chapter)
             delegate?.setPages(viewModel.pages)
             if viewModel.pages.isEmpty {
@@ -919,6 +957,15 @@ extension ReaderWebtoonViewController: ReaderReaderDelegate {
                 animated: false
             )
             scrollView.contentOffset = collectionNode.contentOffset
+            if let savedScrollPosition, let range = currentChapterScrollRange() {
+                let progress = min(max(savedScrollPosition, 0), 1)
+                scrollView.setContentOffset(
+                    CGPoint(x: scrollView.contentOffset.x, y: range.start + range.distance * progress),
+                    animated: false
+                )
+                let page = progress >= 0.999 ? lastImagePage(in: pages[0]) : getCurrentPage()
+                delegate?.setWebtoonProgress(progress, page: page)
+            }
         }
     }
 }
