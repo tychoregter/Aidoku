@@ -95,25 +95,21 @@ extension AidokuRunner.Source {
 
     static func modify(url: URL, request: URLRequest) async -> URLRequest {
         var request = request
-        // add user-agent and stored cookies if not provided (for cloudflare)
-        if request.value(forHTTPHeaderField: "User-Agent") == nil {
+        // Cloudflare ties a FlareSolverr clearance cookie to its browser
+        // user-agent, so prefer that exact user-agent for an existing solve.
+        if let cloudflareUserAgent = await CloudflareHandler.shared.userAgent(for: url) {
+            request.setValue(cloudflareUserAgent, forHTTPHeaderField: "User-Agent")
+        } else if request.value(forHTTPHeaderField: "User-Agent") == nil {
             request.setValue(
                 await UserAgentProvider.shared.getUserAgent(),
                 forHTTPHeaderField: "User-Agent"
             )
         }
-        let cookies = HTTPCookie.requestHeaderFields(with: HTTPCookieStorage.shared.allCookies(for: url) ?? [])
-        for (key, value) in cookies {
-            if key == "Cookie" {
-                var cookieString = value
-                // keep cookies in original request
-                if let oldCookie = request.value(forHTTPHeaderField: "Cookie") {
-                    cookieString += "; " + oldCookie
-                }
-                request.setValue(cookieString, forHTTPHeaderField: "Cookie")
-            } else {
-                request.setValue(value, forHTTPHeaderField: key)
-            }
+        if let cookieHeader = HTTPCookieStorage.shared.cookieHeader(
+            for: url,
+            appending: request.value(forHTTPHeaderField: "Cookie")
+        ) {
+            request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
         }
         return request
     }

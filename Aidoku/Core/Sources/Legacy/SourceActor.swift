@@ -110,11 +110,23 @@ actor SourceActor {
 
         request.URL = url
 
-        // add cloudflare headers
-        request.headers["User-Agent"] = await UserAgentProvider.shared.getUserAgent()
-        if let url = URL(string: url),
-           let cookies = HTTPCookie.requestHeaderFields(with: HTTPCookieStorage.shared.allCookies(for: url) ?? [])["Cookie"] {
-            request.headers["Cookie"] = cookies
+        // Add the same verified Cloudflare session used by normal source
+        // requests, including FlareSolverr's paired browser user-agent.
+        if let url = URL(string: url) {
+            let cloudflareUserAgent = await CloudflareHandler.shared.userAgent(for: url)
+            if let cloudflareUserAgent {
+                request.headers["User-Agent"] = cloudflareUserAgent
+            } else {
+                request.headers["User-Agent"] = await UserAgentProvider.shared.getUserAgent()
+            }
+            if let cookieHeader = HTTPCookieStorage.shared.cookieHeader(
+                for: url,
+                appending: request.headers["Cookie"].flatMap { $0 }
+            ) {
+                request.headers["Cookie"] = cookieHeader
+            }
+        } else {
+            request.headers["User-Agent"] = await UserAgentProvider.shared.getUserAgent()
         }
         source.globalStore.requests[request.id] = request
 

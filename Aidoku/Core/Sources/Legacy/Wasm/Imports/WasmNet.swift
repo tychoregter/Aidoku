@@ -131,22 +131,21 @@ extension WasmNet {
         guard let url = urlRequest.url else { return nil }
         var request = urlRequest
 
-        // ensure a user-agent is passed
-        if request.value(forHTTPHeaderField: "User-Agent") == nil, let userAgent {
+        // Reuse FlareSolverr's browser user-agent with its clearance cookie.
+        if let cloudflareUserAgent = CloudflareHandler.cachedFlareSolverrUserAgent(for: url) {
+            request.setValue(cloudflareUserAgent, forHTTPHeaderField: "User-Agent")
+        } else if request.value(forHTTPHeaderField: "User-Agent") == nil, let userAgent {
             request.setValue(
                 userAgent,
                 forHTTPHeaderField: "User-Agent"
             )
         }
 
-        // add stored cookies
-        if let cookies = HTTPCookie.requestHeaderFields(with: HTTPCookieStorage.shared.allCookies(for: url) ?? [])["Cookie"] {
-            var cookieString = cookies
-            // keep cookies in original request
-            if let oldCookie = request.value(forHTTPHeaderField: "Cookie") {
-                cookieString += "; " + oldCookie
-            }
-            request.setValue(cookieString, forHTTPHeaderField: "Cookie")
+        if let cookieHeader = HTTPCookieStorage.shared.cookieHeader(
+            for: url,
+            appending: request.value(forHTTPHeaderField: "Cookie")
+        ) {
+            request.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
         }
 
         return request

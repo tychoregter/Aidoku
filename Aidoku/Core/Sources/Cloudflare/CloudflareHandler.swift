@@ -39,6 +39,8 @@ actor CloudflareHandler: NSObject {
     private var challengeWaiters: [CheckedContinuation<Void, Never>] = []
     private var flareSolverrUserAgents: [String: String] = [:]
 
+    private static let flareSolverrUserAgentDefaultsPrefix = "CloudflareHandler.FlareSolverrUserAgent."
+
     @MainActor
     private lazy var webView = WKWebView(frame: .zero)
 
@@ -129,6 +131,35 @@ actor CloudflareHandler: NSObject {
         return (data, response)
     }
 
+    /// Returns the browser user-agent paired with a FlareSolverr clearance
+    /// cookie for this host. Cloudflare binds `cf_clearance` to the user-agent,
+    /// so normal source requests must use the same one after a solve.
+    func userAgent(for url: URL) -> String? {
+        if let host = url.host?.lowercased(), let userAgent = flareSolverrUserAgents[host] {
+            return userAgent
+        }
+        return Self.cachedFlareSolverrUserAgent(for: url)
+    }
+
+    /// Synchronous counterpart for the legacy WASM networking layer.
+    nonisolated static func cachedFlareSolverrUserAgent(for url: URL) -> String? {
+        guard let host = url.host?.lowercased() else { return nil }
+        let labels = host.split(separator: ".")
+        guard labels.count >= 2 else { return nil }
+
+        // Prefer the most specific matching domain, then fall back to the
+        // registrable-domain-like suffix used by a shared Cloudflare cookie.
+        for index in 0..<(labels.count - 1) {
+            let domain = labels[index...].joined(separator: ".")
+            if let userAgent = UserDefaults.standard.string(
+                forKey: flareSolverrUserAgentDefaultsPrefix + domain
+            ) {
+                return userAgent
+            }
+        }
+        return nil
+    }
+
     private func solveWithFlareSolverr(request: URLRequest) async throws -> (Data, URLResponse) {
         let configuredURL = AppSettings.general.flareSolverrURL.get().trimmingCharacters(in: .whitespacesAndNewlines)
         guard
@@ -170,8 +201,8 @@ actor CloudflareHandler: NSObject {
             throw HandleError.solveFailed
         }
 
-        if let host = targetURL.host?.lowercased(), let userAgent = solution.userAgent {
-            flareSolverrUserAgents[host] = userAgent
+        if let userAgent = solution.userAgent {
+            storeFlareSolverrUserAgent(userAgent, for: targetURL, cookies: solution.cookies)
         }
         storeFlareSolverrCookies(solution.cookies, for: targetURL)
 
@@ -191,6 +222,9 @@ actor CloudflareHandler: NSObject {
     }
 
     private func storeFlareSolverrCookies(_ cookies: [FlareSolverrCookie], for url: URL) {
+        if cookies.contains(where: { $0.name == "cf_clearance" }) {
+            HTTPCookieStorage.shared.removeClearanceCookies(for: url)
+        }
         for cookie in cookies {
             var properties: [HTTPCookiePropertyKey: Any] = [
                 .name: cookie.name,
@@ -204,6 +238,30 @@ actor CloudflareHandler: NSObject {
             if let httpCookie = HTTPCookie(properties: properties) {
                 HTTPCookieStorage.shared.setCookie(httpCookie)
             }
+        }
+    }
+
+    private func storeFlareSolverrUserAgent(
+        _ userAgent: String,
+        for url: URL,
+        cookies: [FlareSolverrCookie]
+    ) {
+        var domains = Set<String>()
+        if let host = url.host?.lowercased() {
+            domains.insert(host)
+        }
+        for cookie in cookies where cookie.name == "cf_clearance" {
+            if let domain = cookie.domain?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")) {
+                domains.insert(domain)
+            }
+        }
+
+        for domain in domains {
+            flareSolverrUserAgents[domain] = userAgent
+            UserDefaults.standard.set(
+                userAgent,
+                forKey: Self.flareSolverrUserAgentDefaultsPrefix + domain
+            )
         }
     }
 
@@ -422,8 +480,10 @@ extension CloudflareHandler {
 
         var webViewCookies = await WKWebsiteDataStore.default().httpCookieStore.allCookies()
 
-        // check for old (expired) clearance cookie
-        let oldCookie = HTTPCookieStorage.shared.allCookies(for: url)?.first { $0.name == "cf_clearance" }
+        // Check for old clearance cookies. A second value with the same name
+        // can make the server reject the request depending on which value it
+        // parses first, so replace every matching clearance cookie at once.
+        let oldCookies = HTTPCookieStorage.shared.allCookies(for: url)?.filter { $0.name == "cf_clearance" } ?? []
 
         // check for clearance cookie
         let hasClearance = webViewCookies.contains { cookie in
@@ -431,14 +491,15 @@ extension CloudflareHandler {
                 .lowercased()
                 .trimmingCharacters(in: CharacterSet(charactersIn: "."))
             return cookie.name == "cf_clearance"
-                && cookie.value != oldCookie?.value
+                && !oldCookies.contains(where: { $0.value == cookie.value })
                 && (host == domain || host.hasSuffix("." + domain))
         }
         guard hasClearance else { return }
 
-        // remove old cookie and save new cookies for future requests
-        if let oldCookie {
-            HTTPCookieStorage.shared.deleteCookie(oldCookie)
+        // Remove old values and save the new web-view session for future
+        // source requests.
+        HTTPCookieStorage.shared.removeClearanceCookies(for: url)
+        for oldCookie in oldCookies {
             if let idx = webViewCookies.firstIndex(of: oldCookie) {
                 webViewCookies.remove(at: idx)
             }
@@ -529,7 +590,52 @@ extension HTTPCookieStorage {
             let domain = cookie.domain
                 .lowercased()
                 .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            return host == domain || host.hasSuffix("." + domain)
+            let cookiePath = cookie.path.isEmpty ? "/" : cookie.path
+            let requestPath = url.path.isEmpty ? "/" : url.path
+            return (host == domain || host.hasSuffix("." + domain))
+                && requestPath.hasPrefix(cookiePath)
+        }
+    }
+
+    /// Builds one deterministic Cookie header. Stored cookies win over stale
+    /// values supplied by a source, preventing duplicate `cf_clearance`
+    /// values after a Cloudflare solve.
+    func cookieHeader(for url: URL, appending existingHeader: String?) -> String? {
+        var values: [String: String] = [:]
+        var order: [String] = []
+
+        func add(_ header: String?, replacingExisting: Bool) {
+            guard let header else { return }
+            for part in header.split(separator: ";") {
+                let pieces = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+                guard pieces.count == 2 else { continue }
+                let name = pieces[0].trimmingCharacters(in: .whitespaces)
+                let value = pieces[1].trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty else { continue }
+                if values[name] == nil {
+                    order.append(name)
+                }
+                if replacingExisting || values[name] == nil {
+                    values[name] = value
+                }
+            }
+        }
+
+        // Preserve source-specific cookies, then overwrite duplicates with
+        // the verified cookies from the shared session.
+        add(existingHeader, replacingExisting: false)
+        let storedHeader = HTTPCookie.requestHeaderFields(with: allCookies(for: url) ?? [])["Cookie"]
+        add(storedHeader, replacingExisting: true)
+
+        guard !order.isEmpty else { return nil }
+        return order.compactMap { name in
+            values[name].map { "\(name)=\($0)" }
+        }.joined(separator: "; ")
+    }
+
+    func removeClearanceCookies(for url: URL) {
+        for cookie in allCookies(for: url) ?? [] where cookie.name == "cf_clearance" {
+            deleteCookie(cookie)
         }
     }
 }
