@@ -66,6 +66,8 @@ class BrowseViewController: BaseTableViewController {
         tableView.backgroundColor = .systemBackground
         tableView.keyboardDismissMode = .onDrag
         tableView.allowsMultipleSelectionDuringEditing = true
+        // Match the Library's breathing room between its large title and first section.
+        tableView.contentInset.top = 8
 
         refreshControl.addTarget(self, action: #selector(refreshSourceLists(_:)), for: .valueChanged)
         tableView.refreshControl = refreshControl
@@ -517,6 +519,7 @@ extension BrowseViewController {
 
             cell.delegate = self
             cell.setSourceInfo(item.info, section: section)
+            cell.hidesSeparator = self.dataSource.snapshot().itemIdentifiers(inSection: section).last == item
 
             return cell
         }

@@ -361,7 +361,7 @@ struct MangaDetailsHeaderView: View {
                     isFavorite.toggle()
                     NotificationCenter.default.post(name: .favoriteChanged, object: manga.identifier)
                 } label: {
-                    Image(systemName: isFavorite ? "star.fill" : "star")
+                    Image(systemName: isFavorite ? "heart.fill" : "heart")
                 }
                 .buttonStyle(MangaActionButtonStyle(selected: isFavorite))
             }

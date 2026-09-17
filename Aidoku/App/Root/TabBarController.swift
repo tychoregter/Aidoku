@@ -31,9 +31,11 @@ class TabBarController: UITabBarController {
     private var settingsPath: NavigationCoordinator?
     private var historyPath: NavigationCoordinator?
     private weak var libraryViewController: LibraryViewController?
+    private weak var favoritesViewController: LibraryViewController?
     private var previousSelectedIndex: Int?
 
     private var libraryNavigationController: UINavigationController?
+    private var favoritesNavigationController: UINavigationController?
     private var browseNavigationController: UINavigationController?
     private var historyNavigationController: UINavigationController?
     private var searchNavigationController: UINavigationController?
@@ -53,6 +55,10 @@ class TabBarController: UITabBarController {
         self.libraryViewController = libraryRootViewController
         let libraryViewController = NavigationController(rootViewController: libraryRootViewController)
         libraryNavigationController = libraryViewController
+        let favoritesRootViewController = LibraryViewController(scope: .favorites)
+        self.favoritesViewController = favoritesRootViewController
+        let favoritesViewController = NavigationController(rootViewController: favoritesRootViewController)
+        favoritesNavigationController = favoritesViewController
         let browseViewController = NavigationController(rootViewController: BrowseViewController())
         browseNavigationController = browseViewController
         let searchViewController = NavigationController(rootViewController: searchController)
@@ -109,12 +115,19 @@ class TabBarController: UITabBarController {
             self?.configureTabs()
         }
         .store(in: &cancellables)
+        NotificationCenter.default.publisher(
+            for: .init(AppSettings.appearance.dedicatedFavoritesTab.key)
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] _ in self?.configureTabs() }
+        .store(in: &cancellables)
 
     }
 
     private func configureTabs() {
         guard
             let libraryNavigationController,
+            let favoritesNavigationController,
             let browseNavigationController,
             let historyNavigationController,
             let searchNavigationController,
@@ -131,6 +144,14 @@ class TabBarController: UITabBarController {
                     viewController: libraryNavigationController
                 )
             ]
+            if AppSettings.appearance.dedicatedFavoritesTab.get() {
+                fixedTabs.append(modernTab(
+                    title: "Favorites",
+                    image: UIImage(systemName: "heart.fill"),
+                    identifier: "favorites",
+                    viewController: favoritesNavigationController
+                ))
+            }
             if AppSettings.appearance.dedicatedBrowseTab.get() {
                 fixedTabs.append(
                     modernTab(
@@ -178,6 +199,9 @@ class TabBarController: UITabBarController {
                 tag: 1
             )
             historyNavigationController.tabBarItem = UITabBarItem(tabBarSystemItem: .history, tag: 2)
+            favoritesNavigationController.tabBarItem = UITabBarItem(
+                title: "Favorites", image: UIImage(systemName: "heart.fill"), tag: 1
+            )
             searchNavigationController.tabBarItem = UITabBarItem(tabBarSystemItem: .search, tag: 3)
             settingsViewController.tabBarItem = UITabBarItem(
                 title: NSLocalizedString("SETTINGS"),
@@ -185,6 +209,7 @@ class TabBarController: UITabBarController {
                 tag: 4
             )
             var controllers: [UIViewController] = [libraryNavigationController]
+            if AppSettings.appearance.dedicatedFavoritesTab.get() { controllers.append(favoritesNavigationController) }
             if AppSettings.appearance.dedicatedBrowseTab.get() { controllers.append(browseNavigationController) }
             if AppSettings.appearance.dedicatedHistoryTab.get() { controllers.append(historyNavigationController) }
             controllers += [searchNavigationController, settingsViewController]

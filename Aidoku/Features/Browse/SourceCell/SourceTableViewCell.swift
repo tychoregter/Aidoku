@@ -38,6 +38,12 @@ class SourceTableViewCell: UITableViewCell {
 
     private var imageTask: ImageTask?
 
+    var hidesSeparator = false {
+        didSet {
+            separator.isHidden = hidesSeparator
+        }
+    }
+
     var buttonTitle: String? {
         get {
             getButton.title
@@ -160,6 +166,7 @@ class SourceTableViewCell: UITableViewCell {
         imageTask?.cancel()
         info = nil
         iconView.image = UIImage(named: "MangaPlaceholder")
+        hidesSeparator = false
     }
 
     override func setEditing(_ editing: Bool, animated: Bool) {

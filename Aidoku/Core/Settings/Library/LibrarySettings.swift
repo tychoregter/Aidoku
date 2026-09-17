@@ -42,6 +42,10 @@ struct LibrarySettings: Sendable {
             refreshMetadata,
             notifyNewChapters,
             filtersData,
+            favoritesSortOption,
+            favoritesSortAscending,
+            favoritesCurrentCategory,
+            favoritesFiltersData,
             genreFilterConfigurationData
         ]
     }
@@ -103,5 +107,11 @@ struct LibrarySettings: Sendable {
     let notifyNewChapters = SettingsKey<Bool>("Library.notifyNewChapters", default: false)
 
     let filtersData = SettingsKey<Data?>("Library.filters")
+    // Favorites is a separate Library surface, so its presentation choices must
+    // not overwrite the Library's saved sorting and filters.
+    let favoritesSortOption = SettingsKey<Int>("Favorites.sortOption", default: LibraryViewModel.SortMethod.lastOpened.rawValue)
+    let favoritesSortAscending = SettingsKey<Bool>("Favorites.sortAscending", default: false)
+    let favoritesCurrentCategory = SettingsKey<String?>("Favorites.currentCategory")
+    let favoritesFiltersData = SettingsKey<Data?>("Favorites.filters")
     let genreFilterConfigurationData = SettingsKey<Data?>("Library.genreFilterConfiguration")
 }

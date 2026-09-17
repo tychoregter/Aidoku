@@ -251,8 +251,13 @@ extension Settings {
         .init(
             title: "Navigation",
             value: .group(.init(
-                footer: "Choose whether Browse and History appear in the tab bar or in Settings.",
+                footer: "Choose up to two of Favorites, Browse, and History to appear in the tab bar; the rest remain in Settings.",
                 items: [
+                    .init(
+                        key: AppSettings.appearance.dedicatedFavoritesTab.key,
+                        title: "Dedicated Favorites Tab",
+                        value: .toggle(.init())
+                    ),
                     .init(
                         key: AppSettings.appearance.dedicatedBrowseTab.key,
                         title: "Dedicated Browse Tab",

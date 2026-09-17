@@ -17,6 +17,7 @@ struct AppearanceSettings: Sendable {
             customLandscapeRows,
             dedicatedBrowseTab,
             dedicatedHistoryTab,
+            dedicatedFavoritesTab,
             separatePinnedTitles,
             showPinnedSectionTitles,
             keepPinnedTitlesInLibrary,
@@ -35,6 +36,7 @@ struct AppearanceSettings: Sendable {
     let customLandscapeRows = SettingsKey<Int>("Appearance.customLandscapeRows", default: UIDevice.current.userInterfaceIdiom == .pad ? 6 : 4)
     let dedicatedBrowseTab = SettingsKey<Bool>("Appearance.dedicatedBrowseTab", default: false)
     let dedicatedHistoryTab = SettingsKey<Bool>("Appearance.dedicatedHistoryTab", default: false)
+    let dedicatedFavoritesTab = SettingsKey<Bool>("Appearance.dedicatedFavoritesTab", default: false)
     let separatePinnedTitles = SettingsKey<Bool>("Appearance.separatePinnedTitles", default: false)
     let showPinnedSectionTitles = SettingsKey<Bool>("Appearance.showPinnedSectionTitles", default: true)
     let keepPinnedTitlesInLibrary = SettingsKey<Bool>("Appearance.keepPinnedTitlesInLibrary", default: false)

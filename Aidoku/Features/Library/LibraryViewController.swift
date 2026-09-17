@@ -12,6 +12,10 @@ import AidokuRunner
 
 class LibraryViewController: OldMangaCollectionViewController {
 
+    typealias Scope = LibraryViewModel.Scope
+    let scope: Scope
+    private var isFavoritesTab: Bool { scope == .favorites }
+
     func scrollToTop(animated: Bool = true) {
         guard isViewLoaded else { return }
         navigationController?.navigationBar.prefersLargeTitles = true
@@ -35,7 +39,13 @@ class LibraryViewController: OldMangaCollectionViewController {
         )
         collectionView.setContentOffset(offset, animated: animated)
     }
-    let viewModel = LibraryViewModel()
+    let viewModel: LibraryViewModel
+
+    init(scope: Scope = .library) {
+        self.scope = scope
+        viewModel = LibraryViewModel(scope: scope)
+        super.init()
+    }
 
     // MARK: Bar Buttons
     private lazy var downloadBarButton = makeBarButton(
@@ -108,7 +118,8 @@ class LibraryViewController: OldMangaCollectionViewController {
     }
 
     private func showsHeader(for section: Section?) -> Bool {
-        switch section {
+        guard !isFavoritesTab else { return false }
+        return switch section {
             case .continueReading:
                 true
             case .pinned:
@@ -131,10 +142,6 @@ class LibraryViewController: OldMangaCollectionViewController {
         set {
             AppSettings.library.listView.set(newValue)
         }
-    }
-
-    override init() {
-        super.init()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -175,7 +182,7 @@ class LibraryViewController: OldMangaCollectionViewController {
     override func configure() {
         super.configure()
 
-        title = NSLocalizedString("LIBRARY")
+        title = isFavoritesTab ? "Favorites" : NSLocalizedString("LIBRARY")
 
         navigationController?.navigationBar.prefersLargeTitles = true
         collectionView.contentInset.top = 8
@@ -188,9 +195,9 @@ class LibraryViewController: OldMangaCollectionViewController {
             title: nil,
             style: .plain,
             target: self,
-            action: #selector(removeSelectedFromLibrary)
+            action: isFavoritesTab ? #selector(unfavoriteSelected) : #selector(removeSelectedFromLibrary)
         )
-        deleteButton.image = UIImage(systemName: "trash")
+        deleteButton.image = UIImage(systemName: isFavoritesTab ? "heart.slash" : "trash")
         if #unavailable(iOS 26.0) {
             deleteButton.tintColor = .systemRed
         }
@@ -212,9 +219,11 @@ class LibraryViewController: OldMangaCollectionViewController {
         // pull to refresh
         // Keep the system's default indicator color, but ensure the control
         // itself is not dimmed by the surrounding hierarchy.
-        refreshControl.alpha = 1
-        refreshControl.addTarget(self, action: #selector(updateLibraryRefresh(refreshControl:)), for: .valueChanged)
-        collectionView.refreshControl = refreshControl
+        if !isFavoritesTab {
+            refreshControl.alpha = 1
+            refreshControl.addTarget(self, action: #selector(updateLibraryRefresh(refreshControl:)), for: .valueChanged)
+            collectionView.refreshControl = refreshControl
+        }
 
         collectionView.allowsMultipleSelection = !ProcessInfo.processInfo.isMacCatalystApp
         collectionView.allowsSelectionDuringEditing = true
@@ -455,6 +464,9 @@ class LibraryViewController: OldMangaCollectionViewController {
 
         addObserver(forName: AppSettings.library.pinTitles.key) { [weak self] _ in
             guard let self else { return }
+            // Favorites is a separate, favorites-only Library scope. Pin changes
+            // must never move its titles into the Library's pinned collection.
+            guard !self.isFavoritesTab else { return }
             self.viewModel.pinType = self.viewModel.getPinType()
             Task { @MainActor in
                 await self.viewModel.loadLibrary()
@@ -566,7 +578,7 @@ class LibraryViewController: OldMangaCollectionViewController {
         }
 
         addObserver(forName: .favoriteChanged) { [weak self] _ in
-            guard let self, self.viewModel.pinType == .favorites else { return }
+            guard let self, self.isFavoritesTab || self.viewModel.pinType == .favorites else { return }
             Task { @MainActor in
                 await self.viewModel.loadLibrary()
                 self.updateDataSource()
@@ -876,13 +888,18 @@ extension LibraryViewController {
     // updates library empty message
     // should be called when category changes and when library loads initially
     func updateEmptyStack() {
-        emptyStackView.imageSystemName = "books.vertical.fill"
-        emptyStackView.title = viewModel.currentCategory == nil
-            ? NSLocalizedString("LIBRARY_EMPTY")
-            : NSLocalizedString("CATEGORY_EMPTY")
-        emptyStackView.text = viewModel.actuallyEmpty
-            ? NSLocalizedString("LIBRARY_ADD_CONTENT")
-            : NSLocalizedString("LIBRARY_ADJUST_FILTERS")
+        emptyStackView.imageSystemName = isFavoritesTab ? "heart.fill" : "books.vertical.fill"
+        if isFavoritesTab {
+            emptyStackView.title = "Favorites"
+            emptyStackView.text = "Items marked as favorite will appear here."
+        } else {
+            emptyStackView.title = viewModel.currentCategory == nil
+                ? NSLocalizedString("LIBRARY_EMPTY")
+                : NSLocalizedString("CATEGORY_EMPTY")
+            emptyStackView.text = viewModel.actuallyEmpty
+                ? NSLocalizedString("LIBRARY_ADD_CONTENT")
+                : NSLocalizedString("LIBRARY_ADJUST_FILTERS")
+        }
 
     }
 
@@ -1012,6 +1029,22 @@ extension LibraryViewController {
         }
     }
 
+    @objc func unfavoriteSelected() {
+        let selected = (collectionView.indexPathsForSelectedItems ?? []).compactMap {
+            dataSource.itemIdentifier(for: $0)
+        }
+        guard !selected.isEmpty else { return }
+        for manga in selected where viewModel.isFavorite(manga.id) {
+            viewModel.toggleFavorite(manga.id)
+            NotificationCenter.default.post(name: .favoriteChanged, object: manga.id)
+        }
+        setEditing(false, animated: true)
+        Task { @MainActor in
+            await viewModel.loadLibrary()
+            updateDataSource()
+        }
+    }
+
     @objc func addSelectedToCategories() {
         let manga = (collectionView.indexPathsForSelectedItems ?? []).compactMap {
             dataSource.itemIdentifier(for: $0)
@@ -1034,6 +1067,19 @@ extension LibraryViewController {
     }
 
     func updateDataSource() {
+        if isFavoritesTab {
+            usesSeparatedPinnedSections = false
+            var snapshot = NSDiffableDataSourceSnapshot<Section, MangaInfo>()
+            if !locked, !viewModel.manga.isEmpty {
+                snapshot.appendSections([.regular])
+                snapshot.appendItems(viewModel.manga, toSection: .regular)
+            }
+            dataSource.apply(snapshot)
+            emptyStackView.isHidden = !snapshot.itemIdentifiers.isEmpty
+            collectionView.isScrollEnabled = emptyStackView.isHidden && lockedStackView.isHidden
+            collectionView.refreshControl = nil
+            return
+        }
         let shouldSeparate = isSeparatedPinnedLayoutEnabled
             && (!viewModel.pinnedManga.isEmpty || AppSettings.appearance.showPinnedSectionTitles.get())
         if usesSeparatedPinnedSections != shouldSeparate {
@@ -1092,7 +1138,10 @@ extension LibraryViewController {
             self?.updateVisibleSectionHeaders()
         }
 
-        if usesDedicatedContinueReadingSection {
+        if isFavoritesTab {
+            // Favorites is a view of the Library, not a pin source. It must not
+            // replace global shortcuts or widget content when it refreshes.
+        } else if usesDedicatedContinueReadingSection {
             UIApplication.shared.appDelegate?.updateHomeScreenQuickActions(
                 for: viewModel.continueReadingManga,
                 isReadingPin: true,
@@ -1193,7 +1242,7 @@ extension LibraryViewController {
     private func pinTypeIconName(for pinType: LibraryViewModel.PinType) -> String {
         switch pinType {
             case .none: "pin.slash"
-            case .favorites: "star"
+            case .favorites: "heart"
             case .started: "clock"
             case .unread: "eye.slash"
             case .completed: "checkmark.circle"
@@ -1943,7 +1992,6 @@ extension LibraryViewController {
                 }
             }
             var filterChildren: [UIMenuElement] = [
-                filterAction(for: .favorite),
                 filterAction(for: .started),
                 filterAction(for: .caughtUp),
                 filterAction(for: .completed),
@@ -1990,6 +2038,9 @@ extension LibraryViewController {
                     }
                 )
             ]
+            if !self.isFavoritesTab {
+                filterChildren.insert(filterAction(for: .favorite), at: 0)
+            }
             if self.sourceFilterKeys.count > 1 {
                 filterChildren.append(
                     UIMenu(
@@ -2045,9 +2096,7 @@ extension LibraryViewController {
                 filterMenu = filterMenu.replacingChildren(filterMenu.children + [self.removeFilterAction()])
             }
 
-            let pinTitlesMenu = self.makePinTitlesMenu()
-
-            completion([filterMenu, pinTitlesMenu])
+            completion(self.isFavoritesTab ? [filterMenu] : [filterMenu, self.makePinTitlesMenu()])
         }
 
         moreBarButton.menu = UIMenu(
@@ -2295,7 +2344,7 @@ extension LibraryViewController {
                 let isFavorite = self.viewModel.isFavorite(manga.id)
                 actions.append(UIAction(
                     title: NSLocalizedString(isFavorite ? "UNFAVORITE" : "FAVORITE"),
-                    image: UIImage(systemName: isFavorite ? "star.slash" : "star")
+                    image: UIImage(systemName: isFavorite ? "heart.slash" : "heart")
                 ) { _ in
                     self.viewModel.toggleFavorite(manga.id)
                     Task {
@@ -2430,11 +2479,22 @@ extension LibraryViewController {
             }
 
             bottomMenuChildren.append(UIAction(
-                title: NSLocalizedString("REMOVE_FROM_LIBRARY"),
-                image: UIImage(systemName: "trash"),
+                title: self.isFavoritesTab ? NSLocalizedString("UNFAVORITE") : NSLocalizedString("REMOVE_FROM_LIBRARY"),
+                image: UIImage(systemName: self.isFavoritesTab ? "heart.slash" : "trash"),
                 attributes: .destructive
             ) { _ in
-                self.removeFromLibrary(mangaInfo: mangaInfo)
+                if self.isFavoritesTab {
+                    for item in mangaInfo where self.viewModel.isFavorite(item.id) {
+                        self.viewModel.toggleFavorite(item.id)
+                        NotificationCenter.default.post(name: .favoriteChanged, object: item.id)
+                    }
+                    Task { @MainActor in
+                        await self.viewModel.loadLibrary()
+                        self.updateDataSource()
+                    }
+                } else {
+                    self.removeFromLibrary(mangaInfo: mangaInfo)
+                }
             })
 
             actions.append(UIMenu(options: .displayInline, children: bottomMenuChildren))

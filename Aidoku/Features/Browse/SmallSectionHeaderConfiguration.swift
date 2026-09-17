@@ -34,15 +34,19 @@ class SmallSectionHeaderContentView: UIView, UIContentView {
         self.configuration = configuration
         super.init(frame: .zero)
 
-        titleLabel.font = .systemFont(ofSize: 16, weight: .medium)
+        titleLabel.font = UIFontMetrics(forTextStyle: .title3).scaledFont(
+            for: .systemFont(ofSize: 20, weight: .semibold)
+        )
+        titleLabel.adjustsFontForContentSizeCategory = true
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
 
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: topAnchor),
-            titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor),
-            titleLabel.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor, constant: 12),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: layoutMarginsGuide.trailingAnchor, constant: -12)
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 12),
+            titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0),
+            // Align section titles with source icons rather than the table's edge.
+            titleLabel.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor, constant: 9.5),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: layoutMarginsGuide.trailingAnchor)
         ])
 
         configure()

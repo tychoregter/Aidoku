@@ -343,7 +343,24 @@ struct SettingView: View {
     }
 
     private var disabled: Bool {
-        !requires || requiresFalse
+        !requires || requiresFalse || navigationTabLimitDisabled
+    }
+
+    /// Keep the configurable tab bar compact. Existing enabled tabs remain
+    /// tappable so one can be turned off; only a third, currently-off choice is
+    /// disabled.
+    private var navigationTabLimitDisabled: Bool {
+        let keys = [
+            AppSettings.appearance.dedicatedFavoritesTab.key,
+            AppSettings.appearance.dedicatedBrowseTab.key,
+            AppSettings.appearance.dedicatedHistoryTab.key
+        ]
+        // During Toggle.onChange, `toggleValue` has already flipped but the
+        // persisted value has not. Use the stored value so an enabled tab can
+        // always be switched off even when two tabs are currently enabled.
+        let isPersistedOn: Bool = SettingsStore.shared.get(key: setting.key)
+        guard keys.contains(setting.key), !isPersistedOn else { return false }
+        return keys.filter { SettingsStore.shared.get(key: $0) as Bool }.count >= 2
     }
 
     private let disabledOpacity: CGFloat = 0.5

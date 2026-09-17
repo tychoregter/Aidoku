@@ -11,6 +11,10 @@ import UIKit
 
 @MainActor
 class LibraryViewModel {
+    enum Scope {
+        case library
+        case favorites
+    }
     private static let favoritesKey = "library.favoriteMangaIdentifiers"
 
     var manga: [MangaInfo] = []
@@ -131,9 +135,10 @@ class LibraryViewModel {
         static let downloaded = BadgeType(rawValue: 1 << 1)
     }
 
-    lazy var pinType: PinType = getPinType()
-    lazy var sortMethod = SortMethod(rawValue: AppSettings.library.sortOption.get()) ?? .lastOpened
-    lazy var sortAscending = AppSettings.library.sortAscending.get()
+    let scope: Scope
+    var pinType: PinType
+    var sortMethod: SortMethod
+    var sortAscending: Bool
     lazy var badgeType: BadgeType = {
         var type: BadgeType = []
         if AppSettings.library.unreadChapterBadges.get() {
@@ -162,9 +167,13 @@ class LibraryViewModel {
     var categories: [String] = []
     var filterGroups: [FilterGroup] = []
     var availableGenres: [LibraryFilter.Genre] = []
-    lazy var currentCategory: String? = AppSettings.library.currentCategory.get() {
+    var currentCategory: String? {
         didSet {
-            AppSettings.library.currentCategory.set(currentCategory)
+            if scope == .favorites {
+                AppSettings.library.favoritesCurrentCategory.set(currentCategory)
+            } else {
+                AppSettings.library.currentCategory.set(currentCategory)
+            }
         }
     }
     var isInRealCategory: Bool {
@@ -192,12 +201,29 @@ class LibraryViewModel {
 
     init(
         loadsDedicatedContinueReading: Bool = true,
-        usesContinueReadingSettings: Bool = false
+        usesContinueReadingSettings: Bool = false,
+        scope: Scope = .library
     ) {
+        self.scope = scope
         self.loadsDedicatedContinueReading = loadsDedicatedContinueReading
         self.usesContinueReadingSettings = usesContinueReadingSettings
+        let savedPinType = PinType(rawValue: AppSettings.library.pinTitles.get()) ?? .none
+        pinType = (scope == .favorites || (Self.isDedicatedContinueReadingEnabled && savedPinType == .started))
+            ? .none
+            : savedPinType
+        sortMethod = SortMethod(rawValue: scope == .favorites
+            ? AppSettings.library.favoritesSortOption.get()
+            : AppSettings.library.sortOption.get()) ?? .lastOpened
+        sortAscending = scope == .favorites
+            ? AppSettings.library.favoritesSortAscending.get()
+            : AppSettings.library.sortAscending.get()
+        currentCategory = scope == .favorites
+            ? AppSettings.library.favoritesCurrentCategory.get()
+            : AppSettings.library.currentCategory.get()
         favoriteIds = Set(UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? [])
-        let filtersData = AppSettings.library.filtersData.get()
+        let filtersData = scope == .favorites
+            ? AppSettings.library.favoritesFiltersData.get()
+            : AppSettings.library.filtersData.get()
         if let filtersData {
             let decodedFilters = (try? JSONDecoder().decode([LibraryFilter].self, from: filtersData)) ?? []
             var retainedGenre = false
@@ -209,7 +235,11 @@ class LibraryViewModel {
             }
             self.filters = filters
             if filters != decodedFilters, let migratedFiltersData = try? JSONEncoder().encode(filters) {
-                AppSettings.library.filtersData.set(migratedFiltersData)
+                if scope == .favorites {
+                    AppSettings.library.favoritesFiltersData.set(migratedFiltersData)
+                } else {
+                    AppSettings.library.filtersData.set(migratedFiltersData)
+                }
             }
         } else {
             self.filters = []
@@ -225,6 +255,7 @@ class LibraryViewModel {
             favoriteIds.remove(mangaId.description)
         }
         UserDefaults.standard.set(Array(favoriteIds), forKey: Self.favoritesKey)
+        NotificationCenter.default.post(name: .favoriteChanged, object: mangaId)
     }
 }
 
@@ -358,6 +389,7 @@ extension LibraryViewModel {
             )
         )
 
+        let isFavoritesOnly = scope == .favorites
         let (
             success,
             actuallyEmpty,
@@ -368,7 +400,7 @@ extension LibraryViewModel {
             sourceKeys,
             unappliedFilters,
             availableGenres
-        ) = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [sortMethod, sortAscending, pinType, favoriteIds, pinTitlesIgnoreFilters, ignoredPinFilterMethods, nonLibraryHistoryDates] context in
+        ) = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [sortMethod, sortAscending, pinType, favoriteIds, pinTitlesIgnoreFilters, ignoredPinFilterMethods, nonLibraryHistoryDates, isFavoritesOnly] context in
             var pinnedManga: [MangaInfo] = []
             var libraryPinnedManga: [MangaInfo] = []
             var manga: [MangaInfo] = []
@@ -428,6 +460,10 @@ extension LibraryViewModel {
                     // ensure the manga hasn't already been accounted for
                     ids.insert(mangaObject.identifier).inserted
                 else {
+                    continue
+                }
+
+                guard !isFavoritesOnly || favoriteIds.contains(mangaObject.identifier.description) else {
                     continue
                 }
 
@@ -800,7 +836,7 @@ extension LibraryViewModel {
         }.sorted().reduce(into: []) { result, value in
             if result.last != value { result.append(value) }
         }
-        self.actuallyEmpty = actuallyEmpty
+        self.actuallyEmpty = scope == .favorites ? manga.isEmpty : actuallyEmpty
 
         await fetchUnreads(skipSortCheck: true)
         await fetchDownloadCounts()
@@ -1217,11 +1253,19 @@ extension LibraryViewModel {
         }
         if sortAscending != ascending {
             sortAscending = ascending
-            AppSettings.library.sortAscending.set(sortAscending)
+            if scope == .favorites {
+                AppSettings.library.favoritesSortAscending.set(sortAscending)
+            } else {
+                AppSettings.library.sortAscending.set(sortAscending)
+            }
         }
         if sortMethod != method {
             sortMethod = method
-            AppSettings.library.sortOption.set(sortMethod.rawValue)
+            if scope == .favorites {
+                AppSettings.library.favoritesSortOption.set(sortMethod.rawValue)
+            } else {
+                AppSettings.library.sortOption.set(sortMethod.rawValue)
+            }
         }
         if pinType == .started {
             // Started titles always use their own Last Read ordering.
@@ -1256,7 +1300,11 @@ extension LibraryViewModel {
     private func saveFilters() {
         let filtersData = try? JSONEncoder().encode(filters)
         if let filtersData {
-            AppSettings.library.filtersData.set(filtersData)
+            if scope == .favorites {
+                AppSettings.library.favoritesFiltersData.set(filtersData)
+            } else {
+                AppSettings.library.filtersData.set(filtersData)
+            }
         }
     }
 
