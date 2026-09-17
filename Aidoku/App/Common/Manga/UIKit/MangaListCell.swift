@@ -17,6 +17,8 @@ class MangaListCell: UICollectionViewCell {
 
     private let nsfwCoverView = NSFWCoverView()
     private var hidesNSFWCover = false
+    private var originalCoverImage: UIImage?
+    private var grayscalesCaughtUpCover = false
 
     private var isEditing = false
 
@@ -177,6 +179,8 @@ class MangaListCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         coverImageView.image = UIImage(named: "MangaPlaceholder")
+        originalCoverImage = nil
+        grayscalesCaughtUpCover = false
         imageTask?.cancel()
         imageTask = nil
         setBadgeVisible(false)
@@ -294,6 +298,21 @@ extension MangaListCell {
         nsfwCoverView.configure(title: title, image: coverImageView.image)
         coverImageView.bringSubviewToFront(nsfwCoverView)
     }
+
+    func setCaughtUp(_ isCaughtUp: Bool) {
+        grayscalesCaughtUpCover = isCaughtUp && AppSettings.appearance.grayscaleCaughtUpCovers.get()
+        if grayscalesCaughtUpCover {
+            coverImageView.stopAnimatingGIF()
+        }
+        updateCoverImage()
+    }
+
+    private func updateCoverImage() {
+        guard let originalCoverImage else { return }
+        coverImageView.image = grayscalesCaughtUpCover
+            ? MangaCoverImageAppearance.grayscale(originalCoverImage)
+            : originalCoverImage
+    }
 }
 
 extension MangaListCell {
@@ -346,18 +365,24 @@ extension MangaListCell {
                         return
                     }
                     Task { @MainActor in
+                        self.originalCoverImage = response.image
+                        let coverImage = self.grayscalesCaughtUpCover
+                            ? MangaCoverImageAppearance.grayscale(response.image)
+                            : response.image
                         if cached || self.hidesNSFWCover {
-                            self.coverImageView.image = response.image
+                            self.coverImageView.image = coverImage
                         } else {
                             UIView.transition(
                                 with: self.coverImageView,
                                 duration: CATransaction.animationDuration(),
                                 options: .transitionCrossDissolve
                             ) {
-                                self.coverImageView.image = response.image
+                                self.coverImageView.image = coverImage
                             }
                         }
-                        if response.container.type == .gif, let data = response.container.data {
+                        if !self.grayscalesCaughtUpCover,
+                           response.container.type == .gif,
+                           let data = response.container.data {
                             self.coverImageView.animate(withGIFData: data)
                         }
                         if self.hidesNSFWCover {

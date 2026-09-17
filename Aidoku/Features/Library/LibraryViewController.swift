@@ -469,7 +469,28 @@ class LibraryViewController: OldMangaCollectionViewController {
                 self.updateDataSource()
             }
         }
-        addObserver(forName: AppSettings.library.hideCaughtUpPinnedTitles.key) { [weak self] _ in
+        addObserver(forName: AppSettings.library.continueReadingHideCaughtUpTitles.key) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.viewModel.loadLibrary()
+                self.updateDataSource()
+            }
+        }
+        addObserver(forName: AppSettings.library.continueReadingIncludeNonLibraryTitles.key) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.viewModel.loadLibrary()
+                self.updateDataSource()
+            }
+        }
+        addObserver(forName: AppSettings.library.continueReadingIgnoreFilters.key) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.viewModel.loadLibrary()
+                self.updateDataSource()
+            }
+        }
+        addObserver(forName: AppSettings.library.continueReadingIgnoredFilters.key) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
                 await self.viewModel.loadLibrary()
@@ -528,6 +549,14 @@ class LibraryViewController: OldMangaCollectionViewController {
             }
         }
         addObserver(forName: AppSettings.appearance.blurNSFWCovers.key) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                var snapshot = self.dataSource.snapshot()
+                snapshot.reconfigureItems(snapshot.itemIdentifiers)
+                self.dataSource.apply(snapshot)
+            }
+        }
+        addObserver(forName: AppSettings.appearance.grayscaleCaughtUpCovers.key) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 var snapshot = self.dataSource.snapshot()
@@ -694,6 +723,7 @@ class LibraryViewController: OldMangaCollectionViewController {
 
         cell.badgeNumber = viewModel.badgeType.contains(.unread) ? info.unread : 0
         cell.badgeNumber2 = viewModel.badgeType.contains(.downloaded) ? info.downloads : 0
+        cell.setCaughtUp(info.unread == 0)
 
         cell.setEditing(self.isEditing, animated: false)
     }
@@ -703,6 +733,7 @@ class LibraryViewController: OldMangaCollectionViewController {
 
         cell.badgeNumber = viewModel.badgeType.contains(.unread) ? info.unread : 0
         cell.badgeNumber2 = viewModel.badgeType.contains(.downloaded) ? info.downloads : 0
+        cell.setCaughtUp(info.unread == 0)
 
         cell.setEditing(isEditing, animated: false)
     }

@@ -412,6 +412,7 @@ extension SettingsView {
             imageCache.removeAll()
         }
         await LibraryPagePreviewCache.shared.removeAll()
+        await WebtoonPageDimensionCache.shared.removeAll()
     }
 
     func resetSettings() {

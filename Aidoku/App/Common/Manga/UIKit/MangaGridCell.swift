@@ -59,6 +59,8 @@ class MangaGridCell: UICollectionViewCell {
     var isEditing = false
     private var isPlaceholder = false
     private var hidesNSFWCover = false
+    private var originalCoverImage: UIImage?
+    private var grayscalesCaughtUpCover = false
 
     // shadow shown when in selection mode
     private lazy var shadowOverlayView: UIView = {
@@ -266,6 +268,8 @@ class MangaGridCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         imageView.image = UIImage(named: "MangaPlaceholder")
+        originalCoverImage = nil
+        grayscalesCaughtUpCover = false
         imageTask?.cancel()
         imageTask = nil
         highlightView.alpha = 0
@@ -285,6 +289,21 @@ class MangaGridCell: UICollectionViewCell {
         contentView.bringSubviewToFront(highlightView)
         contentView.bringSubviewToFront(shadowOverlayView)
         contentView.bringSubviewToFront(selectionView)
+    }
+
+    func setCaughtUp(_ isCaughtUp: Bool) {
+        grayscalesCaughtUpCover = isCaughtUp && AppSettings.appearance.grayscaleCaughtUpCovers.get()
+        if grayscalesCaughtUpCover {
+            imageView.stopAnimatingGIF()
+        }
+        updateCoverImage()
+    }
+
+    private func updateCoverImage() {
+        guard let originalCoverImage else { return }
+        imageView.image = grayscalesCaughtUpCover
+            ? MangaCoverImageAppearance.grayscale(originalCoverImage)
+            : originalCoverImage
     }
 
     func setPlaceholder(
@@ -415,14 +434,20 @@ extension MangaGridCell {
                         return
                     }
                     Task { @MainActor in
+                        self.originalCoverImage = response.image
+                        let coverImage = self.grayscalesCaughtUpCover
+                            ? MangaCoverImageAppearance.grayscale(response.image)
+                            : response.image
                         if cached {
-                            self.imageView.image = response.image
+                            self.imageView.image = coverImage
                         } else {
                             UIView.transition(with: self.imageView, duration: 0.3, options: .transitionCrossDissolve) {
-                                self.imageView.image = response.image
+                                self.imageView.image = coverImage
                             }
                         }
-                        if response.container.type == .gif, let data = response.container.data {
+                        if !self.grayscalesCaughtUpCover,
+                           response.container.type == .gif,
+                           let data = response.container.data {
                             self.imageView.animate(withGIFData: data)
                         }
                         if self.hidesNSFWCover {
@@ -441,6 +466,39 @@ extension MangaGridCell {
                     }
             }
         }
+    }
+}
+
+enum MangaCoverImageAppearance {
+    private static let grayscaleCache: NSCache<UIImage, UIImage> = {
+        let cache = NSCache<UIImage, UIImage>()
+        cache.totalCostLimit = 64 * 1_024 * 1_024
+        return cache
+    }()
+
+    static func grayscale(_ image: UIImage) -> UIImage {
+        if let cachedImage = grayscaleCache.object(forKey: image) {
+            return cachedImage
+        }
+
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        format.opaque = false
+        let bounds = CGRect(origin: .zero, size: image.size)
+        let grayscaleImage = UIGraphicsImageRenderer(size: image.size, format: format).image { context in
+            image.draw(in: bounds)
+            context.cgContext.setBlendMode(.saturation)
+            context.cgContext.setFillColor(UIColor.black.cgColor)
+            context.cgContext.fill(bounds)
+        }
+        let pixelWidth = image.size.width * image.scale
+        let pixelHeight = image.size.height * image.scale
+        grayscaleCache.setObject(
+            grayscaleImage,
+            forKey: image,
+            cost: Int(pixelWidth * pixelHeight * 4)
+        )
+        return grayscaleImage
     }
 }
 

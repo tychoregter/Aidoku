@@ -23,9 +23,12 @@ struct LibrarySettings: Sendable {
             unreadChapterBadges,
             downloadedChapterBadges,
             pinTitles,
-            hideCaughtUpPinnedTitles,
             pinTitlesIgnoreFilters,
             pinTitlesIgnoredFilters,
+            continueReadingIncludeNonLibraryTitles,
+            continueReadingHideCaughtUpTitles,
+            continueReadingIgnoreFilters,
+            continueReadingIgnoredFilters,
             lockLibrary,
             currentCategory,
             defaultCategory,
@@ -63,10 +66,25 @@ struct LibrarySettings: Sendable {
     let unreadChapterBadges = SettingsKey<Bool>("Library.unreadChapterBadges", default: true)
     let downloadedChapterBadges = SettingsKey<Bool>("Library.downloadedChapterBadges", default: true)
     let pinTitles = SettingsKey<String>("Library.pinTitles", default: LibraryViewModel.PinType.none.rawValue)
-    let hideCaughtUpPinnedTitles = SettingsKey<Bool>("Library.hideCaughtUpPinnedTitles", default: false)
     let pinTitlesIgnoreFilters = SettingsKey<Bool>("Library.pinTitlesIgnoreFilters", default: false)
     let pinTitlesIgnoredFilters = SettingsKey<[String]>(
         "Library.pinTitlesIgnoredFilters",
+        default: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.pinTitlesIgnoreFilterIdentifier)
+    )
+    let continueReadingIncludeNonLibraryTitles = SettingsKey<Bool>(
+        "Library.continueReadingIncludeNonLibraryTitles",
+        default: true
+    )
+    let continueReadingHideCaughtUpTitles = SettingsKey<Bool>(
+        "Library.hideCaughtUpPinnedTitles",
+        default: false
+    )
+    let continueReadingIgnoreFilters = SettingsKey<Bool>(
+        "Library.continueReadingIgnoreFilters",
+        default: false
+    )
+    let continueReadingIgnoredFilters = SettingsKey<[String]>(
+        "Library.continueReadingIgnoredFilters",
         default: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.pinTitlesIgnoreFilterIdentifier)
     )
     let lockLibrary = SettingsKey<Bool>("Library.lockLibrary", default: false)

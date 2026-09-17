@@ -19,6 +19,7 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
     let page: Page
     let temporaryPageStore: ReaderTemporaryPageStore
     let pillarboxLayoutState: ReaderPillarboxLayoutState
+    let dimensionCacheKey: String
 
     weak var delegate: ReaderWebtoonViewController?
 
@@ -26,6 +27,14 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
         didSet {
             guard let image, image.size.width > 0 else { return }
             ratio = image.size.height / image.size.width
+            let size = image.size
+            delegate?.pageDimensionDidChange(size: size, for: dimensionCacheKey)
+            Task {
+                await WebtoonPageDimensionCache.shared.store(
+                    size: size,
+                    for: dimensionCacheKey
+                )
+            }
         }
     }
     var text: String?
@@ -86,12 +95,16 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
         source: AidokuRunner.Source?,
         page: Page,
         temporaryPageStore: ReaderTemporaryPageStore,
-        pillarboxLayoutState: ReaderPillarboxLayoutState
+        pillarboxLayoutState: ReaderPillarboxLayoutState,
+        dimensionCacheKey: String,
+        cachedRatio: CGFloat?
     ) {
         self.source = source
         self.page = page
         self.temporaryPageStore = temporaryPageStore
         self.pillarboxLayoutState = pillarboxLayoutState
+        self.dimensionCacheKey = dimensionCacheKey
+        ratio = cachedRatio
         super.init()
 
         automaticallyManagesSubnodes = true

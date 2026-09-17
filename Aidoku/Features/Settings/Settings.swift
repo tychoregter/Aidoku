@@ -223,6 +223,19 @@ extension Settings {
                     value: "Replace covers marked as NSFW with their dominant color in the Library.",
                     table: nil
                 )))
+            ),
+            .init(
+                key: AppSettings.appearance.grayscaleCaughtUpCovers.key,
+                title: Bundle.main.localizedString(
+                    forKey: "GRAYSCALE_CAUGHT_UP_COVERS",
+                    value: "Black & White Caught Up Covers",
+                    table: nil
+                ),
+                value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                    forKey: "GRAYSCALE_CAUGHT_UP_COVERS_TEXT",
+                    value: "Display covers for caught-up titles in black and white in the Library.",
+                    table: nil
+                )))
             )
         ]))),
         .init(
@@ -291,51 +304,81 @@ extension Settings {
     ]
 
     private static let pinSettings: [Setting] = [
-        .init(value: .group(.init(items: [
-            .init(
-                key: AppSettings.library.pinTitles.key,
-                title: NSLocalizedString("PIN_TITLES"),
-                value: .select(.init(
-                    values: LibraryViewModel.PinType.allCases.map(\.rawValue),
-                    titles: LibraryViewModel.PinType.allCases.map(\.title)
-                ))
-            ),
-            .init(
-                key: AppSettings.appearance.dedicatedContinueReadingSection.key,
-                title: Bundle.main.localizedString(
-                    forKey: "DEDICATED_CONTINUE_READING_SECTION",
-                    value: "Continue Reading",
-                    table: nil
+        .init(
+            title: NSLocalizedString("PINNED"),
+            value: .group(.init(items: [
+                .init(
+                    key: AppSettings.library.pinTitles.key,
+                    title: NSLocalizedString("PIN_TITLES"),
+                    value: .select(.init(
+                        values: LibraryViewModel.PinType.allCases.map(\.rawValue),
+                        titles: LibraryViewModel.PinType.allCases.map(\.title)
+                    ))
                 ),
-                value: .toggle(.init(subtitle: Bundle.main.localizedString(
-                    forKey: "DEDICATED_CONTINUE_READING_SECTION_TEXT",
-                    value: "Always show Continue Reading above the selected pinned section.",
-                    table: nil
-                )))
-            ),
-            .init(
-                key: AppSettings.library.hideCaughtUpPinnedTitles.key,
-                title: "Hide Caught Up Titles",
-                requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
-                value: .toggle(.init(subtitle: "Hide caught-up titles from the pinned section only."))
-            ),
-            .init(
-                key: AppSettings.library.pinTitlesIgnoreFilters.key,
-                title: "Ignore Filters",
-                requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
-                value: .toggle(.init(subtitle: "Always show pinned titles."))
-            ),
-            .init(
-                key: AppSettings.library.pinTitlesIgnoredFilters.key,
-                title: "Ignored Filters",
-                requires: AppSettings.library.pinTitlesIgnoreFilters.key,
-                requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
-                value: .multiselect(.init(
-                    values: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.pinTitlesIgnoreFilterIdentifier),
-                    titles: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.title)
-                ))
-            )
-        ]))),
+                .init(
+                    key: AppSettings.library.pinTitlesIgnoreFilters.key,
+                    title: "Ignore Filters",
+                    requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
+                    value: .toggle(.init(subtitle: "Always show pinned titles."))
+                ),
+                .init(
+                    key: AppSettings.library.pinTitlesIgnoredFilters.key,
+                    title: "Ignored Filters",
+                    requires: AppSettings.library.pinTitlesIgnoreFilters.key,
+                    requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
+                    value: .multiselect(.init(
+                        values: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.pinTitlesIgnoreFilterIdentifier),
+                        titles: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.title)
+                    ))
+                )
+            ]))
+        ),
+        .init(
+            title: NSLocalizedString("CONTINUE_READING"),
+            value: .group(.init(items: [
+                .init(
+                    key: AppSettings.appearance.dedicatedContinueReadingSection.key,
+                    title: Bundle.main.localizedString(
+                        forKey: "DEDICATED_CONTINUE_READING_SECTION",
+                        value: "Continue Reading",
+                        table: nil
+                    ),
+                    value: .toggle(.init(subtitle: Bundle.main.localizedString(
+                        forKey: "DEDICATED_CONTINUE_READING_SECTION_TEXT",
+                        value: "Always show Continue Reading above the selected pinned section.",
+                        table: nil
+                    )))
+                ),
+                .init(
+                    key: AppSettings.library.continueReadingIncludeNonLibraryTitles.key,
+                    title: "Include Titles Outside Library",
+                    requiresFalse: "\(AppSettings.appearance.dedicatedContinueReadingSection.key)==0",
+                    value: .toggle(.init(subtitle: "Show titles from reading history even when they are not in the Library."))
+                ),
+                .init(
+                    key: AppSettings.library.continueReadingHideCaughtUpTitles.key,
+                    title: "Hide Caught Up Titles",
+                    requiresFalse: "\(AppSettings.appearance.dedicatedContinueReadingSection.key)==0",
+                    value: .toggle(.init(subtitle: "Hide caught-up titles from Continue Reading."))
+                ),
+                .init(
+                    key: AppSettings.library.continueReadingIgnoreFilters.key,
+                    title: "Ignore Filters",
+                    requiresFalse: "\(AppSettings.appearance.dedicatedContinueReadingSection.key)==0",
+                    value: .toggle(.init(subtitle: "Always show Continue Reading titles."))
+                ),
+                .init(
+                    key: AppSettings.library.continueReadingIgnoredFilters.key,
+                    title: "Ignored Filters",
+                    requires: AppSettings.library.continueReadingIgnoreFilters.key,
+                    requiresFalse: "\(AppSettings.appearance.dedicatedContinueReadingSection.key)==0",
+                    value: .multiselect(.init(
+                        values: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.pinTitlesIgnoreFilterIdentifier),
+                        titles: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.title)
+                    ))
+                )
+            ]))
+        ),
         .init(
             title: NSLocalizedString("APPEARANCE"),
             value: .group(.init(

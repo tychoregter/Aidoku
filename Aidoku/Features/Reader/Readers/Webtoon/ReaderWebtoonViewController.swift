@@ -57,6 +57,8 @@ class ReaderWebtoonViewController: ZoomableCollectionViewController {
     // Stores the last calculated page number
     private var previousPage = 0
 
+    private var pageDimensionRatios: [String: CGFloat] = [:]
+
     private var autoScrollDisplayLink: CADisplayLink?
     private var autoScrollLastTimestamp: CFTimeInterval?
     private var autoScrollPausedForUserInteraction = false
@@ -669,16 +671,15 @@ extension ReaderWebtoonViewController {
         // queue remove last section if we have three already
 //        let removeLast = chapters.count >= 3
 
-        chapters.insert(prevChapter, at: 0)
-        pages.insert(
-            [Page(
+        let previousPages = [Page(
                 type: .prevInfoPage,
                 sourceId: viewModel.source?.key ?? viewModel.manga.sourceKey,
                 chapterId: prevChapter.key,
                 index: -1
-            )]  + viewModel.preloadedPages,
-            at: 0
-        )
+            )] + viewModel.preloadedPages
+        await loadPageDimensions(for: previousPages)
+        chapters.insert(prevChapter, at: 0)
+        pages.insert(previousPages, at: 0)
 
         let layout = collectionNode.collectionViewLayout as? VerticalContentOffsetPreservingLayout
         layout?.isInsertingCellsAbove = true
@@ -723,13 +724,15 @@ extension ReaderWebtoonViewController {
         // queue remove first section if we have three already
 //        let removeFirst = chapters.count >= 3
 
-        chapters.append(nextChapter)
-        pages.append(viewModel.preloadedPages + [Page(
+        let nextPages = viewModel.preloadedPages + [Page(
             type: .nextInfoPage,
             sourceId: viewModel.source?.key ?? viewModel.manga.sourceKey,
             chapterId: nextChapter.id,
             index: -2
-        )])
+        )]
+        await loadPageDimensions(for: nextPages)
+        chapters.append(nextChapter)
+        pages.append(nextPages)
 
         // disable animations and adjust offset before re-enabling
         CATransaction.begin()
@@ -840,7 +843,10 @@ extension ReaderWebtoonViewController: ReaderReaderDelegate {
         let boundedValue = min(max(value, 0), 1)
 
         scrollView.setContentOffset(
-            CGPoint(x: collectionNode.contentOffset.x, y: range.start + range.distance * boundedValue),
+            CGPoint(
+                x: collectionNode.contentOffset.x,
+                y: range.start + range.distance * boundedValue
+            ),
             animated: false
         )
 
@@ -903,7 +909,98 @@ extension ReaderWebtoonViewController: ReaderReaderDelegate {
     private func currentChapterScrollProgress() -> CGFloat? {
         guard let range = currentChapterScrollRange() else { return nil }
         guard range.distance > 0 else { return 0 }
-        return min(max((scrollView.contentOffset.y - range.start) / range.distance, 0), 1)
+        let offset = min(max(scrollView.contentOffset.y, range.start), range.start + range.distance)
+        return min(max((offset - range.start) / range.distance, 0), 1)
+    }
+
+    private func pageDimensionKey(for page: Page) -> String {
+        WebtoonPageDimensionCache.key(
+            sourceKey: viewModel.manga.sourceKey,
+            mangaKey: viewModel.manga.key,
+            chapterKey: page.chapterId,
+            pageIndex: page.index
+        )
+    }
+
+    private func loadCachedPageDimensions(for pages: [Page]) async {
+        let keys = pages
+            .filter { $0.type == .imagePage }
+            .map(pageDimensionKey(for:))
+        pageDimensionRatios.merge(
+            await WebtoonPageDimensionCache.shared.ratios(for: keys),
+            uniquingKeysWith: { _, newValue in newValue }
+        )
+    }
+
+    func pageDimensionDidChange(size: CGSize, for key: String) {
+        guard size.width > 0, size.height > 0 else { return }
+        let ratio = size.height / size.width
+        let previousRatio = pageDimensionRatios[key]
+        pageDimensionRatios[key] = ratio
+        guard previousRatio == nil || abs((previousRatio ?? 0) - ratio) > 0.001 else { return }
+
+        // The node applies its new size immediately after setting the image.
+        // Re-read the chapter's real range on the next run-loop pass so the
+        // percentage label and scrubber track any remaining size corrections.
+        DispatchQueue.main.async { [weak self] in
+            guard
+                let self,
+                self.readingMode == .webtoon,
+                !self.isSliding,
+                !self.isZooming,
+                let progress = self.currentChapterScrollProgress()
+            else { return }
+            self.zoomView.adjustContentSize()
+            self.delegate?.setWebtoonProgress(progress, page: self.getCurrentPage())
+        }
+    }
+
+    /// Resolves every available page ratio before the chapter is laid out.
+    /// Cached values are used immediately; only missing values require a small
+    /// partial image request, with bounded concurrency to avoid flooding a source.
+    private func loadPageDimensions(for pages: [Page]) async {
+        await loadCachedPageDimensions(for: pages)
+        let pendingPages = pages.filter {
+            $0.type == .imagePage && pageDimensionRatios[pageDimensionKey(for: $0)] == nil
+        }
+        guard !pendingPages.isEmpty else { return }
+
+        let source = viewModel.source
+        let batchSize = 6
+        for startIndex in stride(from: 0, to: pendingPages.count, by: batchSize) {
+            guard !Task.isCancelled else { return }
+            let endIndex = min(startIndex + batchSize, pendingPages.count)
+            let batch = Array(pendingPages[startIndex..<endIndex])
+            let requests = batch.map { (pageDimensionKey(for: $0), $0) }
+            let dimensions = await withTaskGroup(
+                of: (String, CGSize)?.self,
+                returning: [(String, CGSize)].self
+            ) { group in
+                for (key, page) in requests {
+                    group.addTask {
+                        if let ratio = await WebtoonPageDimensionCache.shared.ratio(for: key) {
+                            return (key, CGSize(width: 1, height: ratio))
+                        }
+                        guard let size = await WebtoonPageDimensionLoader.dimensions(
+                            for: page,
+                            source: source
+                        ) else { return nil }
+                        await WebtoonPageDimensionCache.shared.store(size: size, for: key)
+                        return (key, size)
+                    }
+                }
+                return await group.reduce(into: []) { result, value in
+                    if let value {
+                        result.append(value)
+                    }
+                }
+            }
+
+            guard !Task.isCancelled else { return }
+            for (key, size) in dimensions where size.width > 0 && size.height > 0 {
+                pageDimensionRatios[key] = size.height / size.width
+            }
+        }
     }
 
     func setChapter(_ chapter: AidokuRunner.Chapter, startPage: Int) {
@@ -939,6 +1036,8 @@ extension ReaderWebtoonViewController: ReaderReaderDelegate {
                     index: -2
                 )
             ]]
+
+            await loadPageDimensions(for: pages[0])
 
             var startPage = startPage
             if startPage < 1 {
@@ -1016,7 +1115,9 @@ extension ReaderWebtoonViewController: ASCollectionDataSource {
                     source: self.viewModel.source,
                     page: page,
                     temporaryPageStore: temporaryPageStore,
-                    pillarboxLayoutState: self.pillarboxLayoutState
+                    pillarboxLayoutState: self.pillarboxLayoutState,
+                    dimensionCacheKey: self.pageDimensionKey(for: page),
+                    cachedRatio: self.pageDimensionRatios[self.pageDimensionKey(for: page)]
                 )
                 cell.delegate = self
                 if #available(iOS 18.0, *) {

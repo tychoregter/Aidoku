@@ -179,6 +179,7 @@ class LibraryViewModel {
     }
     private(set) var actuallyEmpty = true
     private let loadsDedicatedContinueReading: Bool
+    private let usesContinueReadingSettings: Bool
 
     // Several independent notifications can request a library reload at the
     // same time. Since this type is main-actor isolated, each load can suspend
@@ -189,8 +190,12 @@ class LibraryViewModel {
     private var libraryReloadPending = false
     private var libraryLoadWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(loadsDedicatedContinueReading: Bool = true) {
+    init(
+        loadsDedicatedContinueReading: Bool = true,
+        usesContinueReadingSettings: Bool = false
+    ) {
         self.loadsDedicatedContinueReading = loadsDedicatedContinueReading
+        self.usesContinueReadingSettings = usesContinueReadingSettings
         favoriteIds = Set(UserDefaults.standard.stringArray(forKey: Self.favoritesKey) ?? [])
         let filtersData = AppSettings.library.filtersData.get()
         if let filtersData {
@@ -299,7 +304,10 @@ extension LibraryViewModel {
             return
         }
 
-        let readingViewModel = LibraryViewModel(loadsDedicatedContinueReading: false)
+        let readingViewModel = LibraryViewModel(
+            loadsDedicatedContinueReading: false,
+            usesContinueReadingSettings: true
+        )
         readingViewModel.pinType = .started
         readingViewModel.sortMethod = sortMethod
         readingViewModel.sortAscending = sortAscending
@@ -324,11 +332,28 @@ extension LibraryViewModel {
         // handle filter groups
         let filters = self.activeFilters
         let currentCategory = (isInUncategorizedCategory || isInRealCategory) ? self.currentCategory : nil
-        let pinTitlesIgnoreFilters = AppSettings.library.pinTitlesIgnoreFilters.get()
-        let hideCaughtUpPinnedTitles = AppSettings.library.hideCaughtUpPinnedTitles.get()
-            && AppSettings.appearance.separatePinnedTitles.get()
+        let pinTitlesIgnoreFilters = if usesContinueReadingSettings {
+            AppSettings.library.continueReadingIgnoreFilters.get()
+        } else {
+            AppSettings.library.pinTitlesIgnoreFilters.get()
+        }
+        let hideCaughtUpTitles = usesContinueReadingSettings
+            && AppSettings.library.continueReadingHideCaughtUpTitles.get()
+        let includesNonLibraryContinueReadingTitles = usesContinueReadingSettings
+            && AppSettings.library.continueReadingIncludeNonLibraryTitles.get()
+        let nonLibraryHistoryDates = if includesNonLibraryContinueReadingTitles,
+                                        currentCategory == nil || currentCategory?.isEmpty == true {
+            await loadNonLibraryContinueReadingMetadata()
+        } else {
+            [MangaIdentifier: Date]()
+        }
+        let ignoredFilterIdentifiers = if usesContinueReadingSettings {
+            AppSettings.library.continueReadingIgnoredFilters.get()
+        } else {
+            AppSettings.library.pinTitlesIgnoredFilters.get()
+        }
         let ignoredPinFilterMethods = Set(
-            AppSettings.library.pinTitlesIgnoredFilters.get().compactMap(
+            ignoredFilterIdentifiers.compactMap(
                 LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethod(for:)
             )
         )
@@ -343,7 +368,7 @@ extension LibraryViewModel {
             sourceKeys,
             unappliedFilters,
             availableGenres
-        ) = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [sortMethod, sortAscending, pinType, favoriteIds, pinTitlesIgnoreFilters, ignoredPinFilterMethods] context in
+        ) = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [sortMethod, sortAscending, pinType, favoriteIds, pinTitlesIgnoreFilters, ignoredPinFilterMethods, nonLibraryHistoryDates] context in
             var pinnedManga: [MangaInfo] = []
             var libraryPinnedManga: [MangaInfo] = []
             var manga: [MangaInfo] = []
@@ -374,10 +399,18 @@ extension LibraryViewModel {
             }
 
             let actuallyEmpty = libraryObjects.isEmpty
+            let nonLibraryManga: [(manga: MangaObject, lastRead: Date)] = nonLibraryHistoryDates.compactMap {
+                identifier, lastRead in
+                guard
+                    let manga = CoreDataManager.shared.getManga(mangaId: identifier, context: context),
+                    manga.libraryObject == nil
+                else { return nil }
+                return (manga, lastRead)
+            }
             let genreConfiguration = LibraryGenreFilterSettings.load()
             let availableGenres = LibraryGenreFilterSettings.availableFilterGenres(
-                from: libraryObjects.reduce(into: [String]()) { values, libraryObject in
-                    guard let manga = libraryObject.manga else { return }
+                from: (libraryObjects.compactMap(\.manga) + nonLibraryManga.map(\.manga)).reduce(into: [String]()) {
+                    values, manga in
                     if manga.sourceId.hasPrefix(KomgaSourceRunner.sourceKeyPrefix) {
                         values.append(contentsOf: KomgaGenreStore.genres(sourceKey: manga.sourceId, mangaKey: manga.id))
                     } else {
@@ -603,8 +636,141 @@ extension LibraryViewModel {
                             libraryPinnedManga.append(info)
                         } else {
                             manga.append(info)
-                        }
+                    }
                 }
+            }
+
+            nonLibrary: for (mangaObject, lastRead) in nonLibraryManga {
+                guard ids.insert(mangaObject.identifier).inserted else { continue }
+
+                var info = MangaInfo(
+                    id: mangaObject.identifier,
+                    coverUrl: mangaObject.cover.flatMap { URL(string: $0) },
+                    title: mangaObject.title,
+                    author: mangaObject.author,
+                    url: mangaObject.url.flatMap { URL(string: $0) }
+                )
+                info.isNSFW = mangaObject.nsfw == MangaContentRating.nsfw.rawValue
+                info.lastRead = lastRead
+                info.pinSortDate = lastRead
+                info.librarySortIndex = libraryObjects.count + pinnedManga.count
+
+                sourceKeys.insert(mangaObject.sourceId)
+
+                func appendIgnoringFiltersIfNeeded(for method: LibraryFilter.FilterMethod) {
+                    guard pinTitlesIgnoreFilters, ignoredPinFilterMethods.contains(method) else { return }
+                    pinnedManga.append(info)
+                }
+
+                var filteredSourceKeys: Set<String> = []
+                var filteredContentRatings: Set<Int16> = []
+                var filteredCategories: Set<String> = []
+                var filteredGenres: Set<LibraryFilter.Genre> = []
+                for filter in filters {
+                    let condition: Bool
+                    switch filter.type {
+                        case .downloaded, .hasUnread, .caughtUp:
+                            unappliedFilters.append(filter)
+                            continue
+                        case .tracking:
+                            condition = CoreDataManager.shared.hasTrack(
+                                mangaId: info.id,
+                                context: context
+                            )
+                        case .started:
+                            condition = true
+                        case .completed:
+                            condition = mangaObject.status == AidokuRunner.PublishingStatus.completed.rawValue
+                        case .source:
+                            guard let sourceId = filter.value else { continue }
+                            if filter.exclude {
+                                condition = info.id.sourceKey == sourceId
+                            } else {
+                                filteredSourceKeys.insert(sourceId)
+                                continue
+                            }
+                        case .contentRating:
+                            guard let contentRating = filter.value.flatMap(MangaContentRating.init) else { continue }
+                            if filter.exclude {
+                                condition = mangaObject.nsfw == contentRating.rawValue
+                            } else {
+                                filteredContentRatings.insert(Int16(contentRating.rawValue))
+                                continue
+                            }
+                        case .category:
+                            guard let category = filter.value else { continue }
+                            if filter.exclude {
+                                condition = false
+                            } else {
+                                filteredCategories.insert(category)
+                                continue
+                            }
+                        case .favorite:
+                            condition = favoriteIds.contains(info.id.description)
+                        case .collection:
+                            guard let collection = filter.value else { continue }
+                            let memberships = (
+                                UserDefaults.standard.dictionary(
+                                    forKey: "\(info.id.sourceKey).collectionMembership"
+                                ) as? [String: [String]] ?? [:]
+                            )[info.id.mangaKey] ?? []
+                            condition = memberships.contains(collection)
+                        case .genre:
+                            guard let value = filter.value,
+                                  let genre = LibraryGenreFilterSettings.matchingGenre(
+                                    for: value,
+                                    in: availableGenres,
+                                    configuration: genreConfiguration
+                                  )
+                            else { continue }
+                            let mangaGenres = if mangaObject.sourceId.hasPrefix(
+                                KomgaSourceRunner.sourceKeyPrefix
+                            ) {
+                                KomgaGenreStore.genres(
+                                    sourceKey: mangaObject.sourceId,
+                                    mangaKey: mangaObject.id
+                                )
+                            } else {
+                                mangaObject.tags ?? []
+                            }
+                            if filter.exclude {
+                                condition = mangaGenres.contains(where: genre.matches)
+                            } else {
+                                filteredGenres.insert(genre)
+                                continue
+                            }
+                    }
+                    let shouldSkip = filter.exclude ? condition : !condition
+                    if shouldSkip {
+                        appendIgnoringFiltersIfNeeded(for: filter.type)
+                        continue nonLibrary
+                    }
+                }
+                if !filteredSourceKeys.isEmpty && !filteredSourceKeys.contains(info.id.sourceKey) {
+                    appendIgnoringFiltersIfNeeded(for: .source)
+                    continue nonLibrary
+                }
+                if !filteredContentRatings.isEmpty && !filteredContentRatings.contains(mangaObject.nsfw) {
+                    appendIgnoringFiltersIfNeeded(for: .contentRating)
+                    continue nonLibrary
+                }
+                if !filteredCategories.isEmpty {
+                    appendIgnoringFiltersIfNeeded(for: .category)
+                    continue nonLibrary
+                }
+                if !filteredGenres.isEmpty && !filteredGenres.contains(where: { genre in
+                    let mangaGenres = if mangaObject.sourceId.hasPrefix(KomgaSourceRunner.sourceKeyPrefix) {
+                        KomgaGenreStore.genres(sourceKey: mangaObject.sourceId, mangaKey: mangaObject.id)
+                    } else {
+                        mangaObject.tags ?? []
+                    }
+                    return mangaGenres.contains(where: genre.matches)
+                }) {
+                    appendIgnoringFiltersIfNeeded(for: .genre)
+                    continue nonLibrary
+                }
+
+                pinnedManga.append(info)
             }
 
             if pinType == .started || pinType == .updatedChapters {
@@ -650,7 +816,7 @@ extension LibraryViewModel {
             }
         }
 
-        if hideCaughtUpPinnedTitles {
+        if hideCaughtUpTitles {
             self.pinnedManga.removeAll { $0.unread == 0 }
         }
 
@@ -759,6 +925,84 @@ extension LibraryViewModel {
         } else if sortMethod == .unreadChapters {
             await sortLibrary()
         }
+    }
+
+    /// History intentionally survives removing a title from the Library, but its
+    /// cached manga object does not. Restore missing display metadata through the
+    /// source and cache it so the dedicated Continue Reading section can render
+    /// the title and cover on this and subsequent loads.
+    private func loadNonLibraryContinueReadingMetadata() async -> [MangaIdentifier: Date] {
+        let (historyDates, missingIdentifiers) = await CoreDataManager.shared.container.performBackgroundTask {
+            @Sendable context in
+            var historyDates: [MangaIdentifier: Date] = [:]
+            for history in CoreDataManager.shared.getHistory(context: context) {
+                let identifier = history.identifier.mangaIdentifier
+                guard !CoreDataManager.shared.hasLibraryManga(mangaId: identifier, context: context) else {
+                    continue
+                }
+                let dateRead = history.dateRead ?? .distantPast
+                if dateRead > historyDates[identifier, default: .distantPast] {
+                    historyDates[identifier] = dateRead
+                }
+            }
+            let missingIdentifiers = historyDates.keys.filter {
+                CoreDataManager.shared.getManga(mangaId: $0, context: context) == nil
+            }
+            return (historyDates, missingIdentifiers)
+        }
+
+        let batchSize = 3
+        for startIndex in stride(from: 0, to: missingIdentifiers.count, by: batchSize) {
+            let endIndex = min(startIndex + batchSize, missingIdentifiers.count)
+            let batch = Array(missingIdentifiers[startIndex..<endIndex])
+            let loadedManga = await withTaskGroup(of: AidokuRunner.Manga?.self) { group in
+                for identifier in batch {
+                    group.addTask {
+                        guard let source = await SourceManager.shared.source(for: identifier.sourceKey) else {
+                            return nil
+                        }
+                        let manga = AidokuRunner.Manga(
+                            sourceKey: identifier.sourceKey,
+                            key: identifier.mangaKey,
+                            title: ""
+                        )
+                        return try? await source.getMangaUpdate(
+                            manga: manga,
+                            needsDetails: true,
+                            needsChapters: true
+                        )
+                    }
+                }
+                return await group.reduce(into: [AidokuRunner.Manga]()) { result, manga in
+                    if let manga {
+                        result.append(manga)
+                    }
+                }
+            }
+
+            guard !loadedManga.isEmpty else { continue }
+            await CoreDataManager.shared.container.performBackgroundTask { @Sendable context in
+                for manga in loadedManga {
+                    CoreDataManager.shared.getOrCreateManga(manga, context: context).load(from: manga)
+                    if let chapters = manga.chapters {
+                        CoreDataManager.shared.setChapters(
+                            chapters,
+                            mangaId: manga.identifier,
+                            context: context
+                        )
+                    }
+                }
+                do {
+                    try context.save()
+                } catch {
+                    LogManager.logger.error(
+                        "Unable to cache non-library Continue Reading metadata: \(error.localizedDescription)"
+                    )
+                }
+            }
+        }
+
+        return historyDates
     }
 
     func fetchUnreads(skipSortCheck: Bool = false) async {
