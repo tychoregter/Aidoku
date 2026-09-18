@@ -37,7 +37,8 @@ actor LibraryPagePreviewCache {
         .appendingPathComponent("CurrentPages", isDirectory: true)
     private static let sessionDirectory = rootDirectory
         .appendingPathComponent("ChapterPreviews", isDirectory: true)
-    private static let thumbnailOptions = ImageRequest.ThumbnailOptions(maxPixelSize: 1200)
+    private static let thumbnailDirectory = rootDirectory
+        .appendingPathComponent("ReaderThumbnails", isDirectory: true)
 
     private var inFlight: [String: Task<LoadedPreview?, Never>] = [:]
     private var inFlightPages: [String: Task<[Page], Never>] = [:]
@@ -52,6 +53,7 @@ actor LibraryPagePreviewCache {
         // cache that is intentionally limited to one app session.
         Self.removeSessionFiles()
         Self.sessionDirectory.createDirectory()
+        Self.thumbnailDirectory.createDirectory()
     }
 
     /// Returns a prepared current-page preview immediately. A cache miss is
@@ -134,9 +136,59 @@ actor LibraryPagePreviewCache {
         inFlight[taskKey]?.cancel()
         inFlight[taskKey] = nil
         Self.removePersistentFiles(for: mangaId)
+        Self.removeThumbnails(for: mangaId)
     }
 
-    /// Serial work prevents a large Library from decoding many pages at once.
+    /// Returns a persisted scrubber thumbnail when one has already been
+    /// prepared for this exact chapter page.
+    func cachedReaderThumbnail(for page: Page, pageIndex: Int, mangaId: MangaIdentifier) -> UIImage? {
+        let url = Self.thumbnailURL(for: page, pageIndex: pageIndex, mangaId: mangaId)
+        return UIImage(contentsOfFile: url.path)
+    }
+
+    /// Persists a scrubber thumbnail after it has been loaded on demand. This
+    /// cache is populated by actual reader use only; it is never prewarmed.
+    func storeReaderThumbnail(_ image: UIImage, for page: Page, pageIndex: Int, mangaId: MangaIdentifier) {
+        guard let data = image.jpegData(compressionQuality: 0.82) else { return }
+        let url = Self.thumbnailURL(for: page, pageIndex: pageIndex, mangaId: mangaId)
+        guard (try? Data(contentsOf: url)) != data else { return }
+        url.deletingLastPathComponent().createDirectory()
+        try? data.write(to: url, options: .atomic)
+    }
+
+    /// Removes only the cached variants belonging to a cover whose URL
+    /// changed during a library refresh. Covers that did not change remain
+    /// untouched.
+    func invalidateCoverCache(for url: URL, sourceKey: String) async {
+        let source = await SourceManager.shared.source(for: sourceKey)
+        var requests: [ImageRequest] = [ImageRequest(urlRequest: URLRequest(url: url))]
+
+        if let fileURL = url.toAidokuFileUrl() {
+            requests.append(ImageRequest(urlRequest: URLRequest(url: fileURL)))
+        } else if let source {
+            let modifiedRequest = await source.getModifiedImageRequest(url: url, context: nil)
+            requests.append(ImageRequest(urlRequest: modifiedRequest))
+
+            var processors: [ImageProcessing] = [await CoverDownsampleProcessor(shortestSide: 630)]
+            if source.features.processesCovers {
+                processors.append(CoverInterceptorProcessor(source: source))
+            }
+            requests.append(ImageRequest(
+                urlRequest: modifiedRequest,
+                processors: processors,
+                userInfo: [.processesKey: true]
+            ))
+        }
+
+        for request in requests {
+            ImagePipeline.shared.cache.removeCachedImage(for: request)
+        }
+    }
+
+    /// Prepares the current-page preview for every Library title after a
+    /// refresh, matching the original long-press preview behavior. This only
+    /// warms the context-menu preview cache; scrubber thumbnails remain
+    /// on-demand.
     func prewarmLibrary() async {
         guard AppSettings.library.contextMenuPagePreviews.get() else { return }
         if let prewarmTask {
@@ -175,6 +227,7 @@ actor LibraryPagePreviewCache {
         Self.rootDirectory.removeItem()
         Self.persistentDirectory.createDirectory()
         Self.sessionDirectory.createDirectory()
+        Self.thumbnailDirectory.createDirectory()
     }
 
     /// Synchronous so cleanup can complete in the short termination window.
@@ -207,8 +260,16 @@ actor LibraryPagePreviewCache {
         else { return nil }
 
         // Keep the old preview usable until the complete replacement is ready.
-        try? loaded.data.write(to: urls.image, options: .atomic)
-        try? loaded.pageKey.write(to: urls.metadata, atomically: true, encoding: .utf8)
+        // Avoid touching the cache when the fetched image is byte-for-byte
+        // identical, which also preserves its file timestamp and avoids
+        // unnecessary disk writes.
+        let existingData = try? Data(contentsOf: urls.image)
+        if existingData != loaded.data {
+            try? loaded.data.write(to: urls.image, options: .atomic)
+        }
+        if Self.persistentPageKey(for: mangaId) != loaded.pageKey {
+            try? loaded.pageKey.write(to: urls.metadata, atomically: true, encoding: .utf8)
+        }
         return returnImage ? loaded.image : nil
     }
 
@@ -244,8 +305,12 @@ actor LibraryPagePreviewCache {
         let pages = await pages(for: target)
         guard !pages.isEmpty else { return nil }
         let pageIndex = min(max(target.pageIndex, 0), pages.count - 1)
-        guard let image = await Self.thumbnail(for: pages[pageIndex], sourceKey: target.manga.sourceKey),
-              let data = image.jpegData(compressionQuality: 0.82) else { return nil }
+        guard let image = await Self.thumbnail(
+            for: pages[pageIndex],
+            sourceKey: target.manga.sourceKey,
+            width: nil
+        ),
+              let data = image.pngData() ?? image.jpegData(compressionQuality: 1) else { return nil }
         return LoadedPreview(
             pageKey: "\(target.chapter.key)|\(pageIndex)",
             image: image,
@@ -277,9 +342,10 @@ actor LibraryPagePreviewCache {
         }
     }
 
-    private static func thumbnail(for page: Page, sourceKey: String) async -> UIImage? {
+    private static func thumbnail(for page: Page, sourceKey: String, width: CGFloat?) async -> UIImage? {
         if let image = page.image {
-            return image.preparingThumbnail(of: CGSize(width: 1200, height: 1200)) ?? image
+            guard let width else { return image }
+            return await DownsampleProcessor(width: width).process(image)
         }
         if let zipURLString = page.zipURL,
            let zipURL = URL(string: zipURLString),
@@ -288,32 +354,45 @@ actor LibraryPagePreviewCache {
             defer { Task { await store.removeAll() } }
             guard let extractedURL = await store.storeArchiveEntry(from: zipURL, path: filePath),
                   let data = try? Data(contentsOf: extractedURL) else { return nil }
-            return downsample(data)
+            return downsample(data, maxPixelSize: width)
         }
         if let imageURL = page.imageURL, let url = URL(string: imageURL) {
             let source = await SourceManager.shared.source(for: sourceKey)
             var request = await ReaderPageView.imageRequest(url: url, context: page.context, source: source)
-            request.thumbnail = thumbnailOptions
-            request.priority = .low
+            let scale = await UIScreen.main.scale
+            if let width {
+                request.thumbnail = .init(maxPixelSize: Float(width * scale * 8))
+            }
+            request.priority = if let width, width <= 48 { .veryLow } else { .low }
+            if let width, width <= 48 {
+                request.processors.append(await DownsampleProcessor(width: width))
+            }
             // Reuse the bounded shared data cache without retaining another
             // decoded image in Nuke's memory cache.
             request.options.insert(.disableMemoryCacheWrites)
             return try? await ImagePipeline.shared.image(for: request)
         }
         if let base64 = page.base64, let data = Data(base64Encoded: base64) {
-            return downsample(data)
+            return downsample(data, maxPixelSize: width)
         }
         return nil
     }
 
-    private static func downsample(_ data: Data) -> UIImage? {
+    private static func downsample(_ data: Data, maxPixelSize: CGFloat?) -> UIImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: 1200
-        ]
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+        var options: [CFString: Any] = [:]
+        let image: CGImage?
+        if let maxPixelSize {
+            options = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+            ]
+            image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+        } else {
+            image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        }
+        guard let image else {
             return nil
         }
         return UIImage(cgImage: image)
@@ -356,6 +435,18 @@ actor LibraryPagePreviewCache {
             persistentDirectory.appendingPathComponent(name).appendingPathExtension("jpg"),
             persistentDirectory.appendingPathComponent(name).appendingPathExtension("txt")
         )
+    }
+
+    private static func thumbnailURL(for page: Page, pageIndex: Int, mangaId: MangaIdentifier) -> URL {
+        let mangaDirectory = thumbnailDirectory.appendingPathComponent(digest(mangaId.description), isDirectory: true)
+        // Version the key so thumbnails written by the old page-object key
+        // (where every source page could have index 0) are never reused.
+        let pageKey = "v2|\(page.chapterId)|\(pageIndex)"
+        return mangaDirectory.appendingPathComponent(digest(pageKey)).appendingPathExtension("jpg")
+    }
+
+    private static func removeThumbnails(for mangaId: MangaIdentifier) {
+        thumbnailDirectory.appendingPathComponent(digest(mangaId.description), isDirectory: true).removeItem()
     }
 
     private static func digest(_ value: String) -> String {

@@ -200,9 +200,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         Task {
             await SourceManager.shared.start()
             LibrarySpotlightIndexer.indexLibrary()
-            Task(priority: .utility) {
-                await LibraryPagePreviewCache.shared.prewarmLibrary()
-            }
             await BackupManager.shared.scheduleAutoBackup()
             if #available(iOS 18.0, *) {
                 DictionaryManager.shared.autoUpdateDictionaries()
@@ -330,7 +327,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                             context: context
                         )
                     },
-                    icon: UIApplicationShortcutIcon(systemImageName: isFavoritesPin ? "heart" : "book"),
+                    icon: UIApplicationShortcutIcon(systemImageName: isFavoritesPin ? "star" : "book"),
                     userInfo: [
                         "sourceKey": manga.id.sourceKey as NSSecureCoding,
                         "mangaKey": manga.id.mangaKey as NSSecureCoding

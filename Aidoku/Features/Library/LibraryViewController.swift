@@ -197,7 +197,7 @@ class LibraryViewController: OldMangaCollectionViewController {
             target: self,
             action: isFavoritesTab ? #selector(unfavoriteSelected) : #selector(removeSelectedFromLibrary)
         )
-        deleteButton.image = UIImage(systemName: isFavoritesTab ? "heart.slash" : "trash")
+        deleteButton.image = UIImage(systemName: isFavoritesTab ? "star.slash" : "trash")
         if #unavailable(iOS 26.0) {
             deleteButton.tintColor = .systemRed
         }
@@ -888,7 +888,7 @@ extension LibraryViewController {
     // updates library empty message
     // should be called when category changes and when library loads initially
     func updateEmptyStack() {
-        emptyStackView.imageSystemName = isFavoritesTab ? "heart.fill" : "books.vertical.fill"
+        emptyStackView.imageSystemName = isFavoritesTab ? "star.fill" : "books.vertical.fill"
         if isFavoritesTab {
             emptyStackView.title = "Favorites"
             emptyStackView.text = "Items marked as favorite will appear here."
@@ -1242,7 +1242,7 @@ extension LibraryViewController {
     private func pinTypeIconName(for pinType: LibraryViewModel.PinType) -> String {
         switch pinType {
             case .none: "pin.slash"
-            case .favorites: "heart"
+            case .favorites: "star"
             case .started: "clock"
             case .unread: "eye.slash"
             case .completed: "checkmark.circle"
@@ -2289,6 +2289,12 @@ extension LibraryViewController {
         }
 
         let mangaInfo = indexPaths.compactMap { dataSource.itemIdentifier(for: $0) }
+        let section = dataSource.snapshot().sectionIdentifiers[safe: indexPath.section]
+        let viewContext = CoreDataManager.shared.container.viewContext
+        let nonLibraryContinueReading = section == .continueReading && mangaInfo.contains { manga in
+            !CoreDataManager.shared.hasLibraryManga(mangaId: manga.id, context: viewContext)
+        }
+        let canRemoveFromLibrary = !isFavoritesTab && !nonLibraryContinueReading
 
         let contextPreviewController: LibraryPageContextPreviewViewController? = if
             AppSettings.library.contextMenuPagePreviews.get(),
@@ -2344,7 +2350,7 @@ extension LibraryViewController {
                 let isFavorite = self.viewModel.isFavorite(manga.id)
                 actions.append(UIAction(
                     title: NSLocalizedString(isFavorite ? "UNFAVORITE" : "FAVORITE"),
-                    image: UIImage(systemName: isFavorite ? "heart.slash" : "heart")
+                    image: UIImage(systemName: isFavorite ? "star.slash" : "star")
                 ) { _ in
                     self.viewModel.toggleFavorite(manga.id)
                     Task {
@@ -2478,24 +2484,60 @@ extension LibraryViewController {
                 })
             }
 
-            bottomMenuChildren.append(UIAction(
-                title: self.isFavoritesTab ? NSLocalizedString("UNFAVORITE") : NSLocalizedString("REMOVE_FROM_LIBRARY"),
-                image: UIImage(systemName: self.isFavoritesTab ? "heart.slash" : "trash"),
-                attributes: .destructive
-            ) { _ in
-                if self.isFavoritesTab {
-                    for item in mangaInfo where self.viewModel.isFavorite(item.id) {
-                        self.viewModel.toggleFavorite(item.id)
-                        NotificationCenter.default.post(name: .favoriteChanged, object: item.id)
+            if self.isFavoritesTab || canRemoveFromLibrary || nonLibraryContinueReading {
+                bottomMenuChildren.append(UIAction(
+                    title: self.isFavoritesTab
+                        ? NSLocalizedString("UNFAVORITE")
+                        : nonLibraryContinueReading
+                            ? NSLocalizedString("ADD_TO_LIBRARY")
+                            : NSLocalizedString("REMOVE_FROM_LIBRARY"),
+                    image: UIImage(systemName: self.isFavoritesTab
+                        ? "star.slash"
+                        : nonLibraryContinueReading ? "plus.circle" : "trash"),
+                    attributes: self.isFavoritesTab || canRemoveFromLibrary ? .destructive : []
+                ) { _ in
+                    if self.isFavoritesTab {
+                        for item in mangaInfo where self.viewModel.isFavorite(item.id) {
+                            self.viewModel.toggleFavorite(item.id)
+                            NotificationCenter.default.post(name: .favoriteChanged, object: item.id)
+                        }
+                        Task { @MainActor in
+                            await self.viewModel.loadLibrary()
+                            self.updateDataSource()
+                        }
+                    } else if nonLibraryContinueReading {
+                        let itemsToAdd = mangaInfo.filter { manga in
+                            !CoreDataManager.shared.hasLibraryManga(
+                                mangaId: manga.id,
+                                context: CoreDataManager.shared.container.viewContext
+                            )
+                        }
+                        Task { @MainActor in
+                            if let item = itemsToAdd.first, await MangaManager.shouldAskForCategories() {
+                                self.present(
+                                    UINavigationController(
+                                        rootViewController: CategorySelectViewController(
+                                            manga: item.toManga().toNew()
+                                        )
+                                    ),
+                                    animated: true
+                                )
+                            } else {
+                                for item in itemsToAdd {
+                                    await MangaManager.shared.addToLibrary(
+                                        manga: item.toManga().toNew(),
+                                        fetchMangaDetails: true
+                                    )
+                                }
+                                await self.viewModel.loadLibrary()
+                                self.updateDataSource()
+                            }
+                        }
+                    } else {
+                        self.removeFromLibrary(mangaInfo: mangaInfo)
                     }
-                    Task { @MainActor in
-                        await self.viewModel.loadLibrary()
-                        self.updateDataSource()
-                    }
-                } else {
-                    self.removeFromLibrary(mangaInfo: mangaInfo)
-                }
-            })
+                })
+            }
 
             actions.append(UIMenu(options: .displayInline, children: bottomMenuChildren))
 

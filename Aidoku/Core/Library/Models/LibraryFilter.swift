@@ -118,7 +118,7 @@ struct LibraryFilter: Codable, Hashable {
                 case .source: "globe"
                 case .contentRating: "exclamationmark.triangle"
                 case .category: "folder"
-                case .favorite: "heart"
+                case .favorite: "star"
                 case .caughtUp: "arrow.right.circle"
                 case .collection: "rectangle.stack"
                 case .genre: "tag"

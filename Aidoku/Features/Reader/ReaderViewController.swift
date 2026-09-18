@@ -1357,19 +1357,45 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         toolbarView.configureThumbnails(
             pageCount: pages.count,
             supportsThumbnails: supportsThumbnails
-        ) { [weak self] index, kind in
+        ) { [weak self] index, kind, publishIntermediate in
             guard let self, let page = pages[safe: index] else { return nil }
-            return await self.thumbnailImage(for: page, kind: kind)
+            let image = await self.thumbnailImage(
+                for: page,
+                pageIndex: index,
+                kind: kind,
+                publishIntermediate: publishIntermediate
+            )
+            if kind == .strip, let image {
+                await LibraryPagePreviewCache.shared.storeReaderThumbnail(
+                    image,
+                    for: page,
+                    pageIndex: index,
+                    mangaId: self.manga.identifier
+                )
+            }
+            return image
         }
     }
 
     private func thumbnailImage(
         for page: Page,
-        kind: ReaderThumbnailScrubberView.ImageKind
+        pageIndex: Int,
+        kind: ReaderThumbnailScrubberView.ImageKind,
+        publishIntermediate: @escaping @MainActor (UIImage) -> Void,
+        includeIntermediate: Bool = true
     ) async -> UIImage? {
-        let options = scrubberThumbnailOptions(for: kind)
+        if kind == .strip,
+            let cachedImage = await LibraryPagePreviewCache.shared.cachedReaderThumbnail(
+            for: page,
+            pageIndex: pageIndex,
+            mangaId: manga.identifier
+           ) {
+            return cachedImage
+        }
+
+        let options = await scrubberThumbnailOptions(for: kind, page: page, targetWidth: scrubberThumbnailWidth)
         if let image = page.image {
-            return makeScrubberThumbnail(from: image, kind: kind)
+            return await makeScrubberThumbnail(from: image, kind: kind)
         }
 
         if let zipURLString = page.zipURL,
@@ -1377,31 +1403,81 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
            let filePath = page.imageURL,
            let extractedURL = await temporaryPageStore.storeArchiveEntry(from: zipURL, path: filePath),
            let data = try? Data(contentsOf: extractedURL) {
-            return options.makeThumbnail(with: data)
+            guard let image = options.makeThumbnail(with: data) else { return nil }
+            return await makeScrubberThumbnail(from: image, kind: kind)
         }
 
         if let imageURL = page.imageURL, let url = URL(string: imageURL) {
             var request = await ReaderPageView.imageRequest(url: url, context: page.context, source: source)
             request.thumbnail = options
+            if kind == .strip {
+                request.processors.append(await DownsampleProcessor(width: scrubberThumbnailWidth))
+            }
+            // Keep active page previews ahead of strip thumbnails while
+            // allowing strip requests to run at their normal priority.
             request.priority = kind == .preview ? .high : .low
             guard let image = try? await ImagePipeline.shared.image(for: request) else { return nil }
             return image
         }
 
         if let base64 = page.base64, let data = Data(base64Encoded: base64) {
-            return options.makeThumbnail(with: data)
+            guard let image = options.makeThumbnail(with: data) else { return nil }
+            return await makeScrubberThumbnail(from: image, kind: kind)
         }
 
         return nil
     }
 
+    private var scrubberThumbnailWidth: CGFloat { 48 }
+
+    private func scrubberThumbnailOptions(
+        for kind: ReaderThumbnailScrubberView.ImageKind,
+        page: Page,
+        targetWidth: CGFloat
+    ) async -> ImageRequest.ThumbnailOptions {
+        guard kind == .strip else {
+            return .init(maxPixelSize: scrubberThumbnailPixelSize(for: kind))
+        }
+
+        let fallback = kind == .strip
+            ? Float(targetWidth * UIScreen.main.scale * 4)
+            : scrubberThumbnailPixelSize(for: kind)
+        guard let ratio = await knownPageRatio(for: page) else {
+            return .init(maxPixelSize: fallback)
+        }
+
+        // ImageIO's thumbnail limit is a longest-dimension limit. Convert the
+        // desired width into that limit so tall pages still retain enough
+        // horizontal pixels for the strip.
+        let targetPixels = targetWidth * UIScreen.main.scale
+        return .init(maxPixelSize: Float(ceil(targetPixels * max(1, ratio))))
+    }
+
+    private func knownPageRatio(for page: Page) async -> CGFloat? {
+        let key = WebtoonPageDimensionCache.key(
+            sourceKey: manga.sourceKey,
+            mangaKey: manga.key,
+            chapterKey: page.chapterId,
+            pageIndex: page.index
+        )
+        return await WebtoonPageDimensionCache.shared.ratio(for: key)
+    }
+
     private func makeScrubberThumbnail(
         from image: UIImage,
         kind: ReaderThumbnailScrubberView.ImageKind
-    ) -> UIImage? {
-        let maxPixelSize = scrubberThumbnailPixelSize(for: kind)
-        let size = CGFloat(maxPixelSize)
+    ) async -> UIImage? {
+        if kind == .strip {
+            return await makeScrubberThumbnail(from: image, width: scrubberThumbnailWidth)
+        }
+
+        let size = CGFloat(scrubberThumbnailPixelSize(for: kind))
         return image.preparingThumbnail(of: CGSize(width: size, height: size))
+    }
+
+    private func makeScrubberThumbnail(from image: UIImage, width: CGFloat) async -> UIImage? {
+        let processor = await DownsampleProcessor(width: width)
+        return processor.process(image)
     }
 
     private func scrubberThumbnailOptions(
@@ -1414,7 +1490,10 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         for kind: ReaderThumbnailScrubberView.ImageKind
     ) -> Float {
         switch kind {
-            case .strip: 72
+            // This is deliberately larger than the visible strip slot. The
+            // image is subsequently reduced by width, preventing tall webtoon
+            // pages from becoming only a few pixels wide.
+            case .strip: 2048
             case .preview: 512
         }
     }

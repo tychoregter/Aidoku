@@ -81,7 +81,7 @@ final class ReaderThumbnailScrubberView: UIControl {
     private var previewTasks: [Int: Task<Void, Never>] = [:]
     private var thumbnailPreloadTask: Task<Void, Never>?
     private var isLoadingEnabled = false
-    private var thumbnailProvider: ((Int, ImageKind) async -> UIImage?)?
+    private var thumbnailProvider: ((Int, ImageKind, @escaping @MainActor (UIImage) -> Void) async -> UIImage?)?
     private var loadedImages: [Int: UIImage] = [:]
     private var loadedPreviewImages: [Int: UIImage] = [:]
     private var displayedPreviewIndex: Int?
@@ -111,7 +111,7 @@ final class ReaderThumbnailScrubberView: UIControl {
 
     func configure(
         pageCount: Int,
-        thumbnailProvider: @escaping (Int, ImageKind) async -> UIImage?
+        thumbnailProvider: @escaping (Int, ImageKind, @escaping @MainActor (UIImage) -> Void) async -> UIImage?
     ) {
         resetLoadedContent(clearViews: true)
         thumbnailViews.forEach { $0.removeFromSuperview() }
@@ -498,7 +498,14 @@ final class ReaderThumbnailScrubberView: UIControl {
         guard isLoadingEnabled,
               loadedImages[index] == nil,
               let thumbnailProvider else { return }
-        let image = await thumbnailProvider(index, .strip)
+        let image = await thumbnailProvider(index, .strip) { [weak self] intermediateImage in
+            guard let self,
+                  self.isLoadingEnabled,
+                  self.loadGeneration == generation,
+                  index < self.thumbnailViews.count else { return }
+            self.loadedImages[index] = intermediateImage
+            self.thumbnailViews[index].image = intermediateImage
+        }
         guard !Task.isCancelled, isLoadingEnabled, loadGeneration == generation,
               let image, index < thumbnailViews.count else { return }
         loadedImages[index] = image
@@ -531,7 +538,7 @@ final class ReaderThumbnailScrubberView: UIControl {
               let thumbnailProvider else { return }
         let generation = loadGeneration
         previewTasks[index] = Task(priority: .userInitiated) { [weak self] in
-            let image = await thumbnailProvider(index, .preview)
+            let image = await thumbnailProvider(index, .preview) { _ in }
             guard let self else { return }
             self.previewTasks[index] = nil
             guard !Task.isCancelled, self.isLoadingEnabled,

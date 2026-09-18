@@ -700,6 +700,13 @@ extension MangaManager {
         if updateMetadata {
             for mangaItem in filteredManga {
                 guard let newInfo = newDetails[mangaItem.hashValue] else { continue }
+                if let oldCoverURL = mangaItem.coverUrl,
+                   oldCoverURL != newInfo.cover.flatMap(URL.init(string:)) {
+                    await LibraryPagePreviewCache.shared.invalidateCoverCache(
+                        for: oldCoverURL,
+                        sourceKey: mangaItem.sourceId
+                    )
+                }
                 mangaItem.load(from: newInfo.toOld())
             }
         }
