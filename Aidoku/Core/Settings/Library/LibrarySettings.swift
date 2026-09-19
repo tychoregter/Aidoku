@@ -109,7 +109,7 @@ struct LibrarySettings: Sendable {
     let filtersData = SettingsKey<Data?>("Library.filters")
     // Favorites is a separate Library surface, so its presentation choices must
     // not overwrite the Library's saved sorting and filters.
-    let favoritesSortOption = SettingsKey<Int>("Favorites.sortOption", default: LibraryViewModel.SortMethod.lastOpened.rawValue)
+    let favoritesSortOption = SettingsKey<Int>("Favorites.sortOption", default: LibraryViewModel.SortMethod.alphabetical.rawValue)
     let favoritesSortAscending = SettingsKey<Bool>("Favorites.sortAscending", default: false)
     let favoritesCurrentCategory = SettingsKey<String?>("Favorites.currentCategory")
     let favoritesFiltersData = SettingsKey<Data?>("Favorites.filters")

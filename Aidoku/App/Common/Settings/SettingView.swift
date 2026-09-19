@@ -353,7 +353,8 @@ struct SettingView: View {
         let keys = [
             AppSettings.appearance.dedicatedFavoritesTab.key,
             AppSettings.appearance.dedicatedBrowseTab.key,
-            AppSettings.appearance.dedicatedHistoryTab.key
+            AppSettings.appearance.dedicatedHistoryTab.key,
+            AppSettings.appearance.dedicatedSettingsTab.key
         ]
         // During Toggle.onChange, `toggleValue` has already flipped but the
         // persisted value has not. Use the stored value so an enabled tab can
@@ -373,6 +374,7 @@ extension SettingView {
         if !disabled {
             let items = value.items.filter {
                 !($0.key == "Browse" && AppSettings.appearance.dedicatedBrowseTab.get())
+                    && !($0.key == "Favorites" && AppSettings.appearance.dedicatedFavoritesTab.get())
                     && !($0.key == "History" && AppSettings.appearance.dedicatedHistoryTab.get())
             }
             let body = ForEach(items.indices, id: \.self) { offset in
@@ -1249,7 +1251,7 @@ extension SettingView {
 extension SettingView {
     @ViewBuilder
     func pageView(value: PageSetting) -> some View {
-        if ["Browse", "MangaUpdates", "History"].contains(setting.key), let openSettingsPage {
+        if ["Browse", "Favorites", "MangaUpdates", "History"].contains(setting.key), let openSettingsPage {
             Button { openSettingsPage(setting.key) } label: {
                 pageLabel(value: value, showsDisclosureIndicator: true)
             }

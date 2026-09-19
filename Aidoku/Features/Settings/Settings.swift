@@ -59,6 +59,15 @@ enum Settings {
                 ))
             ),
             .init(
+                key: "Favorites",
+                title: "Favorites",
+                value: .page(.init(
+                    items: [],
+                    inlineTitle: true,
+                    icon: .system(name: "star.fill", color: "orange")
+                ))
+            ),
+            .init(
                 key: "MangaUpdates",
                 title: NSLocalizedString("MANGA_UPDATES"),
                 value: .page(.init(
@@ -73,7 +82,7 @@ enum Settings {
                 value: .page(.init(
                     items: [],
                     inlineTitle: true,
-                    icon: .system(name: "clock.fill", color: "orange")
+                    icon: .system(name: "clock.fill", color: "indigo")
                 ))
             )
         ]))),
@@ -251,7 +260,7 @@ extension Settings {
         .init(
             title: "Navigation",
             value: .group(.init(
-                footer: "Choose up to two of Favorites, Browse, and History to appear in the tab bar; the rest remain in Settings.",
+                footer: "Choose up to two of Favorites, Browse, History, and Settings to appear in the tab bar. If none are enabled, Library is shown without a tab bar.",
                 items: [
                     .init(
                         key: AppSettings.appearance.dedicatedFavoritesTab.key,
@@ -266,6 +275,11 @@ extension Settings {
                     .init(
                         key: AppSettings.appearance.dedicatedHistoryTab.key,
                         title: "Dedicated History Tab",
+                        value: .toggle(.init())
+                    ),
+                    .init(
+                        key: AppSettings.appearance.dedicatedSettingsTab.key,
+                        title: "Dedicated Settings Tab",
                         value: .toggle(.init())
                     )
                 ]

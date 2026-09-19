@@ -24,6 +24,15 @@ extension UIScrollView {
 }
 
 class TabBarController: UITabBarController {
+    private var usesLibrarySettingsOverlay: Bool {
+        !AppSettings.appearance.dedicatedSettingsTab.get()
+    }
+    private var hasDedicatedTabs: Bool {
+        AppSettings.appearance.dedicatedFavoritesTab.get()
+            || AppSettings.appearance.dedicatedBrowseTab.get()
+            || AppSettings.appearance.dedicatedHistoryTab.get()
+            || AppSettings.appearance.dedicatedSettingsTab.get()
+    }
     private var originalFrame: CGRect = .zero
     private var shrunkFrame: CGRect = .zero
     private var cancellables: [AnyCancellable] = []
@@ -40,6 +49,7 @@ class TabBarController: UITabBarController {
     private var historyNavigationController: UINavigationController?
     private var searchNavigationController: UINavigationController?
     private var settingsViewController: UIViewController?
+    private weak var settingsRootViewController: UIViewController?
     private var cachedModernTabs: [String: AnyObject] = [:]
 
     private let searchController = SearchViewController()
@@ -52,6 +62,9 @@ class TabBarController: UITabBarController {
         }
 
         let libraryRootViewController = LibraryViewController()
+        libraryRootViewController.settingsPresentationHandler = { [weak self] in
+            self?.presentSettingsOverlay()
+        }
         self.libraryViewController = libraryRootViewController
         let libraryViewController = NavigationController(rootViewController: libraryRootViewController)
         libraryNavigationController = libraryViewController
@@ -85,6 +98,8 @@ class TabBarController: UITabBarController {
         let settingsViewController: UIViewController = settingsNavigationController
         self.settingsPath = settingsPath
         self.settingsViewController = settingsViewController
+        settingsRootViewController = hosting
+        configureSettingsRootNavigationItem()
 
         libraryViewController.navigationBar.prefersLargeTitles = true
         browseViewController.navigationBar.prefersLargeTitles = true
@@ -121,6 +136,12 @@ class TabBarController: UITabBarController {
         .receive(on: RunLoop.main)
         .sink { [weak self] _ in self?.configureTabs() }
         .store(in: &cancellables)
+        NotificationCenter.default.publisher(
+            for: .init(AppSettings.appearance.dedicatedSettingsTab.key)
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] _ in self?.settingsTabPreferenceDidChange() }
+        .store(in: &cancellables)
 
     }
 
@@ -136,14 +157,15 @@ class TabBarController: UITabBarController {
 
         if #available(iOS 26.0, *) {
             let selectedIdentifier = selectedTab?.identifier
-            var fixedTabs = [
-                modernTab(
-                    title: NSLocalizedString("LIBRARY"),
-                    image: UIImage(systemName: "books.vertical.fill"),
-                    identifier: "library",
-                    viewController: libraryNavigationController
-                )
-            ]
+            let libraryTab = modernTab(
+                title: NSLocalizedString("LIBRARY"),
+                image: UIImage(systemName: "books.vertical.fill"),
+                identifier: "library",
+                viewController: libraryNavigationController
+            )
+            libraryTab.allowsHiding = false
+            libraryTab.preferredPlacement = .fixed
+            var fixedTabs = [libraryTab]
             if AppSettings.appearance.dedicatedFavoritesTab.get() {
                 fixedTabs.append(modernTab(
                     title: "Favorites",
@@ -172,20 +194,22 @@ class TabBarController: UITabBarController {
                     )
                 )
             }
-            fixedTabs.append(modernTab(
-                title: NSLocalizedString("SETTINGS"),
-                image: UIImage(systemName: "gear"),
-                identifier: "settings",
-                viewController: settingsViewController
-            ))
-            fixedTabs.forEach {
+            if !usesLibrarySettingsOverlay {
+                fixedTabs.append(modernTab(
+                    title: NSLocalizedString("SETTINGS"),
+                    image: UIImage(systemName: "gear"),
+                    identifier: "settings",
+                    viewController: settingsViewController
+                ))
+            }
+            fixedTabs.dropFirst().forEach {
                 $0.allowsHiding = false
                 $0.preferredPlacement = .fixed
             }
             let searchTab = modernSearchTab(viewController: searchNavigationController)
-            tabs = fixedTabs + [searchTab]
+            tabs = hasDedicatedTabs ? fixedTabs + [searchTab] : fixedTabs
             selectedTab = tabs.first { $0.identifier == selectedIdentifier ?? "library" }
-                ?? fixedTabs.first { $0.identifier == "settings" }
+                ?? fixedTabs.first { $0.identifier == "library" }
         } else {
             let selectedController = selectedViewController
             libraryNavigationController.tabBarItem = UITabBarItem(
@@ -212,14 +236,71 @@ class TabBarController: UITabBarController {
             if AppSettings.appearance.dedicatedFavoritesTab.get() { controllers.append(favoritesNavigationController) }
             if AppSettings.appearance.dedicatedBrowseTab.get() { controllers.append(browseNavigationController) }
             if AppSettings.appearance.dedicatedHistoryTab.get() { controllers.append(historyNavigationController) }
-            controllers += [searchNavigationController, settingsViewController]
+            if hasDedicatedTabs {
+                controllers.append(searchNavigationController)
+            }
+            if !usesLibrarySettingsOverlay {
+                controllers.append(settingsViewController)
+            }
             viewControllers = controllers
             selectedViewController = controllers.contains { $0 === selectedController }
                 ? selectedController
-                : settingsViewController
+                : libraryNavigationController
         }
 
+        tabBar.isHidden = !hasDedicatedTabs
+
         previousSelectedIndex = selectedIndex
+    }
+
+    private func presentSettingsOverlay() {
+        guard
+            usesLibrarySettingsOverlay,
+            let settingsViewController,
+            settingsViewController.presentingViewController == nil
+        else { return }
+
+        popSettingsToRoot()
+        settingsViewController.modalPresentationStyle = .pageSheet
+        if let sheet = settingsViewController.sheetPresentationController {
+            sheet.detents = [.large()]
+            sheet.prefersGrabberVisible = false
+            sheet.prefersScrollingExpandsWhenScrolledToEdge = true
+        }
+        selectedViewController?.present(settingsViewController, animated: true)
+    }
+
+    private func settingsTabPreferenceDidChange() {
+        configureSettingsRootNavigationItem()
+
+        guard
+            !usesLibrarySettingsOverlay,
+            let settingsViewController,
+            settingsViewController.presentingViewController != nil
+        else {
+            configureTabs()
+            return
+        }
+
+        settingsViewController.dismiss(animated: true) { [weak self] in
+            self?.configureTabs()
+        }
+    }
+
+    private func configureSettingsRootNavigationItem() {
+        guard let settingsRootViewController else { return }
+        settingsRootViewController.navigationItem.largeTitleDisplayMode = usesLibrarySettingsOverlay ? .never : .always
+        settingsRootViewController.navigationItem.rightBarButtonItem = usesLibrarySettingsOverlay
+            ? UIBarButtonItem(
+                barButtonSystemItem: .close,
+                target: self,
+                action: #selector(dismissSettingsOverlay)
+            )
+            : nil
+    }
+
+    @objc private func dismissSettingsOverlay() {
+        settingsViewController?.dismiss(animated: true)
     }
 
     @MainActor

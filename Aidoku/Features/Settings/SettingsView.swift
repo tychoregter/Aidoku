@@ -144,10 +144,24 @@ extension SettingsView {
         )) { _ in
             navigationTabSettingsRevision += 1
         }
+        .onReceive(NotificationCenter.default.publisher(
+            for: .init(AppSettings.appearance.dedicatedFavoritesTab.key)
+        )) { _ in
+            navigationTabSettingsRevision += 1
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: .init(AppSettings.appearance.dedicatedSettingsTab.key)
+        )) { _ in
+            navigationTabSettingsRevision += 1
+        }
         .environment(\.openSettingsPage) { key in
             switch key {
                 case "Browse":
                     path.push(BrowseViewController())
+                case "Favorites":
+                    let favorites = LibraryViewController(scope: .favorites)
+                    favorites.navigationItem.largeTitleDisplayMode = .never
+                    path.push(favorites)
                 case "MangaUpdates":
                     path.push(MangaUpdatesView())
                 case "History":
@@ -437,6 +451,7 @@ extension SettingsView {
 
             for setting in group.items {
                 if (setting.key == "Browse" && AppSettings.appearance.dedicatedBrowseTab.get())
+                    || (setting.key == "Favorites" && AppSettings.appearance.dedicatedFavoritesTab.get())
                     || (setting.key == "History" && AppSettings.appearance.dedicatedHistoryTab.get()) {
                     continue
                 }

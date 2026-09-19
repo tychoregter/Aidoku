@@ -15,6 +15,7 @@ class LibraryViewController: OldMangaCollectionViewController {
     typealias Scope = LibraryViewModel.Scope
     let scope: Scope
     private var isFavoritesTab: Bool { scope == .favorites }
+    var settingsPresentationHandler: (() -> Void)?
 
     func scrollToTop(animated: Bool = true) {
         guard isViewLoaded else { return }
@@ -69,6 +70,12 @@ class LibraryViewController: OldMangaCollectionViewController {
         systemName: "line.3.horizontal.decrease",
         action: nil,
         titleKey: "CATEGORY",
+        sharesBackground: false
+    )
+    private lazy var settingsBarButton = makeBarButton(
+        systemName: "ellipsis",
+        action: #selector(openSettings),
+        titleKey: "SETTINGS",
         sharesBackground: false
     )
     private func makeBarButton(systemName: String? = nil, action: Selector?, titleKey: String, sharesBackground: Bool = true) -> UIBarButtonItem {
@@ -177,6 +184,10 @@ class LibraryViewController: OldMangaCollectionViewController {
             await SourceManager.shared.waitForSourcesLoad() // make sure sources are loaded first
             await DownloadManager.shared.loadQueueState()
         }
+    }
+
+    @objc private func openSettings() {
+        settingsPresentationHandler?()
     }
 
     override func configure() {
@@ -312,6 +323,12 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     override func observe() {
         super.observe()
+
+        addObserver(forName: .init(AppSettings.appearance.dedicatedSettingsTab.key)) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateNavbarItems()
+            }
+        }
 
         let checkNavbarDownloadButton: (Notification) -> Void = { [weak self] _ in
             guard let self else { return }
@@ -795,7 +812,11 @@ extension LibraryViewController {
             )]
         } else {
             updateCategoryMenu()
-            var items: [UIBarButtonItem] = [moreBarButton]
+            var items: [UIBarButtonItem] = if isFavoritesTab || AppSettings.appearance.dedicatedSettingsTab.get() {
+                [moreBarButton]
+            } else {
+                [settingsBarButton, moreBarButton]
+            }
             if viewModel.isCategoryLocked() {
                 items.append(lockBarButton)
             }
