@@ -347,8 +347,8 @@ struct SettingView: View {
     }
 
     /// Keep the configurable tab bar compact. Existing enabled tabs remain
-    /// tappable so one can be turned off; only a third, currently-off choice is
-    /// disabled.
+    /// tappable so one can be turned off; only a fourth, currently-off choice
+    /// is disabled.
     private var navigationTabLimitDisabled: Bool {
         let keys = [
             AppSettings.appearance.dedicatedFavoritesTab.key,
@@ -358,10 +358,10 @@ struct SettingView: View {
         ]
         // During Toggle.onChange, `toggleValue` has already flipped but the
         // persisted value has not. Use the stored value so an enabled tab can
-        // always be switched off even when two tabs are currently enabled.
+        // always be switched off even when three tabs are currently enabled.
         let isPersistedOn: Bool = SettingsStore.shared.get(key: setting.key)
         guard keys.contains(setting.key), !isPersistedOn else { return false }
-        return keys.filter { SettingsStore.shared.get(key: $0) as Bool }.count >= 2
+        return keys.filter { SettingsStore.shared.get(key: $0) as Bool }.count >= 3
     }
 
     private let disabledOpacity: CGFloat = 0.5
@@ -565,26 +565,32 @@ extension SettingView {
                     content
                 } else {
                     List {
-                        ForEach(value.values.indices, id: \.self) { offset in
-                            let item = value.values[offset]
-                            let selected = stringListBinding.contains(item)
-                            Button {
-                                if !selected {
-                                    stringListBinding.append(item)
-                                } else {
-                                    stringListBinding.removeAll { $0 == item }
-                                }
-                            } label: {
-                                HStack {
-                                    Text(value.titles?[safe: offset] ?? item)
-                                    Spacer()
-                                    if selected {
-                                        Image(systemName: "checkmark")
-                                            .foregroundStyle(.tint)
+                        Section {
+                            ForEach(value.values.indices, id: \.self) { offset in
+                                let item = value.values[offset]
+                                let selected = stringListBinding.contains(item)
+                                Button {
+                                    if !selected {
+                                        stringListBinding.append(item)
+                                    } else {
+                                        stringListBinding.removeAll { $0 == item }
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text(value.titles?[safe: offset] ?? item)
+                                        Spacer()
+                                        if selected {
+                                            Image(systemName: "checkmark")
+                                                .foregroundStyle(.tint)
+                                        }
                                     }
                                 }
+                                .foregroundStyle(.primary)
                             }
-                            .foregroundStyle(.primary)
+                        } footer: {
+                            if setting.key == AppSettings.library.threeStateFilterMethods.key {
+                                Text("Choose which library filters use simpler two-state inclusions/exclusion filters.")
+                            }
                         }
                     }
                     .onChange(of: stringListBinding) { _ in

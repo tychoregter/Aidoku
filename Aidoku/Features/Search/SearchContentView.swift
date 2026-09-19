@@ -39,12 +39,15 @@ struct SearchContentView: View {
     }
 
     var body: some View {
+        let searchHistoryDisabled = AppSettings.library.disableSearchHistory.get()
         Group {
             if searchText.isEmpty && viewModel.history.isEmpty {
                 UnavailableView(
-                    NSLocalizedString("NO_RECENT_SEARCHES"),
+                    searchHistoryDisabled ? "Search Sources" : NSLocalizedString("NO_RECENT_SEARCHES"),
                     systemImage: "magnifyingglass",
-                    description: Text(NSLocalizedString("NO_RECENT_SEARCHES_TEXT"))
+                    description: Text(searchHistoryDisabled
+                        ? "Search for titles across your sources."
+                        : NSLocalizedString("NO_RECENT_SEARCHES_TEXT"))
                 )
                 .offset(y: -keyboardOffset / 2)
                 .ignoresSafeArea(.all)

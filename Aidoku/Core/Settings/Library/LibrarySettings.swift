@@ -41,6 +41,7 @@ struct LibrarySettings: Sendable {
             updateOnlyOnWifi,
             refreshMetadata,
             notifyNewChapters,
+            disableSearchHistory,
             filtersData,
             favoritesSortOption,
             favoritesSortAscending,
@@ -105,6 +106,7 @@ struct LibrarySettings: Sendable {
     let updateOnlyOnWifi = SettingsKey<Bool>("Library.updateOnlyOnWifi", default: true)
     let refreshMetadata = SettingsKey<Bool>("Library.refreshMetadata", default: false)
     let notifyNewChapters = SettingsKey<Bool>("Library.notifyNewChapters", default: false)
+    let disableSearchHistory = SettingsKey<Bool>("Library.disableSearchHistory", default: false)
 
     let filtersData = SettingsKey<Data?>("Library.filters")
     // Favorites is a separate Library surface, so its presentation choices must

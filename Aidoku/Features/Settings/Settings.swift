@@ -227,22 +227,18 @@ extension Settings {
                     value: "Hide NSFW Covers",
                     table: nil
                 ),
-                value: .toggle(.init(subtitle: Bundle.main.localizedString(
-                    forKey: "BLUR_NSFW_COVERS_TEXT",
-                    value: "Replace covers marked as NSFW with their dominant color in the Library.",
-                    table: nil
-                )))
+                value: .toggle(.init())
             ),
             .init(
                 key: AppSettings.appearance.grayscaleCaughtUpCovers.key,
                 title: Bundle.main.localizedString(
                     forKey: "GRAYSCALE_CAUGHT_UP_COVERS",
-                    value: "Black & White Caught Up Covers",
+                    value: "Grayscale Completed Titles",
                     table: nil
                 ),
                 value: .toggle(.init(subtitle: Bundle.main.localizedString(
                     forKey: "GRAYSCALE_CAUGHT_UP_COVERS_TEXT",
-                    value: "Display covers for caught-up titles in black and white in the Library.",
+                    value: "Display covers for caught-up titles in black and white.",
                     table: nil
                 )))
             )
@@ -260,26 +256,26 @@ extension Settings {
         .init(
             title: "Navigation",
             value: .group(.init(
-                footer: "Choose up to two of Favorites, Browse, History, and Settings to appear in the tab bar. If none are enabled, Library is shown without a tab bar.",
+                footer: "Choose up to three tabs to show alongside Library. If none are enabled, the tab bar is hidden.",
                 items: [
                     .init(
                         key: AppSettings.appearance.dedicatedFavoritesTab.key,
-                        title: "Dedicated Favorites Tab",
+                        title: "Show Favorites Tab",
                         value: .toggle(.init())
                     ),
                     .init(
                         key: AppSettings.appearance.dedicatedBrowseTab.key,
-                        title: "Dedicated Browse Tab",
+                        title: "Show Browse Tab",
                         value: .toggle(.init())
                     ),
                     .init(
                         key: AppSettings.appearance.dedicatedHistoryTab.key,
-                        title: "Dedicated History Tab",
+                        title: "Show History Tab",
                         value: .toggle(.init())
                     ),
                     .init(
                         key: AppSettings.appearance.dedicatedSettingsTab.key,
-                        title: "Dedicated Settings Tab",
+                        title: "Show Settings Tab",
                         value: .toggle(.init())
                     )
                 ]
@@ -291,35 +287,35 @@ extension Settings {
         .init(
             title: Bundle.main.localizedString(forKey: "FILTERS", value: "Filters", table: nil),
             value: .group(.init(items: [
-            .init(
-                key: AppSettings.library.threeStateFilterMethods.key,
-                title: "Two-State Filters",
-                value: .multiselect(.init(
-                    values: LibraryFilter.FilterMethod.configurableThreeStateFilterMethods
-                        .map(\.threeStateFilterIdentifier),
-                    titles: LibraryFilter.FilterMethod.configurableThreeStateFilterMethods.map(\.title)
-                ))
-            ),
-            .init(
-                key: AppSettings.library.visibleFilterMethods.key,
-                title: "Visible Filters",
-                notification: .init(AppSettings.library.visibleFilterMethods.key),
-                value: .multiselect(.init(
-                    values: LibraryFilter.FilterMethod.menuFilterMethods.map { String($0.rawValue) },
-                    titles: LibraryFilter.FilterMethod.menuFilterMethods.map(\.title)
-                ))
-            ),
-            .init(
-                key: "Library.filterGroups",
-                title: NSLocalizedString("FILTER_GROUPS"),
-                value: .page(.init(items: []))
-            ),
-            .init(
-                key: "Library.genreFilter",
-                title: GenreFilterText.localized("GENRE_FILTER", fallback: "Genre Filters"),
-                value: .page(.init(items: []))
-            )
-        ])))
+                .init(
+                    key: AppSettings.library.visibleFilterMethods.key,
+                    title: "Visible Filters",
+                    notification: .init(AppSettings.library.visibleFilterMethods.key),
+                    value: .multiselect(.init(
+                        values: LibraryFilter.FilterMethod.menuFilterMethods.map { String($0.rawValue) },
+                        titles: LibraryFilter.FilterMethod.menuFilterMethods.map(\.title)
+                    ))
+                ),
+                .init(
+                    key: "Library.genreFilter",
+                    title: GenreFilterText.localized("GENRE_FILTER", fallback: "Genre Filters"),
+                    value: .page(.init(items: []))
+                ),
+                .init(
+                    key: AppSettings.library.threeStateFilterMethods.key,
+                    title: "Filter Behavior",
+                    value: .multiselect(.init(
+                        values: LibraryFilter.FilterMethod.configurableThreeStateFilterMethods
+                            .map(\.threeStateFilterIdentifier),
+                        titles: LibraryFilter.FilterMethod.configurableThreeStateFilterMethods.map(\.title)
+                    ))
+                ),
+                .init(
+                    key: "Library.filterGroups",
+                    title: NSLocalizedString("FILTER_GROUPS"),
+                    value: .page(.init(items: []))
+                )
+            ])))
     ]
 
     private static let pinSettings: [Setting] = [
@@ -336,13 +332,13 @@ extension Settings {
                 ),
                 .init(
                     key: AppSettings.library.pinTitlesIgnoreFilters.key,
-                    title: "Ignore Filters",
+                    title: "Ignore Library Filters",
                     requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
-                    value: .toggle(.init(subtitle: "Always show pinned titles."))
+                    value: .toggle(.init())
                 ),
                 .init(
                     key: AppSettings.library.pinTitlesIgnoredFilters.key,
-                    title: "Ignored Filters",
+                    title: "Filters to Ignore",
                     requires: AppSettings.library.pinTitlesIgnoreFilters.key,
                     requiresFalse: "\(AppSettings.library.pinTitles.key)==none",
                     value: .multiselect(.init(
@@ -362,33 +358,29 @@ extension Settings {
                         value: "Continue Reading",
                         table: nil
                     ),
-                    value: .toggle(.init(subtitle: Bundle.main.localizedString(
-                        forKey: "DEDICATED_CONTINUE_READING_SECTION_TEXT",
-                        value: "Always show Continue Reading above the selected pinned section.",
-                        table: nil
-                    )))
+                    value: .toggle(.init())
                 ),
                 .init(
                     key: AppSettings.library.continueReadingIncludeNonLibraryTitles.key,
-                    title: "Include Titles Outside Library",
+                    title: "Include Non-Library Titles",
                     requiresFalse: "\(AppSettings.appearance.dedicatedContinueReadingSection.key)==0",
-                    value: .toggle(.init(subtitle: "Show titles from reading history even when they are not in the Library."))
+                    value: .toggle(.init())
                 ),
                 .init(
                     key: AppSettings.library.continueReadingHideCaughtUpTitles.key,
-                    title: "Hide Caught Up Titles",
+                    title: "Hide Caught-Up Titles",
                     requiresFalse: "\(AppSettings.appearance.dedicatedContinueReadingSection.key)==0",
-                    value: .toggle(.init(subtitle: "Hide caught-up titles from Continue Reading."))
+                    value: .toggle(.init())
                 ),
                 .init(
                     key: AppSettings.library.continueReadingIgnoreFilters.key,
-                    title: "Ignore Filters",
+                    title: "Ignore Library Filters",
                     requiresFalse: "\(AppSettings.appearance.dedicatedContinueReadingSection.key)==0",
-                    value: .toggle(.init(subtitle: "Always show Continue Reading titles."))
+                    value: .toggle(.init())
                 ),
                 .init(
                     key: AppSettings.library.continueReadingIgnoredFilters.key,
-                    title: "Ignored Filters",
+                    title: "Filters to Ignore",
                     requires: AppSettings.library.continueReadingIgnoreFilters.key,
                     requiresFalse: "\(AppSettings.appearance.dedicatedContinueReadingSection.key)==0",
                     value: .multiselect(.init(
@@ -414,11 +406,7 @@ extension Settings {
                             value: "Separate Pinned Titles",
                             table: nil
                         ),
-                        value: .toggle(.init(subtitle: Bundle.main.localizedString(
-                            forKey: "SEPARATE_PINNED_TITLES_TEXT",
-                            value: "Show pinned and other library titles in labeled sections.",
-                            table: nil
-                        )))
+                        value: .toggle(.init())
                     ),
                     .init(
                         key: AppSettings.appearance.showPinnedSectionTitles.key,
@@ -428,11 +416,7 @@ extension Settings {
                             table: nil
                         ),
                         requires: AppSettings.appearance.separatePinnedTitles.key,
-                        value: .toggle(.init(subtitle: Bundle.main.localizedString(
-                            forKey: "SHOW_PINNED_SECTION_TITLES_TEXT",
-                            value: "Label the pinned and library sections.",
-                            table: nil
-                        )))
+                        value: .toggle(.init())
                     ),
                     .init(
                         key: AppSettings.appearance.horizontalPinnedTitles.key,
@@ -442,11 +426,7 @@ extension Settings {
                             table: nil
                         ),
                         requires: AppSettings.appearance.separatePinnedTitles.key,
-                        value: .toggle(.init(subtitle: Bundle.main.localizedString(
-                            forKey: "HORIZONTAL_PINNED_TITLES_TEXT",
-                            value: "Show pinned titles in a single scrolling row in Grid View.",
-                            table: nil
-                        )))
+                        value: .toggle(.init())
                     ),
                     .init(
                         key: AppSettings.appearance.keepPinnedTitlesInLibrary.key,
@@ -456,11 +436,7 @@ extension Settings {
                             table: nil
                         ),
                         requires: AppSettings.appearance.separatePinnedTitles.key,
-                        value: .toggle(.init(subtitle: Bundle.main.localizedString(
-                            forKey: "KEEP_PINNED_TITLES_IN_LIBRARY_TEXT",
-                            value: "Also show pinned titles in the Library section.",
-                            table: nil
-                        )))
+                        value: .toggle(.init())
                     ),
                 ]
             ))
@@ -486,8 +462,8 @@ extension Settings {
             ),
             .init(
                 key: AppSettings.library.contextMenuPagePreviews.key,
-                title: "Preview Current Page",
-                value: .toggle(.init(subtitle: "Show the current reading page when opening a title's menu."))
+                title: "Page Previews in Menus",
+                value: .toggle(.init())
             ),
             .init(
                 key: AppSettings.library.unreadChapterBadges.key,
@@ -542,7 +518,15 @@ extension Settings {
                 )
             ]))
         )
-    ] + libraryUpdateGroups
+    ] + libraryUpdateGroups + [
+        .init(value: .group(.init(items: [
+            .init(
+                key: AppSettings.library.disableSearchHistory.key,
+                title: "Disable Search History",
+                value: .toggle(.init())
+            )
+        ])))
+    ]
 
     private static let libraryUpdateGroups: [Setting] = {
         var baseGroup: Setting = .init(

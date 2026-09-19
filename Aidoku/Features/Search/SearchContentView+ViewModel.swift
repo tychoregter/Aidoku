@@ -6,6 +6,7 @@
 //
 
 import AidokuRunner
+import Combine
 import SwiftUI
 
 extension SearchContentView {
@@ -33,13 +34,32 @@ extension SearchContentView {
 
         private var searchQuery: String = ""
         private var searchTask: Task<Void, Never>?
+        private var cancellables = Set<AnyCancellable>()
 
         var resultsIsEmpty: Bool {
             !results.contains(where: { !$0.result.entries.isEmpty })
         }
 
         init() {
-            history = UserDefaults.standard.stringArray(forKey: "Search.history") ?? []
+            reloadHistory()
+            NotificationCenter.default.publisher(
+                for: .init(AppSettings.library.disableSearchHistory.key)
+            )
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.reloadHistory()
+            }
+            .store(in: &cancellables)
+        }
+
+        private var searchHistoryDisabled: Bool {
+            AppSettings.library.disableSearchHistory.get()
+        }
+
+        private func reloadHistory() {
+            history = searchHistoryDisabled
+                ? []
+                : UserDefaults.standard.stringArray(forKey: "Search.history") ?? []
         }
     }
 }
@@ -112,7 +132,7 @@ extension SearchContentView.ViewModel {
 
 extension SearchContentView.ViewModel {
     private func updateHistory(query: String) {
-        guard !query.isEmpty else { return }
+        guard !query.isEmpty, !searchHistoryDisabled else { return }
 
         var newHistory = history
 

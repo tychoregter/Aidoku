@@ -460,10 +460,10 @@
 "ICLOUD_SYNC" = "iCloud Sync";
 "ICLOUD_SYNC_TEXT_EXPERIMENTAL" = "iCloud Sync is an experimental feature. Enabling or disabling it may trigger data loss.";
 "ICLOUD_SYNC_TEXT_SIDELOADED" = "iCloud Sync is only available when installed through TestFlight.";
-"FLARESOLVERR_URL" = "FlareSolverr URL";
+"FLARESOLVERR_URL" = "Server URL";
 "FLARESOLVERR" = "FlareSolverr";
 "FLARESOLVERR_TEXT" = "Use an optional FlareSolverr server to solve Cloudflare challenges automatically.";
-"FLARESOLVERR_FALLBACK" = "Allow Manual Fallback";
+"FLARESOLVERR_FALLBACK" = "Manual Fallback";
 "INCOGNITO_MODE" = "Incognito Mode";
 "INCOGNITO_MODE_TEXT" = "Pauses reading history when enabled";
 "APPEARANCE" = "Appearance";
@@ -785,7 +785,7 @@
 "UPDATE_AFTER_READING_INFO" = "After reading a chapter, update the tracker to match the current chapter.";
 "AUTO_SYNC_HISTORY" = "Automatically Sync History";
 "AUTO_SYNC_HISTORY_INFO" = "When a newer chapter is detected on the tracker, update the local history to match.";
-"ONLY_UPDATE_LIBRARY_ITEMS" = "Only Update Library Items";
+"ONLY_UPDATE_LIBRARY_ITEMS" = "Update Library Items Only";
 "ONLY_UPDATE_LIBRARY_ITEMS_INFO" = "Only add to or update reading history and trackers for items in your library.";
 "BLUR_NSFW_COVERS" = "Hide NSFW Covers";
 "BLUR_NSFW_COVERS_TEXT" = "Replace covers marked as NSFW with their dominant color in the Library.";
