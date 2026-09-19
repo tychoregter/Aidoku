@@ -89,7 +89,9 @@ class ZoomableCollectionView: ASDisplayNode {
                 return orig
             }
             lazy var origType = String(describing: type(of: orig))
-            if orig is _ASDisplayView || orig is GIFImageView {
+            if orig is DictionaryOverlayButton {
+                return orig
+            } else if orig is _ASDisplayView || orig is GIFImageView {
                 if lastHit.timeIntervalSinceNow <= -0.1 {
                     if !tempGestures.isEmpty {
                         tempGestures.forEach {

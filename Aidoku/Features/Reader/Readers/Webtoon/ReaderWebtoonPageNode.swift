@@ -46,6 +46,9 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
 
     private var shouldShowLiveTextButton = false
     private var liveTextAnalysisTask: Task<Void, Never>?
+
+    private var hasScheduledDictionaryTextAnalysis = false
+    private var needsDictionaryOverlayRender = false
     private var dictionaryAnalysisTask: Task<Void, Never>?
     var onDictionaryOverlayTap: ((String, String, CGRect, [CGRect]) -> Void)? {
         get { dictionaryOverlayController.onLookup }
@@ -133,6 +136,14 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
         cancelDictionaryTextAnalysis()
     }
 
+    override func layout() {
+        super.layout()
+
+        if needsDictionaryOverlayRender {
+            renderDictionaryOverlaysIfNeeded()
+        }
+    }
+
     override func didEnterPreloadState() {
         super.didEnterPreloadState()
         startPageLoad()
@@ -166,6 +177,8 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
         cancelDictionaryTextAnalysis()
         clearDisplayedImage()
         clearDictionaryOverlays()
+        hasScheduledDictionaryTextAnalysis = false
+        needsDictionaryOverlayRender = false
 
         text = nil
         imageNode.alpha = 0
@@ -544,7 +557,11 @@ extension ReaderWebtoonPageNode {
                     imageNode.addInteraction(interaction)
                     await analyzeLiveText()
                 }
-                scheduleDictionaryTextAnalysis()
+
+                if isVisible, !hasScheduledDictionaryTextAnalysis {
+                    hasScheduledDictionaryTextAnalysis = true
+                    scheduleDictionaryTextAnalysis()
+                }
             }
         } else if let text {
             progressNode.isHidden = true
@@ -613,6 +630,7 @@ extension ReaderWebtoonPageNode {
 
     @MainActor
     private func scheduleDictionaryTextAnalysis() {
+        needsDictionaryOverlayRender = false
         clearDictionaryOverlays()
 
         if #available(iOS 18.0, *) {
@@ -672,6 +690,12 @@ extension ReaderWebtoonPageNode {
     }
 
     private func renderDictionaryOverlaysIfNeeded() {
+        guard imageNode.bounds.width > 0 else {
+            needsDictionaryOverlayRender = true
+            return
+        }
+
+        needsDictionaryOverlayRender = false
         clearDictionaryOverlays()
 
         guard
@@ -697,6 +721,7 @@ extension ReaderWebtoonPageNode {
 
     func setDictionaryOverlayInteractionMode(_ mode: DictionaryOverlayInteractionMode) {
         dictionaryOverlayController.interactionMode = mode
+        renderDictionaryOverlaysIfNeeded()
     }
 }
 
