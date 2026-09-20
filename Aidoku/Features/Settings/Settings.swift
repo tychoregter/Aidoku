@@ -476,6 +476,26 @@ extension Settings {
                 value: .toggle(.init())
             )
         ]))),
+        .init(
+            title: NSLocalizedString("MANGA_INFO"),
+            value: .group(.init(items: [
+                .init(
+                    key: AppSettings.library.showChapterPageCounts.key,
+                    title: NSLocalizedString("SHOW_CHAPTER_PAGE_COUNTS"),
+                    notification: .init(AppSettings.library.showChapterPageCounts.key),
+                    value: .toggle(.init())
+                ),
+                .init(
+                    key: AppSettings.library.chapterListOrder.key,
+                    title: NSLocalizedString("LIST_ORDER"),
+                    notification: .init(AppSettings.library.chapterListOrder.key),
+                    value: .select(.init(
+                        values: ChapterListOrder.allCases.map(\.rawValue),
+                        titles: ChapterListOrder.allCases.map(\.localizedTitle)
+                    ))
+                )
+            ]))
+        ),
         .init(value: .group(.init(items: [
             .init(
                 key: AppSettings.library.lockLibrary.key,
@@ -643,6 +663,12 @@ extension Settings {
                 key: "Reader.downsampleImages",
                 title: NSLocalizedString("DOWNSAMPLE_IMAGES"),
                 value: .toggle(.init())
+            ),
+            .init(
+                key: AppSettings.reader.scrubberDataSaver.key,
+                title: NSLocalizedString("SCRUBBER_DATA_SAVER"),
+                notification: .init(AppSettings.reader.scrubberDataSaver.key),
+                value: .toggle(.init(subtitle: NSLocalizedString("SCRUBBER_DATA_SAVER_TEXT")))
             ),
             .init(
                 key: "Reader.cropBorders",

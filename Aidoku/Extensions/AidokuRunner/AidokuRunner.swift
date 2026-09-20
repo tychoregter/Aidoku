@@ -386,6 +386,7 @@ extension AidokuRunner.Page {
                     sourceId: sourceId,
                     chapterId: chapterId,
                     imageURL: url.absoluteString,
+                    thumbnailURL: thumbnail?.absoluteString,
                     language: language,
                     context: context,
                     hasDescription: hasDescription,
@@ -395,6 +396,7 @@ extension AidokuRunner.Page {
                 Page(
                     sourceId: sourceId,
                     chapterId: chapterId,
+                    thumbnailURL: thumbnail?.absoluteString,
                     text: text,
                     language: language,
                     hasDescription: hasDescription,
@@ -404,6 +406,7 @@ extension AidokuRunner.Page {
                 Page(
                     sourceId: sourceId,
                     chapterId: chapterId,
+                    thumbnailURL: thumbnail?.absoluteString,
                     image: image.image,
                     language: language,
                     hasDescription: hasDescription,
@@ -414,6 +417,7 @@ extension AidokuRunner.Page {
                     sourceId: sourceId,
                     chapterId: chapterId,
                     imageURL: filePath,
+                    thumbnailURL: thumbnail?.absoluteString,
                     zipURL: url.absoluteString,
                     language: language,
                     hasDescription: hasDescription,

@@ -6,6 +6,69 @@
 //
 
 import Foundation
+import AidokuRunner
+
+enum ChapterListOrder: String, CaseIterable {
+    case automatic
+    case descending
+    case ascending
+
+    var localizedTitle: String {
+        switch self {
+            case .automatic: NSLocalizedString("AUTOMATIC")
+            case .descending: NSLocalizedString("DESCENDING")
+            case .ascending: NSLocalizedString("ASCENDING")
+        }
+    }
+
+    @MainActor
+    func orderedChapters(
+        _ chapters: [AidokuRunner.Chapter],
+        for manga: AidokuRunner.Manga
+    ) -> [AidokuRunner.Chapter] {
+        let resolvedOrder = switch self {
+            case .automatic:
+                Self.effectiveReadingMode(for: manga) == .rtl ? Self.descending : Self.ascending
+            case .descending, .ascending:
+                self
+        }
+
+        // Sources provide chapters in descending source order. Reversing preserves the
+        // source's own ordering while presenting the lowest source order first.
+        return resolvedOrder == .ascending ? Array(chapters.reversed()) : chapters
+    }
+
+    @MainActor
+    private static func effectiveReadingMode(for manga: AidokuRunner.Manga) -> ReadingMode {
+        let perTitleMode = UserDefaults.standard.string(forKey: "Reader.readingMode.\(manga.identifier)")
+        let selectedMode = perTitleMode == "default"
+            ? UserDefaults.standard.string(forKey: "Reader.readingMode")
+            : perTitleMode
+
+        if let selectedMode, let mode = ReadingMode(selectedMode) {
+            return mode
+        }
+
+        let viewerMode: ReadingMode? = switch manga.viewer {
+            case .rightToLeft: .rtl
+            case .leftToRight: .ltr
+            case .vertical: .vertical
+            case .webtoon: .webtoon
+            case .unknown: nil
+        }
+        if let viewerMode {
+            return viewerMode
+        }
+
+        if CoreDataManager.shared.hasManga(mangaId: manga.identifier),
+           let mode = ReadingMode(rawValue: CoreDataManager.shared.getMangaSourceReadingMode(mangaId: manga.identifier))
+        {
+            return mode
+        }
+
+        return .rtl
+    }
+}
 
 struct LibrarySettings: Sendable {
     var keys: [any SettingsDefault] {
@@ -18,6 +81,8 @@ struct LibrarySettings: Sendable {
             resumeLastOpenedChapter,
             continueReadingOnReselect,
             contextMenuPagePreviews,
+            showChapterPageCounts,
+            chapterListOrder,
             threeStateFilterMethods,
             visibleFilterMethods,
             unreadChapterBadges,
@@ -60,6 +125,9 @@ struct LibrarySettings: Sendable {
     let resumeLastOpenedChapter = SettingsKey<Bool>("Library.resumeLastOpenedChapter", default: false)
     let continueReadingOnReselect = SettingsKey<Bool>("Library.continueReadingOnReselect", default: true)
     let contextMenuPagePreviews = SettingsKey<Bool>("Library.contextMenuPagePreviews", default: true)
+    // Keep the existing key so moving the setting does not reset the user's choice.
+    let showChapterPageCounts = SettingsKey<Bool>("Reader.showChapterPageCounts", default: false)
+    let chapterListOrder = SettingsKey<String>("Library.chapterListOrder", default: ChapterListOrder.automatic.rawValue)
     let threeStateFilterMethods = SettingsKey<[String]>(
         "Library.threeStateFilterMethods",
         default: []

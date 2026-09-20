@@ -237,6 +237,14 @@ extension ReaderSettingsView {
                 )
                 SettingView(
                     setting: .init(
+                        key: AppSettings.reader.scrubberDataSaver.key,
+                        title: NSLocalizedString("SCRUBBER_DATA_SAVER"),
+                        notification: .init(AppSettings.reader.scrubberDataSaver.key),
+                        value: .toggle(.init(subtitle: NSLocalizedString("SCRUBBER_DATA_SAVER_TEXT")))
+                    )
+                )
+                SettingView(
+                    setting: .init(
                         key: "Reader.cropBorders",
                         title: NSLocalizedString("CROP_BORDERS"),
                         value: .toggle(.init())

@@ -141,17 +141,19 @@ actor LibraryPagePreviewCache {
 
     /// Returns a persisted scrubber thumbnail when one has already been
     /// prepared for this exact chapter page.
-    func cachedReaderThumbnail(for page: Page, pageIndex: Int, mangaId: MangaIdentifier) -> UIImage? {
+    func cachedReaderThumbnail(for page: Page, pageIndex: Int, mangaId: MangaIdentifier) async -> UIImage? {
         let url = Self.thumbnailURL(for: page, pageIndex: pageIndex, mangaId: mangaId)
-        return UIImage(contentsOfFile: url.path)
+        guard let image = UIImage(contentsOfFile: url.path) else { return nil }
+        return await image.byPreparingForDisplay() ?? image
     }
 
     /// Persists a scrubber thumbnail after it has been loaded on demand. This
     /// cache is populated by actual reader use only; it is never prewarmed.
     func storeReaderThumbnail(_ image: UIImage, for page: Page, pageIndex: Int, mangaId: MangaIdentifier) {
-        guard let data = image.jpegData(compressionQuality: 0.82) else { return }
         let url = Self.thumbnailURL(for: page, pageIndex: pageIndex, mangaId: mangaId)
-        guard (try? Data(contentsOf: url)) != data else { return }
+        // The URL identity is part of the cache key, so an existing entry is
+        // already the exact version required for this page.
+        guard !url.exists, let data = image.jpegData(compressionQuality: 0.82) else { return }
         url.deletingLastPathComponent().createDirectory()
         try? data.write(to: url, options: .atomic)
     }
@@ -439,9 +441,18 @@ actor LibraryPagePreviewCache {
 
     private static func thumbnailURL(for page: Page, pageIndex: Int, mangaId: MangaIdentifier) -> URL {
         let mangaDirectory = thumbnailDirectory.appendingPathComponent(digest(mangaId.description), isDirectory: true)
-        // Version the key so thumbnails written by the old page-object key
-        // (where every source page could have index 0) are never reused.
-        let pageKey = "v2|\(page.chapterId)|\(pageIndex)"
+        let resourceIdentity = page.thumbnailURL
+            ?? page.imageURL
+            ?? page.zipURL
+            ?? page.base64.map { digest($0) }
+            ?? "embedded"
+        let contextIdentity = page.context?
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value)" }
+            .joined(separator: "&") ?? ""
+        // Including the resource identity makes changed pages naturally use a
+        // new file without reading and comparing the previous JPEG.
+        let pageKey = "v3|\(page.chapterId)|\(pageIndex)|\(resourceIdentity)|\(contextIdentity)"
         return mangaDirectory.appendingPathComponent(digest(pageKey)).appendingPathExtension("jpg")
     }
 

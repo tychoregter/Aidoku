@@ -75,6 +75,7 @@
 "ADD_TO_LIBRARY" = "Add to Library";
 "REMOVE_FROM_LIBRARY" = "Remove from Library";
 "MANGA_INFO" = "Manga Info";
+"LIST_ORDER" = "List Order";
 "SORT_BY" = "Sort By";
 "FILTER_BY" = "Filter By";
 "REMOVE_FILTER" = "Reset Filters";
@@ -245,6 +246,7 @@
 "CREATE_NEW_SERIES_INFO" = "A new series will be created on the next page, or you can select an existing series to add this file to.";
 "ADD_TO_OTHER_SERIES_INFO" = "The file will be added to the selected series.";
 "%i_PAGES" = "%i pages";
+"SHOW_CHAPTER_PAGE_COUNTS" = "Show Chapter Page Counts";
 "1_PAGE" = "1 page";
 "CBZ_NAME" = "Comic Book Zip Archive";
 "ZIP_NAME" = "Zip Archive";
@@ -872,6 +874,8 @@
 "BACKUP_ERROR_TEXT" = "An error was encountering while restoring: %@. The backup may be invalid.";
 "READER_ORIENTATION" = "Orientation";
 "FOLLOW_DEVICE" = "Follow Device";
+"SCRUBBER_DATA_SAVER" = "Scrubber Data Saver";
+"SCRUBBER_DATA_SAVER_TEXT" = "On cellular, thumbnail downloading is disabled.";
 
 // Keyboard shortcuts
 "FOCUS_ITEM_LEFT" = "Focus item to the left";

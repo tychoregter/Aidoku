@@ -822,6 +822,7 @@ private struct ChapterCellView<T: View>: View, Equatable {
         let view = HStack {
             ChapterTableCell(
                 source: source,
+                manga: manga,
                 sourceKey: sourceKey,
                 chapter: chapter,
                 read: read,

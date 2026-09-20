@@ -303,8 +303,8 @@ class ReaderViewController: BaseObservingViewController {
             readerToolbarEffectView.contentView.addSubview(readerToolbarBackgroundEffectView)
             readerToolbar.addSubview(toolbarView)
             toolbarView.moveThumbnailPageCounter(
-                to: readerToolbarEffectView.contentView,
-                centeredOn: readerToolbarEffectView.contentView.centerXAnchor,
+                to: overlayHost,
+                centeredOn: readerToolbar.centerXAnchor,
                 above: readerToolbar.topAnchor,
                 spacing: 10
             )
@@ -446,6 +446,10 @@ class ReaderViewController: BaseObservingViewController {
         }
         addObserver(forName: AppSettings.reader.showWebtoonScrollPercentage.key) { [weak self] _ in
             self?.updateWebtoonProgressMode()
+        }
+        addObserver(forName: AppSettings.reader.scrubberDataSaver.key) { [weak self] _ in
+            guard let self, !self.pages.isEmpty else { return }
+            self.configureThumbnailScrubber(with: self.pages)
         }
         addObserver(forName: .readerTapZones) { [weak self] _ in
             self?.updateTapZone()
@@ -788,8 +792,11 @@ extension ReaderViewController {
         (reader as? ReaderWebtoonViewController)?.stopAutoScroll()
 
         var view = ReaderChapterListView(
+            source: source,
+            manga: manga,
             chapterList: chapterList,
-            chapter: chapter
+            chapter: chapter,
+            pageCounts: [chapter.key: pages.count]
         )
         view.chapterSet = { [weak self] chapter in
             guard let self else { return }
@@ -1355,23 +1362,36 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
     private func configureThumbnailScrubber(with pages: [Page]) {
         let supportsThumbnails = !pages.isEmpty && pages.allSatisfy { !$0.isTextPage }
         toolbarView.configureThumbnails(
+            contentIdentifier: "\(manga.identifier.description)|\(chapter.key)",
             pageCount: pages.count,
-            supportsThumbnails: supportsThumbnails
+            supportsThumbnails: supportsThumbnails,
+            cachedProvider: { [weak self] index in
+                guard let self, let page = pages[safe: index] else { return nil }
+                return await LibraryPagePreviewCache.shared.cachedReaderThumbnail(
+                    for: page,
+                    pageIndex: index,
+                    mangaId: self.manga.identifier
+                )
+            }
         ) { [weak self] index, kind, publishIntermediate in
             guard let self, let page = pages[safe: index] else { return nil }
             let image = await self.thumbnailImage(
                 for: page,
                 pageIndex: index,
                 kind: kind,
+                allowsNetwork: !self.shouldRestrictScrubberNetwork,
                 publishIntermediate: publishIntermediate
             )
             if kind == .strip, let image {
-                await LibraryPagePreviewCache.shared.storeReaderThumbnail(
-                    image,
-                    for: page,
-                    pageIndex: index,
-                    mangaId: self.manga.identifier
-                )
+                let mangaId = self.manga.identifier
+                Task(priority: .utility) {
+                    await LibraryPagePreviewCache.shared.storeReaderThumbnail(
+                        image,
+                        for: page,
+                        pageIndex: index,
+                        mangaId: mangaId
+                    )
+                }
             }
             return image
         }
@@ -1381,18 +1401,10 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         for page: Page,
         pageIndex: Int,
         kind: ReaderThumbnailScrubberView.ImageKind,
+        allowsNetwork: Bool,
         publishIntermediate: @escaping @MainActor (UIImage) -> Void,
         includeIntermediate: Bool = true
     ) async -> UIImage? {
-        if kind == .strip,
-            let cachedImage = await LibraryPagePreviewCache.shared.cachedReaderThumbnail(
-            for: page,
-            pageIndex: pageIndex,
-            mangaId: manga.identifier
-           ) {
-            return cachedImage
-        }
-
         let options = await scrubberThumbnailOptions(for: kind, page: page, targetWidth: scrubberThumbnailWidth)
         if let image = page.image {
             return await makeScrubberThumbnail(from: image, kind: kind)
@@ -1407,17 +1419,32 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
             return await makeScrubberThumbnail(from: image, kind: kind)
         }
 
-        if let imageURL = page.imageURL, let url = URL(string: imageURL) {
+        let fullPageURL = page.imageURL.flatMap(URL.init(string:))
+        let requiresCacheOnlyLookup = !allowsNetwork && !(fullPageURL?.isFileURL ?? false)
+        let requestedURLString = if requiresCacheOnlyLookup {
+            page.imageURL
+        } else if kind == .strip {
+            page.thumbnailURL ?? page.imageURL
+        } else {
+            page.imageURL
+        }
+        if let requestedURLString, let url = URL(string: requestedURLString) {
             var request = await ReaderPageView.imageRequest(url: url, context: page.context, source: source)
-            request.thumbnail = options
-            if kind == .strip {
-                request.processors.append(await DownsampleProcessor(width: scrubberThumbnailWidth))
+            if requiresCacheOnlyLookup {
+                return await cachedScrubberThumbnail(
+                    for: request,
+                    options: options,
+                    kind: kind
+                )
             }
+            request.thumbnail = options
             // Keep active page previews ahead of strip thumbnails while
             // allowing strip requests to run at their normal priority.
             request.priority = kind == .preview ? .high : .low
             guard let image = try? await ImagePipeline.shared.image(for: request) else { return nil }
-            return image
+            return kind == .strip
+                ? await makeScrubberThumbnail(from: image, width: scrubberThumbnailWidth)
+                : image
         }
 
         if let base64 = page.base64, let data = Data(base64Encoded: base64) {
@@ -1426,6 +1453,33 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         }
 
         return nil
+    }
+
+    private var shouldRestrictScrubberNetwork: Bool {
+        AppSettings.reader.scrubberDataSaver.get()
+            && Reachability.getConnectionType() == .cellular
+    }
+
+    /// Builds a scrubber image only from a full page the reader has already
+    /// put in Nuke's memory or original-data cache. This method never starts a
+    /// network request.
+    private func cachedScrubberThumbnail(
+        for request: ImageRequest,
+        options: ImageRequest.ThumbnailOptions,
+        kind: ReaderThumbnailScrubberView.ImageKind
+    ) async -> UIImage? {
+        let image: UIImage? = await Task.detached(priority: .utility) { () -> UIImage? in
+            let cache = ImagePipeline.shared.cache
+            if let image = cache.cachedImage(for: request, caches: .memory)?.image {
+                return image
+            }
+            guard let data = cache.cachedData(for: request) else { return nil }
+            return options.makeThumbnail(with: data)
+        }.value
+        guard let image else { return nil }
+        return kind == .strip
+            ? await makeScrubberThumbnail(from: image, width: scrubberThumbnailWidth)
+            : image
     }
 
     private var scrubberThumbnailWidth: CGFloat { 48 }
@@ -1476,8 +1530,20 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
     }
 
     private func makeScrubberThumbnail(from image: UIImage, width: CGFloat) async -> UIImage? {
-        let processor = await DownsampleProcessor(width: width)
-        return processor.process(image)
+        let scale = UIScreen.main.scale
+        return await Task.detached(priority: .utility) {
+            guard image.size.width > 0, image.size.height > 0 else { return nil }
+            let targetHeight = width * image.size.height / image.size.width
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = scale
+            format.opaque = false
+            return UIGraphicsImageRenderer(
+                size: CGSize(width: width, height: targetHeight),
+                format: format
+            ).image { _ in
+                image.draw(in: CGRect(x: 0, y: 0, width: width, height: targetHeight))
+            }
+        }.value
     }
 
     private func scrubberThumbnailOptions(
@@ -2368,6 +2434,11 @@ extension ReaderViewController: UIGestureRecognizerDelegate {
 
         var view: UIView? = touch.view
         while let currentView = view {
+            // The page counter handles this touch itself; do not also let the
+            // reader's background tap gesture hide the controls.
+            if currentView === toolbarView.thumbnailPageCounterView {
+                return false
+            }
             if currentView is UIControl {
                 return false
             }

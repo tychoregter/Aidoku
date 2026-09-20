@@ -326,6 +326,14 @@ extension MangaView.ViewModel {
                 }
             }
             .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .init(AppSettings.library.chapterListOrder.key))
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    self?.refilterChapters()
+                }
+            }
+            .store(in: &cancellables)
     }
 }
 
@@ -787,7 +795,9 @@ extension MangaView.ViewModel {
         }
         return switch chapterSortOption {
             case .sourceOrder:
-                chapterSortAscending ? chapters.reversed() : chapters
+                ChapterListOrder(
+                    rawValue: AppSettings.library.chapterListOrder.get()
+                )?.orderedChapters(chapters, for: manga) ?? chapters
             case .chapter:
                 if chapterSortAscending {
                     chapters.sorted(by: { $0.chapterNumber ?? -1 < $1.chapterNumber ?? -1 })

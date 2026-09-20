@@ -21,6 +21,7 @@ struct Page: Hashable {
     var chapterId: String
     var index: Int = 0
     var imageURL: String?
+    var thumbnailURL: String?
     var base64: String?
     var text: String?
     var image: PlatformImage?
@@ -60,6 +61,7 @@ extension Page {
         }
         return AidokuRunner.Page(
             content: content,
+            thumbnail: thumbnailURL.flatMap(URL.init(string:)),
             hasDescription: hasDescription,
             description: description
         )

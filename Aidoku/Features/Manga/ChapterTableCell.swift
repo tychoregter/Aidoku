@@ -10,6 +10,7 @@ import SwiftUI
 
 struct ChapterTableCell: View {
     let source: AidokuRunner.Source?
+    let manga: AidokuRunner.Manga
     let sourceKey: String
     let chapter: AidokuRunner.Chapter
     let read: Bool
@@ -17,6 +18,9 @@ struct ChapterTableCell: View {
     let downloadStatus: DownloadStatus
     var downloadProgress: Float?
     let displayMode: ChapterTitleDisplayMode
+
+    @StateObject private var showPageCounts = UserDefaultsBool(key: AppSettings.library.showChapterPageCounts.key)
+    @State private var loadedPageCount: Int?
 
     var downloaded: Bool {
         downloadStatus == .finished
@@ -51,7 +55,7 @@ struct ChapterTableCell: View {
                     .foregroundStyle(locked || read ? .secondary : .primary)
                     .font(.system(size: 16))
                     .lineLimit(1)
-                if let subtitle = chapter.formattedSubtitle(page: page, sourceKey: sourceKey) {
+                if let subtitle = subtitle {
                     Text(subtitle)
                         .foregroundStyle(.secondary)
                         .font(.system(size: 14))
@@ -81,12 +85,32 @@ struct ChapterTableCell: View {
         .frame(alignment: .leading)
         .contentShape(Rectangle())
         if #available(iOS 16.0, *) {
-            view.alignmentGuide(.listRowSeparatorTrailing) { d in
-                d[.trailing] // ensure separator goes all the way to the trailing edge
-            }
-        } else {
             view
+                .alignmentGuide(.listRowSeparatorTrailing) { d in
+                d[.trailing] // ensure separator goes all the way to the trailing edge
+                }
+                .task(id: "\(chapter.key)-\(showPageCounts.value)") {
+                    await loadPageCountIfNeeded()
+                }
+        } else {
+            view.task {
+                await loadPageCountIfNeeded()
+            }
         }
+    }
+
+    private var subtitle: String? {
+        if showPageCounts.value {
+            return loadedPageCount.map { String(format: NSLocalizedString("%i_PAGES"), $0) }
+        }
+        return chapter.formattedSubtitle(page: page, sourceKey: sourceKey)
+    }
+
+    private func loadPageCountIfNeeded() async {
+        guard showPageCounts.value, loadedPageCount == nil, let source else { return }
+        guard let pages = try? await source.getPageList(manga: manga, chapter: chapter) else { return }
+        guard !Task.isCancelled else { return }
+        loadedPageCount = pages.count
     }
 }
 

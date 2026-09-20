@@ -10,11 +10,13 @@ struct ReaderSettings: Sendable {
         [
             automaticallyHideControls,
             autoScrollPosition,
+            scrubberDataSaver,
             showWebtoonScrollPercentage
         ]
     }
 
     let automaticallyHideControls = SettingsKey<Bool>("Reader.automaticallyHideControls", default: true)
     let autoScrollPosition = SettingsKey<AutoScrollPosition>("Reader.autoScrollPosition", default: .right)
+    let scrubberDataSaver = SettingsKey<Bool>("Reader.scrubberDataSaver", default: false)
     let showWebtoonScrollPercentage = SettingsKey<Bool>("Reader.showWebtoonScrollPercentage", default: true)
 }

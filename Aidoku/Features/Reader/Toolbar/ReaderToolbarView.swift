@@ -28,6 +28,10 @@ class ReaderToolbarView: UIView {
     private var usesWebtoonProgress = false
     private var showsWebtoonScrollPercentage = true
     private var webtoonProgress: CGFloat = 0
+    private var showingTemporaryPagesLeft = false
+    private var pagesLeftRestoreWorkItem: DispatchWorkItem?
+    private var pagesLeftDisplayGeneration = 0
+    private var pageCounterMorphAnimator: UIViewPropertyAnimator?
 
     init() {
         super.init(frame: .zero)
@@ -52,25 +56,19 @@ class ReaderToolbarView: UIView {
         }
         addSubview(thumbnailScrubberView)
 
-        if #available(iOS 26.0, *) {
-            // Match the native regular glass used by the reader scrubber.
-            thumbnailPageCounterView.effect = UIGlassEffect(style: .regular)
-            thumbnailPageCounterView.contentView.backgroundColor = .clear
-        } else {
-            // Preserve the previous subtly blurred neutral counter as the
-            // fallback (and as the direct revert path for the glass design).
-            thumbnailPageCounterView.effect = UIBlurEffect(style: .systemUltraThinMaterial)
-            thumbnailPageCounterView.contentView.backgroundColor = UIColor { traits in
-                if traits.userInterfaceStyle == .dark {
-                    return UIColor(white: 0.22, alpha: 0.62)
-                }
-                return UIColor(white: 0.953, alpha: 0.58)
-            }
-        }
+        let glassEffect = UIGlassEffect(style: .regular)
+        glassEffect.isInteractive = true
+        thumbnailPageCounterView.effect = glassEffect
+        thumbnailPageCounterView.contentView.backgroundColor = .clear
         thumbnailPageCounterView.layer.cornerRadius = 8
         thumbnailPageCounterView.layer.cornerCurve = .continuous
         thumbnailPageCounterView.clipsToBounds = true
-        thumbnailPageCounterView.isUserInteractionEnabled = false
+        thumbnailPageCounterView.isUserInteractionEnabled = true
+        let pageCounterTapGesture = UITapGestureRecognizer(
+            target: self,
+            action: #selector(handlePageCounterTap)
+        )
+        thumbnailPageCounterView.addGestureRecognizer(pageCounterTapGesture)
         thumbnailPageCounterView.isHidden = true
         addSubview(thumbnailPageCounterView)
 
@@ -125,12 +123,60 @@ class ReaderToolbarView: UIView {
 
     func preparePageCounterForShowing() {
         pageCounterControlsVisible = true
+        cancelTemporaryPagesLeftDisplay()
+        updatePageLabels()
         thumbnailPageCounterView.isHidden = !usesThumbnailScrubber
     }
 
     func finishHidingPageCounter() {
         pageCounterControlsVisible = false
+        cancelTemporaryPagesLeftDisplay()
+        updatePageLabels()
         thumbnailPageCounterView.isHidden = true
+    }
+
+    @objc private func handlePageCounterTap() {
+        guard usesThumbnailScrubber,
+              pageCounterControlsVisible,
+              let totalPages,
+              let currentPage = currentPage ?? currentPageValue else { return }
+
+        if showingTemporaryPagesLeft {
+            cancelTemporaryPagesLeftDisplay()
+            updatePageLabels(animated: true)
+            return
+        }
+
+        pagesLeftRestoreWorkItem?.cancel()
+        pagesLeftDisplayGeneration += 1
+        let generation = pagesLeftDisplayGeneration
+        showingTemporaryPagesLeft = true
+        updatePagesLeftLabel(
+            page: min(max(currentPage, 1), totalPages),
+            totalPages: totalPages,
+            animated: true
+        )
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, self.pagesLeftDisplayGeneration == generation else { return }
+            self.showingTemporaryPagesLeft = false
+            self.pagesLeftRestoreWorkItem = nil
+            self.updatePageLabels(animated: true)
+        }
+        pagesLeftRestoreWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: workItem)
+    }
+
+    private func cancelTemporaryPagesLeftDisplay() {
+        pagesLeftRestoreWorkItem?.cancel()
+        pagesLeftRestoreWorkItem = nil
+        pagesLeftDisplayGeneration += 1
+        showingTemporaryPagesLeft = false
+    }
+
+    deinit {
+        pagesLeftRestoreWorkItem?.cancel()
+        pageCounterMorphAnimator?.stopAnimation(true)
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -146,7 +192,9 @@ class ReaderToolbarView: UIView {
             return
         }
         let boundedPage = min(max(page, 1), totalPages)
-        if !usesWebtoonProgress || !showsWebtoonScrollPercentage {
+        if showingTemporaryPagesLeft {
+            updatePagesLeftLabel(page: boundedPage, totalPages: totalPages)
+        } else if !usesWebtoonProgress || !showsWebtoonScrollPercentage {
             updatePageLabel(page: boundedPage, totalPages: totalPages)
         }
         if currentPageValue != boundedPage,
@@ -162,7 +210,11 @@ class ReaderToolbarView: UIView {
         let value = CGFloat(boundedPage - 1) / max(CGFloat(totalPages - 1), 1)
         thumbnailScrubberView.move(toValue: value)
         thumbnailScrubberView.accessibilityValue = "\(boundedPage) of \(totalPages)"
-        thumbnailPageCounterLabel.text = "\(boundedPage) of \(totalPages)"
+        if showingTemporaryPagesLeft {
+            updatePagesLeftLabel(page: boundedPage, totalPages: totalPages)
+        } else {
+            thumbnailPageCounterLabel.text = "\(boundedPage) of \(totalPages)"
+        }
     }
 
     func setProgressContrastColor(_ color: UIColor) {
@@ -195,21 +247,62 @@ class ReaderToolbarView: UIView {
         thumbnailPageCounterView.overrideUserInterfaceStyle = isDark ? .dark : .light
     }
 
-    func updatePageLabels() {
+    func updatePageLabels(animated: Bool = false) {
         guard let currentPage, let totalPages else {
-            thumbnailPageCounterLabel.text = nil
+            setPageCounterText(nil, animated: animated)
             return
         }
 
-        if usesWebtoonProgress, showsWebtoonScrollPercentage {
-            updateWebtoonProgressLabel()
+        let boundedPage = min(max(currentPage, 1), totalPages)
+        if showingTemporaryPagesLeft {
+            updatePagesLeftLabel(page: boundedPage, totalPages: totalPages, animated: animated)
+        } else if usesWebtoonProgress, showsWebtoonScrollPercentage {
+            updateWebtoonProgressLabel(animated: animated)
         } else {
-            updatePageLabel(page: min(max(currentPage, 1), totalPages), totalPages: totalPages)
+            updatePageLabel(page: boundedPage, totalPages: totalPages, animated: animated)
         }
     }
 
-    private func updatePageLabel(page: Int, totalPages: Int) {
-        thumbnailPageCounterLabel.text = "\(page) of \(totalPages)"
+    private func updatePageLabel(page: Int, totalPages: Int, animated: Bool = false) {
+        setPageCounterText("\(page) of \(totalPages)", animated: animated)
+    }
+
+    private func updatePagesLeftLabel(page: Int, totalPages: Int, animated: Bool = false) {
+        setPageCounterText("\(max(totalPages - page, 0)) pages left", animated: animated)
+    }
+
+    private func setPageCounterText(_ text: String?, animated: Bool) {
+        guard thumbnailPageCounterLabel.text != text else { return }
+        guard animated, let container = thumbnailPageCounterView.superview else {
+            pageCounterMorphAnimator?.stopAnimation(true)
+            pageCounterMorphAnimator = nil
+            thumbnailPageCounterLabel.text = text
+            thumbnailPageCounterView.superview?.layoutIfNeeded()
+            return
+        }
+
+        pageCounterMorphAnimator?.stopAnimation(false)
+        pageCounterMorphAnimator?.finishAnimation(at: .current)
+        container.layoutIfNeeded()
+
+        UIView.transition(
+            with: thumbnailPageCounterLabel,
+            duration: 0.18,
+            options: [.transitionCrossDissolve, .beginFromCurrentState, .allowUserInteraction]
+        ) {
+            self.thumbnailPageCounterLabel.text = text
+        }
+
+        container.setNeedsLayout()
+        let animator = UIViewPropertyAnimator(duration: 0.38, dampingRatio: 0.82) {
+            container.layoutIfNeeded()
+        }
+        pageCounterMorphAnimator = animator
+        animator.addCompletion { [weak self, weak animator] _ in
+            guard let self, let animator, self.pageCounterMorphAnimator === animator else { return }
+            self.pageCounterMorphAnimator = nil
+        }
+        animator.startAnimation()
     }
 
     func updateSliderPosition() {
@@ -222,6 +315,9 @@ class ReaderToolbarView: UIView {
     }
 
     func setWebtoonProgressMode(enabled: Bool, showsPercentage: Bool) {
+        if usesWebtoonProgress != enabled || showsWebtoonScrollPercentage != showsPercentage {
+            cancelTemporaryPagesLeftDisplay()
+        }
         usesWebtoonProgress = enabled
         showsWebtoonScrollPercentage = showsPercentage
         thumbnailScrubberView.usesContinuousProgress = enabled
@@ -233,14 +329,17 @@ class ReaderToolbarView: UIView {
         webtoonProgress = min(max(progress, 0), 1)
         guard usesWebtoonProgress else { return }
         moveSlider(to: webtoonProgress)
-        if showsWebtoonScrollPercentage {
+        if showingTemporaryPagesLeft {
+            let page = min(max(currentPage ?? 1, 1), totalPages ?? 1)
+            updatePagesLeftLabel(page: page, totalPages: totalPages ?? 1)
+        } else if showsWebtoonScrollPercentage {
             updateWebtoonProgressLabel()
         }
         thumbnailScrubberView.accessibilityValue = "\(Int((webtoonProgress * 100).rounded())) percent"
     }
 
-    private func updateWebtoonProgressLabel() {
-        thumbnailPageCounterLabel.text = "\(Int((webtoonProgress * 100).rounded()))%"
+    private func updateWebtoonProgressLabel(animated: Bool = false) {
+        setPageCounterText("\(Int((webtoonProgress * 100).rounded()))%", animated: animated)
     }
 
     func setSliderDirection(_ direction: ReaderThumbnailScrubberView.Direction) {
@@ -252,12 +351,19 @@ class ReaderToolbarView: UIView {
     }
 
     func configureThumbnails(
+        contentIdentifier: String,
         pageCount: Int,
         supportsThumbnails: Bool,
+        cachedProvider: @escaping (Int) async -> UIImage?,
         provider: @escaping (Int, ReaderThumbnailScrubberView.ImageKind, @escaping @MainActor (UIImage) -> Void) async -> UIImage?
     ) {
         supportsThumbnailScrubber = supportsThumbnails
-        thumbnailScrubberView.configure(pageCount: pageCount, thumbnailProvider: provider)
+        thumbnailScrubberView.configure(
+            contentIdentifier: contentIdentifier,
+            pageCount: pageCount,
+            cachedThumbnailProvider: cachedProvider,
+            thumbnailProvider: provider
+        )
         onThumbnailScrubberPreferredWidthChange?(thumbnailScrubberView.preferredWidth)
         if usesWebtoonProgress {
             thumbnailScrubberView.accessibilityValue = "\(Int((webtoonProgress * 100).rounded())) percent"

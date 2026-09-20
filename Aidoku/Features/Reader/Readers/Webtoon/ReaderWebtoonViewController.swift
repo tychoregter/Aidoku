@@ -7,6 +7,7 @@
 
 import AidokuRunner
 import AsyncDisplayKit
+import Foundation
 import Nuke
 import UIKit
 
@@ -58,6 +59,27 @@ class ReaderWebtoonViewController: ZoomableCollectionViewController {
     private var previousPage = 0
 
     private var pageDimensionRatios: [String: CGFloat] = [:]
+    private let pageDimensionRatiosLock = NSLock()
+
+    private func pageDimensionRatio(for key: String) -> CGFloat? {
+        pageDimensionRatiosLock.lock()
+        defer { pageDimensionRatiosLock.unlock() }
+        return pageDimensionRatios[key]
+    }
+
+    private func setPageDimensionRatio(_ ratio: CGFloat, for key: String) -> CGFloat? {
+        pageDimensionRatiosLock.lock()
+        defer { pageDimensionRatiosLock.unlock() }
+        let previousRatio = pageDimensionRatios[key]
+        pageDimensionRatios[key] = ratio
+        return previousRatio
+    }
+
+    private func mergePageDimensionRatios(_ ratios: [String: CGFloat]) {
+        pageDimensionRatiosLock.lock()
+        defer { pageDimensionRatiosLock.unlock() }
+        pageDimensionRatios.merge(ratios, uniquingKeysWith: { _, newValue in newValue })
+    }
 
     private var autoScrollDisplayLink: CADisplayLink?
     private var autoScrollLastTimestamp: CFTimeInterval?
@@ -930,17 +952,13 @@ extension ReaderWebtoonViewController: ReaderReaderDelegate {
         let keys = pages
             .filter { $0.type == .imagePage }
             .map(pageDimensionKey(for:))
-        pageDimensionRatios.merge(
-            await WebtoonPageDimensionCache.shared.ratios(for: keys),
-            uniquingKeysWith: { _, newValue in newValue }
-        )
+        mergePageDimensionRatios(await WebtoonPageDimensionCache.shared.ratios(for: keys))
     }
 
     func pageDimensionDidChange(size: CGSize, for key: String) {
         guard size.width > 0, size.height > 0 else { return }
         let ratio = size.height / size.width
-        let previousRatio = pageDimensionRatios[key]
-        pageDimensionRatios[key] = ratio
+        let previousRatio = setPageDimensionRatio(ratio, for: key)
         guard previousRatio == nil || abs((previousRatio ?? 0) - ratio) > 0.001 else { return }
 
         // The node applies its new size immediately after setting the image.
@@ -965,7 +983,7 @@ extension ReaderWebtoonViewController: ReaderReaderDelegate {
     private func loadPageDimensions(for pages: [Page]) async {
         await loadCachedPageDimensions(for: pages)
         let pendingPages = pages.filter {
-            $0.type == .imagePage && pageDimensionRatios[pageDimensionKey(for: $0)] == nil
+            $0.type == .imagePage && pageDimensionRatio(for: pageDimensionKey(for: $0)) == nil
         }
         guard !pendingPages.isEmpty else { return }
 
@@ -1002,7 +1020,7 @@ extension ReaderWebtoonViewController: ReaderReaderDelegate {
 
             guard !Task.isCancelled else { return }
             for (key, size) in dimensions where size.width > 0 && size.height > 0 {
-                pageDimensionRatios[key] = size.height / size.width
+                setPageDimensionRatio(size.height / size.width, for: key)
             }
         }
     }
@@ -1121,7 +1139,7 @@ extension ReaderWebtoonViewController: ASCollectionDataSource {
                     temporaryPageStore: temporaryPageStore,
                     pillarboxLayoutState: self.pillarboxLayoutState,
                     dimensionCacheKey: self.pageDimensionKey(for: page),
-                    cachedRatio: self.pageDimensionRatios[self.pageDimensionKey(for: page)]
+                    cachedRatio: self.pageDimensionRatio(for: self.pageDimensionKey(for: page))
                 )
                 cell.delegate = self
                 if #available(iOS 18.0, *) {
