@@ -871,11 +871,28 @@ extension MangaView.ViewModel {
     private func getNextChapter() -> ChapterResult {
         guard !chapters.isEmpty else { return .none }
 
+        // The info-page list order is presentation-only. The read button must
+        // always evaluate unread chapters from the beginning of the source,
+        // otherwise an ascending list gets reversed a second time and starts
+        // an unread title at its final chapter.
+        let candidateChapters: [AidokuRunner.Chapter]
+        if chapterSortOption == .sourceOrder,
+           let sourceChapters = manga.chapters,
+           !sourceChapters.isEmpty
+        {
+            let visibleChapterIds = Set(chapters.map(\.id))
+            candidateChapters = sourceChapters.reversed().filter {
+                visibleChapterIds.contains($0.id)
+            }
+        } else {
+            candidateChapters = chapterSortAscending ? chapters : Array(chapters.reversed())
+        }
+
         let chapter = MangaManager.shared.getNextChapter(
             manga: manga,
-            chapters: chapters,
+            chapters: candidateChapters,
             readingHistory: readingHistory,
-            sortAscending: chapterSortAscending
+            sortAscending: true
         )
 
         if let chapter {
