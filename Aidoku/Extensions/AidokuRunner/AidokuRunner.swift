@@ -249,6 +249,15 @@ extension AidokuRunner.SourceContentRating: StringConvertible {
 }
 
 extension AidokuRunner.Chapter {
+    /// The chapter name supplied by the source, falling back to the generated
+    /// chapter or volume label only when the source did not provide one.
+    var sourceDisplayTitle: String {
+        if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            return title
+        }
+        return formattedTitle()
+    }
+
     func formattedTitle(forceMode: ChapterTitleDisplayMode = .default) -> String {
         if forceMode == .default {
             if volumeNumber == nil && (title?.isEmpty ?? true) {

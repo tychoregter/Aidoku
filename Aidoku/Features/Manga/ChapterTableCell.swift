@@ -47,8 +47,7 @@ struct ChapterTableCell: View {
             }
 
             VStack(alignment: .leading, spacing: 8 / 3) {
-                let title = chapter.formattedTitle(forceMode: displayMode)
-                Text(title)
+                Text(chapter.sourceDisplayTitle)
                     .foregroundStyle(locked || read ? .secondary : .primary)
                     .font(.system(size: 16))
                     .lineLimit(1)

@@ -1014,8 +1014,13 @@ private enum LibraryReadingStatus {
     }
 
     private static func chapterSubtitle(for chapter: ChapterObject) -> String {
-        let number = chapter.chapter?.stringValue ?? chapter.volume?.stringValue ?? chapter.title ?? "?"
-        return "Continue Chapter \(number)"
+        let chapterName = chapter.toNewChapter().sourceDisplayTitle
+        return truncatedShortcutSubtitle("Continue \(chapterName)")
+    }
+
+    private static func truncatedShortcutSubtitle(_ value: String, maximumLength: Int = 48) -> String {
+        guard value.count > maximumLength else { return value }
+        return String(value.prefix(maximumLength - 1)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 }
 

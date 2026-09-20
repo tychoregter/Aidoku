@@ -206,6 +206,8 @@ struct MangaDetailsHeaderView: View {
                 onReadButtonPressed?()
             } label: {
                 Text(readButtonText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
             }
@@ -479,11 +481,7 @@ struct MangaDetailsHeaderView: View {
                 } else {
                     title = NSLocalizedString("CONTINUE_READING")
                 }
-                // The primary reader action always uses the full Chapter label,
-                // regardless of how source metadata labels the entry.
-                if let chapterNum = chapter.chapterNumber ?? chapter.volumeNumber {
-                    title += " " + String(format: NSLocalizedString("CHAPTER_X"), chapterNum)
-                }
+                title += " " + chapter.sourceDisplayTitle
             } else {
                 title = NSLocalizedString("NO_CHAPTERS_AVAILABLE")
             }

@@ -341,7 +341,7 @@
 "UNTITLED" = "Untitled";
 "STATUS_ONGOING" = "Ongoing";
 "STATUS_CANCELLED" = "Canceled";
-"STATUS_COMPLETED" = "Completed";
+"STATUS_COMPLETED" = "Ended";
 "FILTER_ENDED" = "Ended";
 "STATUS_HIATUS" = "Hiatus";
 "SUGGESTIVE" = "Suggestive";
@@ -399,7 +399,7 @@
 "VERTICAL_SCROLL" = "Vertical Scroll";
 "EXPERIMENTAL" = "Experimental";
 "INFINITE_VERTICAL_SCROLL" = "Infinite Vertical Scrolling";
-"SHOW_SCROLL_PERCENTAGE" = "Show Scroll Percentage";
+"SHOW_SCROLL_PERCENTAGE" = "Use Scroll Percentage";
 "SAVE_TO_PHOTOS" = "Save to Photos";
 "OPEN_WEBSITE" = "Open Website";
 "SET_COVER_IMAGE" = "Set Cover Image";
@@ -513,7 +513,7 @@
 "EVERY_2_DAYS" = "Every 2 days";
 "WEEKLY" = "Weekly";
 "WITH_UNREAD_CHAPTERS" = "With unread chapters";
-"WITH_COMPLETED_STATUS" = "With completed status";
+"WITH_COMPLETED_STATUS" = "With ended status";
 "THAT_HAVENT_BEEN_READ" = "That haven't been read";
 "NO_RESULTS_FOR_%@" = "No Results for “%@”";
 "NO_RESULTS_TEXT" = "Check the spelling or try a new search.";
@@ -754,7 +754,7 @@
 "SCORE" = "Score";
 "TRACK_READING" = "Reading";
 "TRACK_PLANNING" = "Planning";
-"TRACK_COMPLETED" = "Completed";
+"TRACK_COMPLETED" = "Ended";
 "TRACK_PAUSED" = "Paused";
 "TRACK_DROPPED" = "Dropped";
 "TRACK_REREADING" = "Rereading";

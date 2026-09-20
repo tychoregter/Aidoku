@@ -180,27 +180,6 @@ struct ChapterListHeaderView: View {
                 }
             }
             .menuActionDismissDisabled()
-            Section(NSLocalizedString("TITLE_DISPLAY_MODE")) {
-                ForEach(ChapterTitleDisplayMode.allCases, id: \.rawValue) { mode in
-                    Button {
-                        displayMode = mode
-                        let key = "Manga.chapterDisplayMode.\(mangaId)"
-                        if mode == .default {
-                            UserDefaults.standard.removeObject(forKey: key)
-                        } else {
-                            UserDefaults.standard.set(mode.rawValue, forKey: key)
-                        }
-                    } label: {
-                        Label {
-                            Text(mode.localizedTitle)
-                        } icon: {
-                            if displayMode == mode {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            }
         } label: {
             Image(systemName: "line.3.horizontal.decrease")
                 .font(.system(size: 21, weight: .regular))
