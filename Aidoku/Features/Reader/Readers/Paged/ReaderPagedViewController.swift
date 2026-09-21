@@ -6,6 +6,7 @@
 //
 
 import AidokuRunner
+import Nuke
 import UIKit
 import VisionKit
 
@@ -403,6 +404,7 @@ extension ReaderPagedViewController {
         isTransitioning = true
         programmaticMove = true
         currentPage = page
+        updatePageLoadingPriorities(activeIndex: vcIndex)
 
         if !animated, resetGesture {
             for subview in pageViewController.view.subviews {
@@ -460,6 +462,35 @@ extension ReaderPagedViewController {
         // allow prefetching into the next chapter
         if range.upperBound > displayPageCount {
             preloadNextChapter(pageCount: min(range.upperBound - displayPageCount, pagesToPreload))
+        }
+    }
+
+    private func updatePageLoadingPriorities(activeIndex: Int? = nil) {
+        guard ReaderPageView.priorityLoadingEnabled else { return }
+        let currentIndex = activeIndex
+            ?? pageViewController.viewControllers?.first.flatMap { getIndex(of: $0, pos: .first) }
+        guard let currentIndex else { return }
+
+        for (index, controller) in pageViewControllers.enumerated() {
+            let distance = abs(index - currentIndex)
+            let priority: ImageRequest.Priority = switch distance {
+                case 0: .veryHigh
+                case 1...2: .high
+                default: .low
+            }
+            controller.setLoadingPriority(priority)
+        }
+    }
+
+    private func setLoadingPriority(
+        _ priority: ImageRequest.Priority,
+        for viewController: UIViewController
+    ) {
+        if let pageController = viewController as? ReaderPageViewController {
+            pageController.setLoadingPriority(priority)
+        } else if let doublePageController = viewController as? ReaderDoublePageViewController {
+            doublePageController.firstPageController.setLoadingPriority(priority)
+            doublePageController.secondPageController.setLoadingPriority(priority)
         }
     }
 
@@ -1044,6 +1075,7 @@ extension ReaderPagedViewController: UIPageViewControllerDelegate {
                     currentPage = page
                 }
                 programmaticMove = false
+                updatePageLoadingPriorities()
 
                 let actualPage = actualPageIndex(from: currentPage)
                 if let key = splitPageCacheKey {
@@ -1102,6 +1134,7 @@ extension ReaderPagedViewController: UIPageViewControllerDelegate {
 
         for controller in pendingViewControllers {
             guard let idx = getIndex(of: controller, pos: .first) else { continue }
+            setLoadingPriority(.veryHigh, for: controller)
             let page = pageIndex(from: idx)
             if usesDoublePages {
                 // include adjacent spreads so wide-image state is resolved for the next data source query

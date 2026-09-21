@@ -6,6 +6,7 @@
 //
 
 import AidokuRunner
+import Nuke
 import UIKit
 
 class ReaderPageViewController: BaseObservingViewController {
@@ -294,6 +295,10 @@ class ReaderPageViewController: BaseObservingViewController {
         pageView?.imageView.image = nil
         zoomView?.zoomEnabled = false
         imageAspectRatio = nil
+    }
+
+    func setLoadingPriority(_ priority: ImageRequest.Priority) {
+        pageView?.setLoadingPriority(priority)
     }
 
     /// Check if this is a wide image (aspect ratio > 1)

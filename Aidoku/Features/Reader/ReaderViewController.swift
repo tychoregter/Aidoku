@@ -540,7 +540,7 @@ class ReaderViewController: BaseObservingViewController {
         super.viewWillAppear(animated)
 
         if AppSettings.reader.automaticallyHideControls.get() {
-            hideBarsImmediately()
+            hideBarsImmediately(notifyBanner: false)
             scheduleBlackOpeningCornerMaskIfNeeded(animated: animated)
         }
     }
@@ -567,6 +567,10 @@ class ReaderViewController: BaseObservingViewController {
         cancelReaderProgressContrastUpdate()
         removeOpeningTransitionCornerMaskImmediately()
         (reader as? ReaderWebtoonViewController)?.stopAutoScroll()
+
+        if isBeingDismissed || navigationController?.isBeingDismissed == true {
+            NotificationCenter.default.post(name: .readerShowingBars, object: nil)
+        }
 
         if !chaptersToRemoveDownload.isEmpty {
             Task {
@@ -2118,7 +2122,10 @@ extension ReaderViewController {
             animated,
             isBeingPresented || navigationController?.isBeingPresented == true,
             let coordinator = transitionCoordinator
-        else { return }
+        else {
+            NotificationCenter.default.post(name: .readerHidingBars, object: true)
+            return
+        }
 
         // Trigger near the end of the native zoom rather than subtracting a
         // fixed time. This keeps the same visual phase on 60 Hz and ProMotion
@@ -2134,6 +2141,7 @@ extension ReaderViewController {
                 !self.isBeingDismissed,
                 self.openingTransitionCornerMaskGeneration == generation
             else { return }
+            NotificationCenter.default.post(name: .readerHidingBars, object: true)
             self.showOpeningCornerMask(afterDisplayFrames: additionalDisplayFrames)
         }
     }
@@ -2230,11 +2238,13 @@ extension ReaderViewController {
         return AppSettings.appearance.appearance.get() != 0
     }
 
-    private func hideBarsImmediately() {
+    private func hideBarsImmediately(notifyBanner: Bool = true) {
         guard let navigationController else { return }
         cancelReaderProgressContrastUpdate()
 
-        NotificationCenter.default.post(name: .readerHidingBars, object: nil)
+        if notifyBanner {
+            NotificationCenter.default.post(name: .readerHidingBars, object: true)
+        }
         UIView.performWithoutAnimation {
             statusBarHidden = true
             setNeedsStatusBarAppearanceUpdate()

@@ -28,6 +28,7 @@ final class ReaderThumbnailScrubberView: UIControl {
         static let previewImageHeight: CGFloat = 108
         static let previewLabelHeight: CGFloat = 30
         static let previewSpacing: CGFloat = 12
+        static let previewShowDelay: TimeInterval = 0.12
         static let selectionAnimationDuration: TimeInterval = 0.14
     }
 
@@ -82,6 +83,7 @@ final class ReaderThumbnailScrubberView: UIControl {
     private var contentIdentifier: String?
     private var thumbnailViews: [UIImageView] = []
     private var previewTasks: [Int: Task<Void, Never>] = [:]
+    private var previewShowWorkItem: DispatchWorkItem?
     private var thumbnailPreloadTask: Task<Void, Never>?
     private var isLoadingEnabled = false
     private var cachedThumbnailProvider: ((Int) async -> UIImage?)?
@@ -113,6 +115,7 @@ final class ReaderThumbnailScrubberView: UIControl {
     }
 
     deinit {
+        previewShowWorkItem?.cancel()
         thumbnailPreloadTask?.cancel()
         previewTasks.values.forEach { $0.cancel() }
     }
@@ -222,16 +225,9 @@ final class ReaderThumbnailScrubberView: UIControl {
         let beganOnSelection = selectionView.frame.insetBy(dx: -8, dy: -8).contains(location)
         beginActiveInteraction(producesFeedback: beganOnSelection)
         if !usesContinuousProgress {
-            previewContainer.isHidden = false
-            previewContainer.alpha = 0
-            onPreviewVisibilityChange?(true)
+            schedulePreviewShow()
         }
         updateValue(at: location)
-        if !usesContinuousProgress {
-            UIView.animate(withDuration: 0.18, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
-                self.previewContainer.alpha = 1
-            }
-        }
         sendActions(for: .valueChanged)
         return true
     }
@@ -428,8 +424,8 @@ final class ReaderThumbnailScrubberView: UIControl {
         guard displayedPreviewIndex != logicalIndex else { return }
         displayedPreviewIndex = logicalIndex
         previewLabel.text = String(format: NSLocalizedString("PAGE_X"), logicalIndex + 1)
-        previewImageView.image = closestLoadedPreview(to: logicalIndex)
-            ?? closestLoadedThumbnail(to: logicalIndex)
+        previewImageView.image = loadedPreviewImages[logicalIndex]
+            ?? loadedImages[logicalIndex]
         prefetchPreviewImages(around: logicalIndex)
     }
 
@@ -635,8 +631,8 @@ final class ReaderThumbnailScrubberView: UIControl {
         let currentIndex = pageIndex(for: currentValue)
         selectedThumbnailView.image = selectedImage(for: currentIndex)
         if let displayedPreviewIndex {
-            previewImageView.image = closestLoadedPreview(to: displayedPreviewIndex)
-                ?? closestLoadedThumbnail(to: displayedPreviewIndex)
+            previewImageView.image = loadedPreviewImages[displayedPreviewIndex]
+                ?? loadedImages[displayedPreviewIndex]
         }
     }
 
@@ -723,46 +719,33 @@ final class ReaderThumbnailScrubberView: UIControl {
     }
 
     private func hidePreview() {
-        UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState, .curveEaseIn]) {
-            self.previewContainer.alpha = 0
-        } completion: { _ in
-            self.previewContainer.isHidden = true
-            self.onPreviewVisibilityChange?(false)
-        }
+        previewShowWorkItem?.cancel()
+        previewShowWorkItem = nil
+        previewContainer.layer.removeAllAnimations()
+        previewContainer.alpha = 0
+        previewContainer.isHidden = true
+        onPreviewVisibilityChange?(false)
     }
 
-    /// Transition/info pages can point just outside the chapter's real page
-    /// range, and an exact thumbnail may still be loading. Keep the nearest
-    /// real page visible rather than replacing the preview with an empty view.
-    private func closestLoadedThumbnail(to index: Int) -> UIImage? {
-        if let exactImage = loadedImages[index] {
-            return exactImage
-        }
-        guard let closestIndex = loadedImages.keys.min(by: {
-            abs($0 - index) < abs($1 - index)
-        }) else {
-            return nil
-        }
-        return loadedImages[closestIndex]
-    }
+    private func schedulePreviewShow() {
+        previewShowWorkItem?.cancel()
 
-    private func closestLoadedPreview(to index: Int) -> UIImage? {
-        if let exactImage = loadedPreviewImages[index] {
-            return exactImage
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, !self.usesContinuousProgress, self.isTracking else { return }
+            self.previewContainer.isHidden = false
+            self.previewContainer.alpha = 1
+            self.onPreviewVisibilityChange?(true)
         }
-        guard let closestIndex = loadedPreviewImages.keys.min(by: {
-            abs($0 - index) < abs($1 - index)
-        }) else {
-            return nil
-        }
-        return loadedPreviewImages[closestIndex]
+        previewShowWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Metrics.previewShowDelay,
+            execute: workItem
+        )
     }
 
     private func selectedImage(for index: Int) -> UIImage? {
         loadedPreviewImages[index]
             ?? loadedImages[index]
-            ?? closestLoadedPreview(to: index)
-            ?? closestLoadedThumbnail(to: index)
     }
 
     func setContrastColor(_ color: UIColor) {

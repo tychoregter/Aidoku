@@ -15,6 +15,10 @@ import VisionKit
 import ZIPFoundation
 
 class ReaderPageView: UIView {
+    // Keep this as a single switch while the reader-loading changes are being
+    // evaluated. Set it to false to restore the previous request priorities.
+    static let priorityLoadingEnabled = true
+
     weak var parent: UIViewController?
 
     private let temporaryPageStore: ReaderTemporaryPageStore
@@ -39,6 +43,7 @@ class ReaderPageView: UIView {
     private var imageWidthConstraint: NSLayoutConstraint?
     private var imageHeightConstraint: NSLayoutConstraint?
     private var imageTask: ImageTask?
+    private var loadingPriority: ImageRequest.Priority = .normal
     private var sourceId: String?
     private var shouldShowLiveTextButton = false
     @available(iOS 16.0, *)
@@ -263,7 +268,17 @@ extension ReaderPageView {
         return await startImageTask(request)
     }
 
+    func setLoadingPriority(_ priority: ImageRequest.Priority) {
+        guard Self.priorityLoadingEnabled else { return }
+        loadingPriority = priority
+        imageTask?.priority = priority
+    }
+
     private func startImageTask(_ request: ImageRequest) async -> Bool {
+        var request = request
+        if Self.priorityLoadingEnabled {
+            request.priority = loadingPriority
+        }
         imageTask = ImagePipeline.shared.loadImage(
             with: request,
             progress: { [weak self] _, completed, total in

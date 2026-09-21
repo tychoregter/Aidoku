@@ -15,6 +15,11 @@ import VisionKit
 import ZIPFoundation
 
 class ReaderWebtoonPageNode: BaseObservingCellNode {
+    // Keep this as a single switch while the new loading policy is being
+    // evaluated. The previous behavior can be restored by changing it to
+    // false without touching the scheduling code below.
+    static let priorityLoadingEnabled = true
+
     let source: AidokuRunner.Source?
     let page: Page
     let temporaryPageStore: ReaderTemporaryPageStore
@@ -43,6 +48,9 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
     private var pageLoadTask: Task<Void, Never>?
     private var imageTask: ImageTask?
     private var imageProcessingTask: Task<UIImage?, Never>?
+    private var pageLoadCancellationWorkItem: DispatchWorkItem?
+
+    private static let pageLoadGracePeriod: TimeInterval = 0.75
 
     private var shouldShowLiveTextButton = false
     private var liveTextAnalysisTask: Task<Void, Never>?
@@ -132,6 +140,7 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
     }
 
     deinit {
+        pageLoadCancellationWorkItem?.cancel()
         cancelLiveTextAnalysis()
         cancelDictionaryTextAnalysis()
     }
@@ -146,16 +155,31 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
 
     override func didEnterPreloadState() {
         super.didEnterPreloadState()
+        pageLoadCancellationWorkItem?.cancel()
+        pageLoadCancellationWorkItem = nil
         startPageLoad()
     }
 
     override func didExitPreloadState() {
         super.didExitPreloadState()
-        cancelPageLoad()
+        guard Self.priorityLoadingEnabled else {
+            cancelPageLoad()
+            return
+        }
+        schedulePageLoadCancellation()
     }
 
     override func didEnterVisibleState() {
         super.didEnterVisibleState()
+        if Self.priorityLoadingEnabled {
+            pageLoadCancellationWorkItem?.cancel()
+            pageLoadCancellationWorkItem = nil
+            startPageLoad()
+            // A page can begin loading while it is only in TextureKit's
+            // preload range. Promote that same in-flight request as soon as
+            // it becomes visible instead of starting a duplicate request.
+            imageTask?.priority = .veryHigh
+        }
         displayPage()
     }
 
@@ -167,6 +191,14 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
     override func didExitDisplayState() {
         super.didExitDisplayState()
         guard !isVisible else { return }
+
+        // Keep a recently visible page alive while it remains in the preload
+        // range. This is especially important when the user reverses scroll
+        // direction quickly: clearing it here would throw away the decoded
+        // image just before it is needed again.
+        if Self.priorityLoadingEnabled && isInPreloadState {
+            return
+        }
 
         // don't hide images if zooming in/out
         if let delegate, delegate.isZooming {
@@ -302,11 +334,30 @@ extension ReaderWebtoonPageNode {
     private func startPageLoad() {
         guard pageLoadTask == nil, image == nil, text == nil else { return }
 
-        pageLoadTask = Task { [weak self] in
+        let taskPriority: TaskPriority? = Self.priorityLoadingEnabled
+            ? (isVisible ? .userInitiated : .utility)
+            : nil
+        pageLoadTask = Task(priority: taskPriority) { [weak self] in
             guard let self else { return }
             await self.loadPage()
             self.pageLoadTask = nil
         }
+    }
+
+    private func schedulePageLoadCancellation() {
+        pageLoadCancellationWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, !self.isVisible, !self.isInPreloadState else { return }
+            self.cancelPageLoad()
+            self.clearDisplayedImage()
+            self.pageLoadCancellationWorkItem = nil
+        }
+        pageLoadCancellationWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.pageLoadGracePeriod,
+            execute: workItem
+        )
     }
 
     private func cancelPageLoad() {
@@ -377,9 +428,15 @@ extension ReaderWebtoonPageNode {
             processors.append(UpscaleProcessor())
         }
 
+        let requestPriority: ImageRequest.Priority = if Self.priorityLoadingEnabled {
+            isVisible ? .veryHigh : .low
+        } else {
+            .normal
+        }
         let request = ImageRequest(
             urlRequest: urlRequest,
             processors: processors,
+            priority: requestPriority,
             userInfo: [.processesKey: usePageProcessor]
         )
 

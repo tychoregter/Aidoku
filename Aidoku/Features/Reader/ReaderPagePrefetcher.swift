@@ -39,7 +39,11 @@ final class ReaderPagePrefetcher {
                 let url = URL(string: imageURL),
                 !url.isFileURL
             else { continue }
-            requests.append(await ReaderPageView.imageRequest(url: url, context: page.context, source: source))
+            var request = await ReaderPageView.imageRequest(url: url, context: page.context, source: source)
+            if ReaderPageView.priorityLoadingEnabled {
+                request.priority = .veryLow
+            }
+            requests.append(request)
         }
 
         guard !requests.isEmpty, generation == self.generation else { return }
