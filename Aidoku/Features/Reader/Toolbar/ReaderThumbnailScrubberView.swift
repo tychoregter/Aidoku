@@ -22,11 +22,13 @@ final class ReaderThumbnailScrubberView: UIControl {
         static let horizontalInset: CGFloat = 22
         static let trackHeight: CGFloat = 22
         static let selectedPageHeight: CGFloat = 33
+        static let activeSelectedPageHeight: CGFloat = 36
         static let pageAspectRatio: CGFloat = 0.70
         static let previewWidth: CGFloat = 82
         static let previewImageHeight: CGFloat = 108
         static let previewLabelHeight: CGFloat = 30
         static let previewSpacing: CGFloat = 12
+        static let selectionAnimationDuration: TimeInterval = 0.14
     }
 
     var direction: Direction = .forward {
@@ -88,6 +90,10 @@ final class ReaderThumbnailScrubberView: UIControl {
     private var loadedPreviewImages: [Int: UIImage] = [:]
     private var displayedPreviewIndex: Int?
     private var loadGeneration = 0
+    private var isActivelyScrubbing = false
+    private var continuousPageIndex: Int?
+    private var immediateGestureUpdatedValue = false
+    private let selectionFeedbackGenerator = UISelectionFeedbackGenerator()
 
     /// The width needed to show every page as a page-shaped thumbnail rather
     /// than stretching a short chapter across the whole reader overlay.
@@ -166,6 +172,16 @@ final class ReaderThumbnailScrubberView: UIControl {
         currentValue = value
     }
 
+    func setCurrentPage(_ page: Int) {
+        guard pageCount > 0 else { return }
+        let index = min(max(page - 1, 0), pageCount - 1)
+        guard continuousPageIndex != index else { return }
+        continuousPageIndex = index
+        if usesContinuousProgress {
+            updatePreviewPosition()
+        }
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
 
@@ -201,12 +217,16 @@ final class ReaderThumbnailScrubberView: UIControl {
 
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         guard pageCount > 0 else { return false }
+        immediateGestureUpdatedValue = false
+        let location = touch.location(in: self)
+        let beganOnSelection = selectionView.frame.insetBy(dx: -8, dy: -8).contains(location)
+        beginActiveInteraction(producesFeedback: beganOnSelection)
         if !usesContinuousProgress {
             previewContainer.isHidden = false
             previewContainer.alpha = 0
             onPreviewVisibilityChange?(true)
         }
-        updateValue(at: touch.location(in: self))
+        updateValue(at: location)
         if !usesContinuousProgress {
             UIView.animate(withDuration: 0.18, delay: 0, options: [.beginFromCurrentState, .curveEaseOut]) {
                 self.previewContainer.alpha = 1
@@ -223,6 +243,7 @@ final class ReaderThumbnailScrubberView: UIControl {
     }
 
     override func endTracking(_ touch: UITouch?, with event: UIEvent?) {
+        setSelectionExpanded(false)
         if !usesContinuousProgress {
             hidePreview()
         }
@@ -230,6 +251,7 @@ final class ReaderThumbnailScrubberView: UIControl {
     }
 
     override func cancelTracking(with event: UIEvent?) {
+        setSelectionExpanded(false)
         if !usesContinuousProgress {
             hidePreview()
         }
@@ -249,6 +271,20 @@ final class ReaderThumbnailScrubberView: UIControl {
     private func configure() {
         clipsToBounds = false
         isExclusiveTouch = true
+
+        // A Webtoon reader's scroll view delays UIControl tracking until the
+        // finger moves. This zero-delay, non-cancelling recognizer lets the
+        // active thumbnail respond immediately without taking over dragging.
+        let immediateTouchRecognizer = UILongPressGestureRecognizer(
+            target: self,
+            action: #selector(handleImmediateTouch(_:))
+        )
+        immediateTouchRecognizer.minimumPressDuration = 0
+        immediateTouchRecognizer.allowableMovement = .greatestFiniteMagnitude
+        immediateTouchRecognizer.cancelsTouchesInView = false
+        immediateTouchRecognizer.delaysTouchesBegan = false
+        immediateTouchRecognizer.delegate = self
+        addGestureRecognizer(immediateTouchRecognizer)
 
         trackView.backgroundColor = UIColor { traits in
             let base: UIColor = traits.userInterfaceStyle == .dark ? .white : .black
@@ -400,7 +436,9 @@ final class ReaderThumbnailScrubberView: UIControl {
     private func updateSelectionFrame() {
         guard pageCount > 0 else { return }
         let logicalIndex = pageIndex(for: currentValue)
-        let height = Metrics.selectedPageHeight
+        let height = isActivelyScrubbing
+            ? Metrics.activeSelectedPageHeight
+            : Metrics.selectedPageHeight
         let width = height * Metrics.pageAspectRatio
         let proposedCenterX: CGFloat
         if usesContinuousProgress, maximumValue > minimumValue {
@@ -425,8 +463,56 @@ final class ReaderThumbnailScrubberView: UIControl {
             height: height
         ))
         selectedThumbnailView.frame = selectionView.bounds
-        selectedThumbnailView.image = closestLoadedPreview(to: logicalIndex)
-            ?? closestLoadedThumbnail(to: logicalIndex)
+        selectedThumbnailView.image = selectedImage(for: logicalIndex)
+    }
+
+    private func setSelectionExpanded(_ expanded: Bool) {
+        guard isActivelyScrubbing != expanded else { return }
+        isActivelyScrubbing = expanded
+        UIView.animate(
+            withDuration: Metrics.selectionAnimationDuration,
+            delay: 0,
+            options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
+        ) {
+            self.updatePreviewPosition()
+        }
+    }
+
+    private func beginActiveInteraction(producesFeedback: Bool) {
+        guard !isActivelyScrubbing else { return }
+        if producesFeedback {
+            selectionFeedbackGenerator.prepare()
+        }
+        setSelectionExpanded(true)
+        if producesFeedback {
+            selectionFeedbackGenerator.selectionChanged()
+        }
+    }
+
+    @objc private func handleImmediateTouch(_ recognizer: UILongPressGestureRecognizer) {
+        switch recognizer.state {
+            case .began:
+                let location = recognizer.location(in: self)
+                if usesContinuousProgress {
+                    immediateGestureUpdatedValue = true
+                    beginActiveInteraction(producesFeedback: true)
+                    updateValue(at: location)
+                    sendActions(for: .valueChanged)
+                } else if selectionView.frame.insetBy(dx: -8, dy: -8).contains(location) {
+                    beginActiveInteraction(producesFeedback: true)
+                }
+            case .ended, .cancelled, .failed:
+                let shouldFinishValueChange = immediateGestureUpdatedValue && !isTracking
+                immediateGestureUpdatedValue = false
+                if !isTracking {
+                    setSelectionExpanded(false)
+                }
+                if shouldFinishValueChange {
+                    sendActions(for: .editingDidEnd)
+                }
+            default:
+                break
+        }
     }
 
     private var maximumThumbnailWidth: CGFloat {
@@ -464,6 +550,9 @@ final class ReaderThumbnailScrubberView: UIControl {
     }
 
     private func pageIndex(for value: CGFloat) -> Int {
+        if usesContinuousProgress, let continuousPageIndex {
+            return min(max(continuousPageIndex, 0), max(pageCount - 1, 0))
+        }
         guard pageCount > 1, maximumValue > minimumValue else { return 0 }
         let progress = (value - minimumValue) / (maximumValue - minimumValue)
         return min(max(Int(round(progress * CGFloat(pageCount - 1))), 0), pageCount - 1)
@@ -544,8 +633,7 @@ final class ReaderThumbnailScrubberView: UIControl {
         loadedImages[index] = image
         thumbnailViews[index].image = image
         let currentIndex = pageIndex(for: currentValue)
-        selectedThumbnailView.image = closestLoadedPreview(to: currentIndex)
-            ?? closestLoadedThumbnail(to: currentIndex)
+        selectedThumbnailView.image = selectedImage(for: currentIndex)
         if let displayedPreviewIndex {
             previewImageView.image = closestLoadedPreview(to: displayedPreviewIndex)
                 ?? closestLoadedThumbnail(to: displayedPreviewIndex)
@@ -670,6 +758,13 @@ final class ReaderThumbnailScrubberView: UIControl {
         return loadedPreviewImages[closestIndex]
     }
 
+    private func selectedImage(for index: Int) -> UIImage? {
+        loadedPreviewImages[index]
+            ?? loadedImages[index]
+            ?? closestLoadedPreview(to: index)
+            ?? closestLoadedThumbnail(to: index)
+    }
+
     func setContrastColor(_ color: UIColor) {
         selectionView.layer.borderColor = Self.activePageBorderColor.cgColor
         selectionView.backgroundColor = .clear
@@ -681,5 +776,14 @@ final class ReaderThumbnailScrubberView: UIControl {
 
     func setOverlayAppearance(_ style: UIUserInterfaceStyle) {
         previewContainer.overrideUserInterfaceStyle = style
+    }
+}
+
+extension ReaderThumbnailScrubberView: UIGestureRecognizerDelegate {
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
     }
 }

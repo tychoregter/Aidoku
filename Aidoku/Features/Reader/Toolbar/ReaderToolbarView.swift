@@ -28,6 +28,7 @@ class ReaderToolbarView: UIView {
     private var usesWebtoonProgress = false
     private var showsWebtoonScrollPercentage = true
     private var webtoonProgress: CGFloat = 0
+    private var lastWebtoonHapticPercentage: Int?
     private var showingTemporaryPagesLeft = false
     private var pagesLeftRestoreWorkItem: DispatchWorkItem?
     private var pagesLeftDisplayGeneration = 0
@@ -50,6 +51,13 @@ class ReaderToolbarView: UIView {
             guard let self else { return }
             if isVisible {
                 self.bringSubviewToFront(self.thumbnailScrubberView)
+                // The page counter is hosted beside the reader toolbar, so
+                // changing the scrubber's local subview order is not enough
+                // to keep the large preview above it.
+                if let readerToolbar = self.superview,
+                   let overlayHost = readerToolbar.superview {
+                    overlayHost.bringSubviewToFront(readerToolbar)
+                }
             } else {
                 self.thumbnailPageCounterView.superview?.bringSubviewToFront(self.thumbnailPageCounterView)
             }
@@ -197,8 +205,19 @@ class ReaderToolbarView: UIView {
         } else if !usesWebtoonProgress || !showsWebtoonScrollPercentage {
             updatePageLabel(page: boundedPage, totalPages: totalPages)
         }
-        if currentPageValue != boundedPage,
-           (!usesWebtoonProgress || thumbnailScrubberView.isTracking) {
+        if usesWebtoonProgress && showsWebtoonScrollPercentage {
+            let percentage = Int((webtoonProgress * 100).rounded())
+            if thumbnailScrubberView.isTracking,
+               let lastWebtoonHapticPercentage,
+               lastWebtoonHapticPercentage != percentage {
+                let feedbackGenerator = UISelectionFeedbackGenerator()
+                feedbackGenerator.selectionChanged()
+            }
+            // Establish the baseline even before UIKit reports active
+            // scrubber tracking, so a jump-to-position tap cannot pulse twice.
+            lastWebtoonHapticPercentage = percentage
+        } else if currentPageValue != boundedPage,
+                  (!usesWebtoonProgress || thumbnailScrubberView.isTracking) {
             let feedbackGenerator = UISelectionFeedbackGenerator()
             feedbackGenerator.selectionChanged()
         }
@@ -317,6 +336,7 @@ class ReaderToolbarView: UIView {
     func setWebtoonProgressMode(enabled: Bool, showsPercentage: Bool) {
         if usesWebtoonProgress != enabled || showsWebtoonScrollPercentage != showsPercentage {
             cancelTemporaryPagesLeftDisplay()
+            lastWebtoonHapticPercentage = nil
         }
         usesWebtoonProgress = enabled
         showsWebtoonScrollPercentage = showsPercentage
@@ -325,9 +345,11 @@ class ReaderToolbarView: UIView {
         updateSliderPosition()
     }
 
-    func setWebtoonProgress(_ progress: CGFloat) {
+    func setWebtoonProgress(_ progress: CGFloat, page: Int) {
         webtoonProgress = min(max(progress, 0), 1)
+        currentPage = page
         guard usesWebtoonProgress else { return }
+        thumbnailScrubberView.setCurrentPage(page)
         moveSlider(to: webtoonProgress)
         if showingTemporaryPagesLeft {
             let page = min(max(currentPage ?? 1, 1), totalPages ?? 1)
@@ -364,6 +386,9 @@ class ReaderToolbarView: UIView {
             cachedThumbnailProvider: cachedProvider,
             thumbnailProvider: provider
         )
+        if usesWebtoonProgress {
+            thumbnailScrubberView.setCurrentPage(currentPage ?? 1)
+        }
         onThumbnailScrubberPreferredWidthChange?(thumbnailScrubberView.preferredWidth)
         if usesWebtoonProgress {
             thumbnailScrubberView.accessibilityValue = "\(Int((webtoonProgress * 100).rounded())) percent"

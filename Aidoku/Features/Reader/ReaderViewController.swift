@@ -1269,7 +1269,7 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
             currentPosition = Double(boundedProgress)
             sessionLastInteraction = Date.now
         }
-        toolbarView.setWebtoonProgress(boundedProgress)
+        toolbarView.setWebtoonProgress(boundedProgress, page: boundedPage)
         scheduleReaderProgressContrastUpdate()
         if boundedPage >= totalPages && boundedProgress >= 0.999 {
             setCompleted()
