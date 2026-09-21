@@ -225,8 +225,9 @@ actor KomgaSourceRunner: Runner {
                 ""
             }
             let url = URL(string: "\(page.number)\(convert)", relativeTo: pageBaseUrl)
+            let thumbnailUrl = URL(string: "\(page.number)/thumbnail", relativeTo: pageBaseUrl)
             return url.flatMap {
-                .init(content: .url(url: $0))
+                .init(content: .url(url: $0), thumbnail: thumbnailUrl)
             }
         }
     }

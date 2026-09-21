@@ -71,8 +71,9 @@ class IncognitoBannerView: UIView {
             }
         )
         notificationTokens.append(
-            center.addObserver(forName: .readerShowingBars, object: nil, queue: .main) { [weak self] _ in
-                self?.setReaderBarsHidden(false, animated: true)
+            center.addObserver(forName: .readerShowingBars, object: nil, queue: .main) { [weak self] notification in
+                let readerIsBeingDismissed = notification.userInfo?["readerIsBeingDismissed"] as? Bool == true
+                self?.setReaderBarsHidden(false, animated: !readerIsBeingDismissed)
             }
         )
     }
@@ -95,7 +96,8 @@ class IncognitoBannerView: UIView {
                 animations: update
             )
         } else {
-            update()
+            layer.removeAllAnimations()
+            UIView.performWithoutAnimation(update)
         }
     }
 

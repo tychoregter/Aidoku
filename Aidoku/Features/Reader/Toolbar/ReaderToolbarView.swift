@@ -376,6 +376,7 @@ class ReaderToolbarView: UIView {
         contentIdentifier: String,
         pageCount: Int,
         supportsThumbnails: Bool,
+        usesAdaptivePrivateServerConcurrency: Bool,
         cachedProvider: @escaping (Int) async -> UIImage?,
         provider: @escaping (Int, ReaderThumbnailScrubberView.ImageKind, @escaping @MainActor (UIImage) -> Void) async -> UIImage?
     ) {
@@ -383,6 +384,7 @@ class ReaderToolbarView: UIView {
         thumbnailScrubberView.configure(
             contentIdentifier: contentIdentifier,
             pageCount: pageCount,
+            usesAdaptivePrivateServerConcurrency: usesAdaptivePrivateServerConcurrency,
             cachedThumbnailProvider: cachedProvider,
             thumbnailProvider: provider
         )

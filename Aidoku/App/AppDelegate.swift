@@ -172,6 +172,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             let dataLoader: DataLoader = {
                 let config = URLSessionConfiguration.default
                 config.urlCache = nil
+                // Nuke retains this single URLSession for all image requests.
+                // Requests to the same Komga origin therefore reuse one
+                // negotiated HTTP/2 connection and are multiplexed by
+                // URLSession. Eight also provides an upper bound for servers
+                // that fall back to pooled HTTP/1.1 connections.
+                config.httpMaximumConnectionsPerHost = 8
                 return DataLoader(configuration: config)
             }()
             let dataCache = try? DataCache(name: "app.aidoku.Aidoku.datacache") // disk cache
@@ -181,6 +187,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             $0.dataCache = dataCache
             $0.imageCache = imageCache
             $0.dataLoader = dataLoader
+            // Match the Komga scrubber's adaptive ceiling. Other sources are
+            // still limited to three by the scrubber scheduler.
+            $0.dataLoadingQueue.maxConcurrentOperationCount = 8
             $0.dataCachePolicy = .storeOriginalData
             $0.isStoringPreviewsInMemoryCache = false
         }

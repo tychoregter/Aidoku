@@ -54,6 +54,11 @@ class ReaderViewController: BaseObservingViewController {
     private var openingTransitionCornerMaskDisplayLink: CADisplayLink?
     private var openingTransitionCornerMaskFramesRemaining = 0
     private var openingTransitionCornerMaskGeneration = 0
+    private struct ScrubberThumbnailLoad {
+        let id: UUID
+        let task: Task<UIImage?, Never>
+    }
+    private var scrubberThumbnailLoads: [String: ScrubberThumbnailLoad] = [:]
 
     weak var reader: ReaderReaderDelegate?
 
@@ -201,6 +206,7 @@ class ReaderViewController: BaseObservingViewController {
         readerProgressContrastUpdateWorkItem?.cancel()
         openingTransitionCornerMaskDisplayLink?.invalidate()
         openingTransitionCornerMask?.removeFromSuperview()
+        scrubberThumbnailLoads.values.forEach { $0.task.cancel() }
         toolbarView.thumbnailPageCounterView.removeFromSuperview()
         readerToolbar.removeFromSuperview()
         Task { [temporaryPageStore] in
@@ -569,7 +575,14 @@ class ReaderViewController: BaseObservingViewController {
         (reader as? ReaderWebtoonViewController)?.stopAutoScroll()
 
         if isBeingDismissed || navigationController?.isBeingDismissed == true {
-            NotificationCenter.default.post(name: .readerShowingBars, object: nil)
+            // The incognito banner must restore its normal color immediately
+            // as the reader is dismissed. A regular reader bar reveal still
+            // uses the animated color transition.
+            NotificationCenter.default.post(
+                name: .readerShowingBars,
+                object: nil,
+                userInfo: ["readerIsBeingDismissed": true]
+            )
         }
 
         if !chaptersToRemoveDownload.isEmpty {
@@ -1198,6 +1211,9 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
     func setChapter(_ chapter: AidokuRunner.Chapter) {
         guard chapter != self.chapter else { return }
 
+        scrubberThumbnailLoads.values.forEach { $0.task.cancel() }
+        scrubberThumbnailLoads.removeAll()
+
         // store current history data since it will change when new chapter loads
         let currentPage = currentPage
         let totalPages = toolbarView.totalPages
@@ -1369,6 +1385,9 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
             contentIdentifier: "\(manga.identifier.description)|\(chapter.key)",
             pageCount: pages.count,
             supportsThumbnails: supportsThumbnails,
+            usesAdaptivePrivateServerConcurrency: manga.sourceKey.hasPrefix(
+                KomgaSourceRunner.sourceKeyPrefix
+            ),
             cachedProvider: { [weak self] index in
                 guard let self, let page = pages[safe: index] else { return nil }
                 return await LibraryPagePreviewCache.shared.cachedReaderThumbnail(
@@ -1409,7 +1428,49 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         publishIntermediate: @escaping @MainActor (UIImage) -> Void,
         includeIntermediate: Bool = true
     ) async -> UIImage? {
-        let options = await scrubberThumbnailOptions(for: kind, page: page, targetWidth: scrubberThumbnailWidth)
+        let targetWidth = scrubberThumbnailTargetWidth(for: kind)
+        let qualityKey = switch kind {
+            case .strip: "strip"
+            case .preview: "preview"
+        }
+        let networkKey = allowsNetwork ? "network" : "cache-only"
+        let sizeKey = "w\(Int(targetWidth))"
+        let key = "\(chapter.key)|\(page.chapterId)|\(pageIndex)|\(qualityKey)|\(sizeKey)|\(networkKey)"
+        if let load = scrubberThumbnailLoads[key] {
+            return await load.task.value
+        }
+
+        let id = UUID()
+        let task = Task<UIImage?, Never> { [weak self] in
+            guard let self else { return nil }
+            return await self.loadThumbnailImage(
+                for: page,
+                kind: kind,
+                allowsNetwork: allowsNetwork,
+                publishIntermediate: publishIntermediate,
+                includeIntermediate: includeIntermediate
+            )
+        }
+        scrubberThumbnailLoads[key] = ScrubberThumbnailLoad(id: id, task: task)
+        let image = await task.value
+        if scrubberThumbnailLoads[key]?.id == id {
+            scrubberThumbnailLoads[key] = nil
+        }
+        return image
+    }
+
+    /// Performs the actual load for a coalesced scrubber request. Keeping this
+    /// separate ensures repeated toolbar refreshes and overlapping callers
+    /// share one decode for each page and requested quality.
+    private func loadThumbnailImage(
+        for page: Page,
+        kind: ReaderThumbnailScrubberView.ImageKind,
+        allowsNetwork: Bool,
+        publishIntermediate: @escaping @MainActor (UIImage) -> Void,
+        includeIntermediate: Bool
+    ) async -> UIImage? {
+        let targetWidth = scrubberThumbnailTargetWidth(for: kind)
+        let options = await scrubberThumbnailOptions(for: kind, page: page, targetWidth: targetWidth)
         if let image = page.image {
             return await makeScrubberThumbnail(from: image, kind: kind)
         }
@@ -1425,30 +1486,56 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
 
         let fullPageURL = page.imageURL.flatMap(URL.init(string:))
         let requiresCacheOnlyLookup = !allowsNetwork && !(fullPageURL?.isFileURL ?? false)
-        let requestedURLString = if requiresCacheOnlyLookup {
-            page.imageURL
-        } else if kind == .strip {
+        let isKomgaPage = manga.sourceKey.hasPrefix(KomgaSourceRunner.sourceKeyPrefix)
+        let preferredRemoteURLString = if kind == .strip {
             page.thumbnailURL ?? page.imageURL
         } else {
+            // Active thumbnails and popup previews always begin with the full
+            // page. This preserves the previous behavior for non-Komga sources
+            // and avoids stretching Komga's 300px server thumbnail.
             page.imageURL
         }
-        if let requestedURLString, let url = URL(string: requestedURLString) {
-            var request = await ReaderPageView.imageRequest(url: url, context: page.context, source: source)
-            if requiresCacheOnlyLookup {
-                return await cachedScrubberThumbnail(
+
+        // Downloaded pages always win. Archive and embedded pages returned
+        // above; file URLs arrive here and must never trigger a source request.
+        let requestedURLString = if fullPageURL?.isFileURL == true {
+            page.imageURL
+        } else {
+            preferredRemoteURLString
+        }
+
+        if requiresCacheOnlyLookup {
+            // Data Saver may use either the small source thumbnail or a full
+            // page the reader has already cached, but it never starts a request.
+            var seenCandidates = Set<String>()
+            let candidates = isKomgaPage
+                ? [preferredRemoteURLString, page.imageURL]
+                : [page.imageURL]
+            let cachedCandidates = candidates
+                .compactMap { $0 }
+                .filter { seenCandidates.insert($0).inserted }
+            for candidate in cachedCandidates {
+                guard let url = URL(string: candidate) else { continue }
+                let request = await ReaderPageView.imageRequest(url: url, context: page.context, source: source)
+                if let image = await cachedScrubberThumbnail(
                     for: request,
                     options: options,
                     kind: kind
-                )
+                ) {
+                    return image
+                }
             }
+            return nil
+        }
+
+        if let requestedURLString, let url = URL(string: requestedURLString) {
+            var request = await ReaderPageView.imageRequest(url: url, context: page.context, source: source)
             request.thumbnail = options
             // Keep active page previews ahead of strip thumbnails while
             // allowing strip requests to run at their normal priority.
             request.priority = kind == .preview ? .high : .low
             guard let image = try? await ImagePipeline.shared.image(for: request) else { return nil }
-            return kind == .strip
-                ? await makeScrubberThumbnail(from: image, width: scrubberThumbnailWidth)
-                : image
+            return await makeScrubberThumbnail(from: image, kind: kind)
         }
 
         if let base64 = page.base64, let data = Data(base64Encoded: base64) {
@@ -1481,34 +1568,40 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
             return options.makeThumbnail(with: data)
         }.value
         guard let image else { return nil }
-        return kind == .strip
-            ? await makeScrubberThumbnail(from: image, width: scrubberThumbnailWidth)
-            : image
+        return await makeScrubberThumbnail(from: image, kind: kind)
     }
 
-    private var scrubberThumbnailWidth: CGFloat { 48 }
+    private func scrubberThumbnailTargetWidth(
+        for kind: ReaderThumbnailScrubberView.ImageKind
+    ) -> CGFloat {
+        ReaderThumbnailScrubberView.maximumImagePixelWidth(
+            for: kind,
+            displayScale: traitCollection.displayScale,
+            usesPopupPreview: readingMode != .webtoon
+        )
+    }
 
     private func scrubberThumbnailOptions(
         for kind: ReaderThumbnailScrubberView.ImageKind,
         page: Page,
         targetWidth: CGFloat
     ) async -> ImageRequest.ThumbnailOptions {
-        guard kind == .strip else {
-            return .init(maxPixelSize: scrubberThumbnailPixelSize(for: kind))
+        // Unknown very-tall pages still need enough source pixels to retain
+        // horizontal detail. Preview fallback matches the previous behavior.
+        let fallback: Float = switch kind {
+            case .strip: Float(targetWidth * 12)
+            case .preview: 512
         }
-
-        let fallback = kind == .strip
-            ? Float(targetWidth * UIScreen.main.scale * 4)
-            : scrubberThumbnailPixelSize(for: kind)
         guard let ratio = await knownPageRatio(for: page) else {
             return .init(maxPixelSize: fallback)
         }
 
         // ImageIO's thumbnail limit is a longest-dimension limit. Convert the
         // desired width into that limit so tall pages still retain enough
-        // horizontal pixels for the strip.
-        let targetPixels = targetWidth * UIScreen.main.scale
-        return .init(maxPixelSize: Float(ceil(targetPixels * max(1, ratio))))
+        // horizontal pixels. The final width-constrained render below retains
+        // the source aspect ratio in the scrubber cache.
+        let requiredLongestSide = targetWidth * max(1, ratio)
+        return .init(maxPixelSize: Float(ceil(requiredLongestSide)))
     }
 
     private func knownPageRatio(for page: Page) async -> CGFloat? {
@@ -1525,47 +1618,29 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         from image: UIImage,
         kind: ReaderThumbnailScrubberView.ImageKind
     ) async -> UIImage? {
-        if kind == .strip {
-            return await makeScrubberThumbnail(from: image, width: scrubberThumbnailWidth)
-        }
-
-        let size = CGFloat(scrubberThumbnailPixelSize(for: kind))
-        return image.preparingThumbnail(of: CGSize(width: size, height: size))
+        await makeWidthConstrainedScrubberThumbnail(
+            from: image,
+            width: scrubberThumbnailTargetWidth(for: kind)
+        )
     }
 
-    private func makeScrubberThumbnail(from image: UIImage, width: CGFloat) async -> UIImage? {
-        let scale = UIScreen.main.scale
-        return await Task.detached(priority: .utility) {
-            guard image.size.width > 0, image.size.height > 0 else { return nil }
-            let targetHeight = width * image.size.height / image.size.width
+    private func makeWidthConstrainedScrubberThumbnail(
+        from image: UIImage,
+        width: CGFloat
+    ) async -> UIImage? {
+        await Task.detached(priority: .utility) {
+            guard image.size.width > 0, image.size.height > 0, width > 0 else { return nil }
+            let targetSize = CGSize(
+                width: width,
+                height: width * image.size.height / image.size.width
+            )
             let format = UIGraphicsImageRendererFormat()
-            format.scale = scale
+            format.scale = 1
             format.opaque = false
-            return UIGraphicsImageRenderer(
-                size: CGSize(width: width, height: targetHeight),
-                format: format
-            ).image { _ in
-                image.draw(in: CGRect(x: 0, y: 0, width: width, height: targetHeight))
+            return UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
+                image.draw(in: CGRect(origin: .zero, size: targetSize))
             }
         }.value
-    }
-
-    private func scrubberThumbnailOptions(
-        for kind: ReaderThumbnailScrubberView.ImageKind
-    ) -> ImageRequest.ThumbnailOptions {
-        .init(maxPixelSize: scrubberThumbnailPixelSize(for: kind))
-    }
-
-    private func scrubberThumbnailPixelSize(
-        for kind: ReaderThumbnailScrubberView.ImageKind
-    ) -> Float {
-        switch kind {
-            // This is deliberately larger than the visible strip slot. The
-            // image is subsequently reduced by width, preventing tall webtoon
-            // pages from becoming only a few pixels wide.
-            case .strip: 2048
-            case .preview: 512
-        }
     }
 
     private func updateReaderToolbarMetrics(usesThumbnailScrubber: Bool) {

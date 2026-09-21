@@ -18,6 +18,25 @@ final class ReaderThumbnailScrubberView: UIControl {
         case preview
     }
 
+    /// Maximum decoded width for each thumbnail role. Images retain their full
+    /// aspect ratio and the image views apply the final aspect-fill crop.
+    static func maximumImagePixelWidth(
+        for kind: ImageKind,
+        displayScale: CGFloat,
+        usesPopupPreview: Bool
+    ) -> CGFloat {
+        let scale = max(displayScale, 1)
+        switch kind {
+            case .strip:
+                return max(48, ceil(Metrics.trackHeight * Metrics.pageAspectRatio * scale))
+            case .preview:
+                let width = usesPopupPreview
+                    ? Metrics.previewWidth
+                    : Metrics.activeSelectedPageHeight * Metrics.pageAspectRatio
+                return ceil(width * scale)
+        }
+    }
+
     private enum Metrics {
         static let horizontalInset: CGFloat = 22
         static let trackHeight: CGFloat = 22
@@ -88,6 +107,7 @@ final class ReaderThumbnailScrubberView: UIControl {
     private var isLoadingEnabled = false
     private var cachedThumbnailProvider: ((Int) async -> UIImage?)?
     private var thumbnailProvider: ((Int, ImageKind, @escaping @MainActor (UIImage) -> Void) async -> UIImage?)?
+    private var usesAdaptivePrivateServerConcurrency = false
     private var loadedImages: [Int: UIImage] = [:]
     private var loadedPreviewImages: [Int: UIImage] = [:]
     private var displayedPreviewIndex: Int?
@@ -123,12 +143,14 @@ final class ReaderThumbnailScrubberView: UIControl {
     func configure(
         contentIdentifier: String,
         pageCount: Int,
+        usesAdaptivePrivateServerConcurrency: Bool,
         cachedThumbnailProvider: @escaping (Int) async -> UIImage?,
         thumbnailProvider: @escaping (Int, ImageKind, @escaping @MainActor (UIImage) -> Void) async -> UIImage?
     ) {
         let isSameContent = self.contentIdentifier == contentIdentifier && self.pageCount == pageCount
         self.contentIdentifier = contentIdentifier
         self.pageCount = pageCount
+        self.usesAdaptivePrivateServerConcurrency = usesAdaptivePrivateServerConcurrency
         self.cachedThumbnailProvider = cachedThumbnailProvider
         self.thumbnailProvider = thumbnailProvider
 
@@ -605,21 +627,85 @@ final class ReaderThumbnailScrubberView: UIControl {
             self.prefetchPreviewImages(around: currentIndex)
 
             let missingIndexes = indexes.filter { self.loadedImages[$0] == nil }
-            for batchStart in stride(from: 0, to: missingIndexes.count, by: 3) {
-                guard !Task.isCancelled, self.isLoadingEnabled,
-                      self.loadGeneration == generation else { return }
-                let batchEnd = min(batchStart + 3, missingIndexes.count)
-                await withTaskGroup(of: Void.self) { group in
-                    for index in missingIndexes[batchStart..<batchEnd] {
-                        group.addTask { [weak self] in
-                            await self?.fetchThumbnail(at: index, generation: generation)
-                        }
-                    }
-                    await group.waitForAll()
-                }
-            }
+            await self.loadThumbnails(
+                at: missingIndexes,
+                generation: generation,
+                adaptively: self.usesAdaptivePrivateServerConcurrency
+            )
             guard self.loadGeneration == generation else { return }
             self.thumbnailPreloadTask = nil
+        }
+    }
+
+    /// Keeps the network window full instead of waiting for rigid batches to
+    /// finish. Private Komga servers start at six simultaneous thumbnail
+    /// requests and may grow to eight when they respond quickly, or contract
+    /// to four when latency/failures indicate that the server is saturated.
+    /// Public sources retain the conservative three-request limit.
+    private func loadThumbnails(
+        at indexes: [Int],
+        generation: Int,
+        adaptively: Bool
+    ) async {
+        guard !indexes.isEmpty else { return }
+
+        let minimumConcurrency = adaptively ? 4 : 3
+        let maximumConcurrency = adaptively ? 8 : 3
+        var targetConcurrency = adaptively ? 6 : 3
+        var nextIndex = 0
+        var activeLoads = 0
+        var fastCompletionCount = 0
+        var averageLatency: TimeInterval?
+
+        await withTaskGroup(of: (loaded: Bool, latency: TimeInterval).self) { group in
+            while activeLoads < targetConcurrency, nextIndex < indexes.count {
+                let index = indexes[nextIndex]
+                nextIndex += 1
+                activeLoads += 1
+                group.addTask { [weak self] in
+                    let start = Date()
+                    let loaded = await self?.fetchThumbnail(at: index, generation: generation) ?? false
+                    return (loaded, Date().timeIntervalSince(start))
+                }
+            }
+
+            while let result = await group.next() {
+                activeLoads -= 1
+                guard !Task.isCancelled, isLoadingEnabled,
+                      loadGeneration == generation else {
+                    group.cancelAll()
+                    return
+                }
+
+                if adaptively {
+                    let previousAverage = averageLatency ?? result.latency
+                    averageLatency = previousAverage * 0.75 + result.latency * 0.25
+
+                    if !result.loaded || result.latency > 2.5 || (averageLatency ?? 0) > 2 {
+                        targetConcurrency = max(minimumConcurrency, targetConcurrency - 1)
+                        fastCompletionCount = 0
+                    } else if result.latency < 0.75, (averageLatency ?? .infinity) < 1 {
+                        fastCompletionCount += 1
+                        if fastCompletionCount >= 4 {
+                            targetConcurrency = min(maximumConcurrency, targetConcurrency + 1)
+                            fastCompletionCount = 0
+                        }
+                    } else {
+                        fastCompletionCount = 0
+                    }
+                }
+
+                while activeLoads < targetConcurrency, nextIndex < indexes.count {
+                    let index = indexes[nextIndex]
+                    nextIndex += 1
+                    activeLoads += 1
+                    group.addTask { [weak self] in
+                        let start = Date()
+                        let loaded = await self?.fetchThumbnail(at: index, generation: generation) ?? false
+                        return (loaded, Date().timeIntervalSince(start))
+                    }
+                }
+            }
         }
     }
 
@@ -636,10 +722,10 @@ final class ReaderThumbnailScrubberView: UIControl {
         }
     }
 
-    private func fetchThumbnail(at index: Int, generation: Int) async {
+    private func fetchThumbnail(at index: Int, generation: Int) async -> Bool {
         guard isLoadingEnabled,
               loadedImages[index] == nil,
-              let thumbnailProvider else { return }
+              let thumbnailProvider else { return loadedImages[index] != nil }
         let image = await thumbnailProvider(index, .strip) { [weak self] intermediateImage in
             guard let self,
                   self.isLoadingEnabled,
@@ -649,8 +735,9 @@ final class ReaderThumbnailScrubberView: UIControl {
             self.thumbnailViews[index].image = intermediateImage
         }
         guard !Task.isCancelled, isLoadingEnabled, loadGeneration == generation,
-              let image, index < thumbnailViews.count else { return }
+              let image, index < thumbnailViews.count else { return false }
         applyThumbnail(image, at: index, generation: generation)
+        return true
     }
 
     private func prefetchPreviewImages(around index: Int) {

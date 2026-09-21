@@ -452,7 +452,10 @@ actor LibraryPagePreviewCache {
             .joined(separator: "&") ?? ""
         // Including the resource identity makes changed pages naturally use a
         // new file without reading and comparing the previous JPEG.
-        let pageKey = "v3|\(page.chapterId)|\(pageIndex)|\(resourceIdentity)|\(contextIdentity)"
+        // v4 stores the inexpensive 48-pixel strip representation. Keeping
+        // the format version in the key prevents older 3x renders from being
+        // decoded into memory after this optimization.
+        let pageKey = "v4|\(page.chapterId)|\(pageIndex)|\(resourceIdentity)|\(contextIdentity)"
         return mangaDirectory.appendingPathComponent(digest(pageKey)).appendingPathExtension("jpg")
     }
 
