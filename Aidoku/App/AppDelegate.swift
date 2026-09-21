@@ -199,6 +199,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
         Task {
             await SourceManager.shared.start()
+            Task(priority: .utility) {
+                await KomgaLibraryProgressSyncCoordinator.shared.syncIfNeeded()
+            }
             LibrarySpotlightIndexer.indexLibrary()
             await BackupManager.shared.scheduleAutoBackup()
             if #available(iOS 18.0, *) {

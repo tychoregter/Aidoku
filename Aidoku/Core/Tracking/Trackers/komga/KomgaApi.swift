@@ -8,6 +8,14 @@
 import Foundation
 
 actor KomgaApi {
+    private struct ProgressCacheEntry {
+        let date: Date
+        let progressBySeries: [String: [String: ChapterReadProgress]]
+    }
+
+    private var progressCache: [String: ProgressCacheEntry] = [:]
+    private let progressCacheLifetime: TimeInterval = 5 * 60
+
     func shouldUseChapters(mangaId: MangaIdentifier) -> Bool {
         let key = "Manga.chapterDisplayMode.\(mangaId)"
         let displayMode = ChapterTitleDisplayMode(rawValue: UserDefaults.standard.integer(forKey: key)) ?? .default
@@ -119,6 +127,14 @@ actor KomgaApi {
     }
 
     func getSeriesReadProgress(sourceKey: String, seriesId: String) async throws -> [String: ChapterReadProgress] {
+        if
+            let cache = progressCache[sourceKey],
+            Date().timeIntervalSince(cache.date) < progressCacheLifetime,
+            let progress = cache.progressBySeries[seriesId]
+        {
+            return progress
+        }
+
         let helper = KomgaHelper(sourceKey: sourceKey)
         let response: KomgaPageResponse<[KomgaBook]> = try await helper.request(path: "api/v1/series/\(seriesId)/books?unpaged=true")
 
@@ -136,6 +152,65 @@ actor KomgaApi {
         }
 
         return progressMap
+    }
+
+    /// Fetches read progress for multiple series in a small number of paged requests.
+    ///
+    /// Komga's book search supports combining multiple series identifiers and read
+    /// states. This avoids downloading every book in each series through a separate
+    /// request when refreshing the library's tracker state.
+    func getLibraryReadProgress(
+        sourceKey: String,
+        seriesIds: Set<String>
+    ) async throws -> [String: [String: ChapterReadProgress]] {
+        guard !seriesIds.isEmpty else { return [:] }
+
+        let helper = KomgaHelper(sourceKey: sourceKey)
+        let sortedSeriesIds = seriesIds.sorted()
+        let chunkSize = 75
+        let pageSize = 250
+        var progressBySeries = Dictionary(
+            uniqueKeysWithValues: sortedSeriesIds.map { ($0, [String: ChapterReadProgress]()) }
+        )
+
+        for chunkStart in stride(from: 0, to: sortedSeriesIds.count, by: chunkSize) {
+            let chunkEnd = min(chunkStart + chunkSize, sortedSeriesIds.count)
+            let seriesChunk = sortedSeriesIds[chunkStart..<chunkEnd]
+            let body = KomgaSearchBody(
+                condition: .allOf([
+                    .anyOf(seriesChunk.map { .seriesId($0) }),
+                    .anyOf([
+                        .readStatus(.read),
+                        .readStatus(.inProgress)
+                    ]),
+                    .deleted(false)
+                ])
+            )
+
+            var page = 0
+            var totalPages = 1
+            while page < totalPages {
+                let response: KomgaPageResponse<[KomgaBook]> = try await helper.request(
+                    path: "api/v1/books/list?page=\(page)&size=\(pageSize)",
+                    method: .POST,
+                    body: body
+                )
+                totalPages = response.totalPages
+
+                for book in response.content {
+                    guard let readProgress = book.readProgress else { continue }
+                    progressBySeries[book.seriesId, default: [:]][book.id] = .init(
+                        completed: readProgress.completed,
+                        page: readProgress.page,
+                        date: readProgress.lastModified
+                    )
+                }
+                page += 1
+            }
+        }
+
+        progressCache[sourceKey] = .init(date: Date(), progressBySeries: progressBySeries)
+        return progressBySeries
     }
 }
 

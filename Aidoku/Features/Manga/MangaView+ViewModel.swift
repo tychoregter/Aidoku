@@ -496,6 +496,7 @@ extension MangaView.ViewModel {
             }
             for trackItem in trackItems {
                 guard let tracker = TrackerManager.getTracker(id: trackItem.trackerId) else { continue }
+                guard !(tracker is PageTracker) else { continue }
                 await TrackerManager.shared.syncProgressFromTracker(
                     tracker: tracker,
                     trackItem: trackItem,

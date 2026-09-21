@@ -19,6 +19,10 @@ final class KomgaTracker: EnhancedTracker, PageTracker {
 
     private let idSeparator: Character = "|"
 
+    static func isTrackingEnabled(for sourceKey: String) -> Bool {
+        !UserDefaults.standard.bool(forKey: "\(sourceKey).disableTracking")
+    }
+
     func getTrackerInfo() -> TrackerInfo {
         .init(supportedStatuses: [], scoreType: .tenPoint, scoreOptions: [])
     }
@@ -79,7 +83,7 @@ final class KomgaTracker: EnhancedTracker, PageTracker {
 
     func canRegister(mangaId: MangaIdentifier) -> Bool {
         mangaId.sourceKey.hasPrefix(KomgaSourceRunner.sourceKeyPrefix)
-            && !UserDefaults.standard.bool(forKey: "\(mangaId.sourceKey).disableTracking")
+            && Self.isTrackingEnabled(for: mangaId.sourceKey)
     }
 
     func setProgress(trackId: String, chapterId: ChapterIdentifier, progress: ChapterReadProgress) async throws {
@@ -94,6 +98,13 @@ final class KomgaTracker: EnhancedTracker, PageTracker {
     func getProgress(trackId: String, chapters: [AidokuRunner.Chapter]) async throws -> [String: ChapterReadProgress] {
         let (sourceKey, seriesId) = try getIdParts(from: trackId)
         return try await api.getSeriesReadProgress(sourceKey: sourceKey, seriesId: seriesId)
+    }
+
+    func getLibraryProgress(
+        sourceKey: String,
+        seriesIds: Set<String>
+    ) async throws -> [String: [String: ChapterReadProgress]] {
+        try await api.getLibraryReadProgress(sourceKey: sourceKey, seriesIds: seriesIds)
     }
 
     func logout() {

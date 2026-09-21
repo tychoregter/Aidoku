@@ -400,6 +400,15 @@ actor TrackerManager {
             if let tracker, targetTracker.id != tracker.id {
                 continue // if a specific tracker is provided, only sync that one
             }
+            if
+                tracker == nil,
+                targetTracker is KomgaTracker,
+                KomgaLibraryProgressSyncCoordinator.isEnabled
+            {
+                // Automatic Komga history is synchronized in one library-wide batch.
+                // Explicit/manual tracker syncs continue to use the existing path.
+                continue
+            }
             do {
                 let batchProgress = try await targetTracker.getProgress(trackId: item.id, chapters: chapters)
                 if result.isEmpty {
@@ -425,89 +434,103 @@ actor TrackerManager {
         }
 
         guard !result.isEmpty else { return }
+        await applyPageTrackerHistory([manga.identifier: result])
+    }
 
-        // create local history
-        let (completed, progressed) = await CoreDataManager.shared.container.performBackgroundTask { [result] context in
-            var completed: [String] = []
-            var progressed: [String: Int] = [:]
+    /// Applies tracker history for multiple titles in a single Core Data transaction.
+    /// This is used by server-level tracker syncs to avoid one save and one library
+    /// rebuild per title.
+    func applyPageTrackerHistory(
+        _ progressByManga: [MangaIdentifier: [String: ChapterReadProgress]],
+        refreshLibrary: Bool = false,
+        respectKomgaTrackingSetting: Bool = false
+    ) async {
+        guard !progressByManga.isEmpty else { return }
 
-            var lastRead = Date.distantPast
+        let (completed, progressed, changedManga) = await CoreDataManager.shared.container.performBackgroundTask {
+            [progressByManga] context in
+            var completed: [ChapterIdentifier] = []
+            var progressed: [ChapterIdentifier: Int] = [:]
+            var changedManga = Set<MangaIdentifier>()
+            var latestReadDates: [MangaIdentifier: Date] = [:]
 
-            for (chapterKey, progress) in result {
-                let chapterId = ChapterIdentifier(
-                    sourceKey: manga.sourceKey,
-                    mangaKey: manga.key,
-                    chapterKey: chapterKey
-                )
-                let existingHistory = CoreDataManager.shared.getHistory(
-                    chapterId: chapterId,
-                    context: context
-                )
-                if let existingDate = existingHistory?.dateRead, let newDate = progress.date, newDate <= existingDate {
-                    // don't update if the existing history is newer than the tracker history
+            for (mangaId, progressMap) in progressByManga {
+                if
+                    respectKomgaTrackingSetting,
+                    !KomgaTracker.isTrackingEnabled(for: mangaId.sourceKey)
+                {
                     continue
                 }
-                // mark chapters as read
-                if progress.completed {
-                    if !(existingHistory?.completed ?? false) {
-                        completed.append(chapterKey)
-                        let readDate = progress.date ?? Date.now
-                        lastRead = readDate > lastRead ? readDate : lastRead
-                        CoreDataManager.shared.setCompleted(
-                            chapterIds: [chapterId],
-                            date: progress.date ?? Date(),
-                            context: context
-                        )
-                    }
-                } else if progress.page != 0 {
-                    progressed[chapterKey] = progress.page
-                    let readDate = progress.date ?? Date.now
-                    lastRead = readDate > lastRead ? readDate : lastRead
-                    CoreDataManager.shared.setProgress(
-                        progress.page,
+                for (chapterKey, progress) in progressMap {
+                    let chapterId = ChapterIdentifier(
+                        sourceKey: mangaId.sourceKey,
+                        mangaKey: mangaId.mangaKey,
+                        chapterKey: chapterKey
+                    )
+                    let existingHistory = CoreDataManager.shared.getHistory(
                         chapterId: chapterId,
-                        dateRead: readDate,
-                        completed: false,
                         context: context
                     )
+                    if
+                        let existingDate = existingHistory?.dateRead,
+                        let newDate = progress.date,
+                        newDate <= existingDate
+                    {
+                        continue
+                    }
+
+                    let readDate = progress.date ?? Date.now
+                    if progress.completed {
+                        guard !(existingHistory?.completed ?? false) else { continue }
+                        existingHistory?.scrollPosition = nil
+                        CoreDataManager.shared.setCompleted(
+                            chapterIds: [chapterId],
+                            date: readDate,
+                            context: context
+                        )
+                        completed.append(chapterId)
+                    } else if progress.page != 0 {
+                        if Int(existingHistory?.progress ?? -1) != progress.page {
+                            existingHistory?.scrollPosition = nil
+                        }
+                        CoreDataManager.shared.setProgress(
+                            progress.page,
+                            chapterId: chapterId,
+                            dateRead: readDate,
+                            completed: false,
+                            context: context
+                        )
+                        progressed[chapterId] = progress.page
+                    } else {
+                        continue
+                    }
+
+                    changedManga.insert(mangaId)
+                    latestReadDates[mangaId] = max(latestReadDates[mangaId] ?? .distantPast, readDate)
                 }
             }
 
-            // mark manga as read only if history was updated
-            if !completed.isEmpty || !progressed.isEmpty {
-                CoreDataManager.shared.setRead(
-                    mangaId: manga.identifier,
-                    date: lastRead,
-                    context: context
-                )
+            for (mangaId, date) in latestReadDates {
+                CoreDataManager.shared.setRead(mangaId: mangaId, date: date, context: context)
             }
-
             try? context.save()
-
-            return (completed, progressed)
+            return (completed, progressed, changedManga)
         }
 
-        // post notifications to update ui
+        guard !changedManga.isEmpty else { return }
+
         if !completed.isEmpty {
-            NotificationCenter.default.post(
-                name: .historyAdded,
-                object: completed.map {
-                    ChapterIdentifier(sourceKey: manga.sourceKey, mangaKey: manga.key, chapterKey: $0)
-                }
-            )
+            NotificationCenter.default.post(name: .historyAdded, object: completed)
         }
-        for (chapterKey, page) in progressed {
-            NotificationCenter.default.post(
-                name: .historySet,
-                object: (
-                    ChapterIdentifier(
-                        sourceKey: manga.sourceKey,
-                        mangaKey: manga.key,
-                        chapterKey: chapterKey
-                    ),
-                    page
-                )
-            )
+        for (chapterId, page) in progressed {
+            NotificationCenter.default.post(name: .historySet, object: (chapterId, page))
+        }
+        for mangaId in changedManga {
+            await LibraryPagePreviewCache.shared.invalidate(mangaId: mangaId)
+        }
+        Task { await AidokuWidgetSnapshotRefreshCoordinator.shared.schedule() }
+        if refreshLibrary {
+            NotificationCenter.default.post(name: .updateLibrary, object: nil)
         }
     }
 

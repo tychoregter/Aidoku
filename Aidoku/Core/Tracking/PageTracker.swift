@@ -19,7 +19,7 @@ protocol PageTracker: Tracker {
     func getProgress(trackId: String, chapters: [AidokuRunner.Chapter]) async throws -> [String: ChapterReadProgress]
 }
 
-struct ChapterReadProgress: Codable {
+struct ChapterReadProgress: Codable, Sendable {
     let completed: Bool
     let page: Int
     var date: Date?
