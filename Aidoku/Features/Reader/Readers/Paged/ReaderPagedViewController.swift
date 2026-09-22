@@ -925,14 +925,23 @@ extension ReaderPagedViewController: ReaderReaderDelegate {
     }
 
     func sliderMoved(value: CGFloat) {
-        let displayPage = Int(round(value * CGFloat(displayPageCount - 1))) + 1
-        let actualPage = actualPageIndex(from: displayPage)
+        let actualPage = sourcePage(forSliderValue: value)
         delegate?.displayPage(actualPage)
     }
 
     func sliderStopped(value: CGFloat) {
-        let displayPage = Int(round(value * CGFloat(displayPageCount - 1))) + 1
-        move(toPage: displayPage, animated: false)
+        let actualPage = sourcePage(forSliderValue: value)
+        move(toPage: firstDisplayPage(forActual: actualPage), animated: false)
+    }
+
+    /// The toolbar scrubber represents source pages, not the reader's expanded
+    /// display pages. A split wide image adds another displayed half, but must
+    /// not shift every source-page target that follows it.
+    private func sourcePage(forSliderValue value: CGFloat) -> Int {
+        let pageCount = viewModel.pages.count
+        guard pageCount > 1 else { return max(pageCount, 1) }
+        let boundedValue = min(max(value, 0), 1)
+        return Int(round(boundedValue * CGFloat(pageCount - 1))) + 1
     }
 
     func setChapter(_ chapter: AidokuRunner.Chapter, startPage: Int) {
