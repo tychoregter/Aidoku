@@ -54,9 +54,14 @@ class ReaderToolbarView: UIView {
                 // The page counter is hosted beside the reader toolbar, so
                 // changing the scrubber's local subview order is not enough
                 // to keep the large preview above it.
-                if let readerToolbar = self.superview,
-                   let overlayHost = readerToolbar.superview {
-                    overlayHost.bringSubviewToFront(readerToolbar)
+                if let overlayHost = self.thumbnailPageCounterView.superview {
+                    var toolbarContainer: UIView? = self
+                    while let parent = toolbarContainer?.superview, parent !== overlayHost {
+                        toolbarContainer = parent
+                    }
+                    if let toolbarContainer, toolbarContainer.superview === overlayHost {
+                        overlayHost.bringSubviewToFront(toolbarContainer)
+                    }
                 }
             } else {
                 self.thumbnailPageCounterView.superview?.bringSubviewToFront(self.thumbnailPageCounterView)

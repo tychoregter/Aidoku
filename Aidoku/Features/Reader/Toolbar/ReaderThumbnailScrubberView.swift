@@ -31,8 +31,8 @@ final class ReaderThumbnailScrubberView: UIControl {
                 return max(48, ceil(Metrics.trackHeight * Metrics.pageAspectRatio * scale))
             case .preview:
                 let width = usesPopupPreview
-                    ? Metrics.previewWidth
-                    : Metrics.activeSelectedPageHeight * Metrics.pageAspectRatio
+                    ? Metrics.previewImageWidth
+                    : Metrics.selectedPageHeight * Metrics.pageAspectRatio
                 return ceil(width * scale)
         }
     }
@@ -41,14 +41,23 @@ final class ReaderThumbnailScrubberView: UIControl {
         static let horizontalInset: CGFloat = 22
         static let trackHeight: CGFloat = 22
         static let selectedPageHeight: CGFloat = 33
-        static let activeSelectedPageHeight: CGFloat = 36
         static let pageAspectRatio: CGFloat = 0.70
         static let previewWidth: CGFloat = 82
-        static let previewImageHeight: CGFloat = 108
-        static let previewLabelHeight: CGFloat = 30
+        static let previewImageInset: CGFloat = 5
+        static let previewImageWidth: CGFloat = previewWidth - previewImageInset * 2
+        static let previewImageHeight: CGFloat = previewImageWidth / pageAspectRatio
+        static let previewImageCornerRadius: CGFloat = 11
+        static let previewLabelSpacing: CGFloat = 2
+        static let previewLabelHeight: CGFloat = 28
+        static let previewBottomInset: CGFloat = 3
+        static let previewHeight: CGFloat = previewImageInset
+            + previewImageHeight
+            + previewLabelSpacing
+            + previewLabelHeight
+            + previewBottomInset
         static let previewSpacing: CGFloat = 12
-        static let previewShowDelay: TimeInterval = 0.12
-        static let selectionAnimationDuration: TimeInterval = 0.14
+        static let previewDismissDelay: TimeInterval = 0.22
+        static let previewFadeOutDuration: TimeInterval = 0.14
     }
 
     var direction: Direction = .forward {
@@ -62,10 +71,14 @@ final class ReaderThumbnailScrubberView: UIControl {
     var minimumValue: CGFloat = 0
     var maximumValue: CGFloat = 1
     var onPreviewVisibilityChange: ((Bool) -> Void)?
+    var onInteractionStateChange: ((Bool) -> Void)?
     var usesContinuousProgress = false {
         didSet {
             guard oldValue != usesContinuousProgress else { return }
             if usesContinuousProgress {
+                previewHideWorkItem?.cancel()
+                previewHideWorkItem = nil
+                previewHideGeneration &+= 1
                 previewContainer.layer.removeAllAnimations()
                 previewContainer.isHidden = true
                 previewContainer.alpha = 0
@@ -102,7 +115,8 @@ final class ReaderThumbnailScrubberView: UIControl {
     private var contentIdentifier: String?
     private var thumbnailViews: [UIImageView] = []
     private var previewTasks: [Int: Task<Void, Never>] = [:]
-    private var previewShowWorkItem: DispatchWorkItem?
+    private var previewHideWorkItem: DispatchWorkItem?
+    private var previewHideGeneration = 0
     private var thumbnailPreloadTask: Task<Void, Never>?
     private var isLoadingEnabled = false
     private var cachedThumbnailProvider: ((Int) async -> UIImage?)?
@@ -115,6 +129,7 @@ final class ReaderThumbnailScrubberView: UIControl {
     private var isActivelyScrubbing = false
     private var continuousPageIndex: Int?
     private var immediateGestureUpdatedValue = false
+    private var isBlockingParentGestures = false
     private let selectionFeedbackGenerator = UISelectionFeedbackGenerator()
 
     /// The width needed to show every page as a page-shaped thumbnail rather
@@ -135,7 +150,7 @@ final class ReaderThumbnailScrubberView: UIControl {
     }
 
     deinit {
-        previewShowWorkItem?.cancel()
+        previewHideWorkItem?.cancel()
         thumbnailPreloadTask?.cancel()
         previewTasks.values.forEach { $0.cancel() }
     }
@@ -227,21 +242,32 @@ final class ReaderThumbnailScrubberView: UIControl {
         selectionView.layer.borderColor = Self.activePageBorderColor.cgColor
         layoutThumbnailViews()
 
-        let previewHeight = Metrics.previewImageHeight + Metrics.previewLabelHeight
-        previewContainer.bounds = CGRect(x: 0, y: 0, width: Metrics.previewWidth, height: previewHeight)
-        previewImageView.frame = CGRect(x: 0, y: 0, width: Metrics.previewWidth, height: Metrics.previewImageHeight)
+        previewContainer.bounds = CGRect(
+            x: 0,
+            y: 0,
+            width: Metrics.previewWidth,
+            height: Metrics.previewHeight
+        )
+        previewImageView.frame = CGRect(
+            x: Metrics.previewImageInset,
+            y: Metrics.previewImageInset,
+            width: Metrics.previewImageWidth,
+            height: Metrics.previewImageHeight
+        )
         previewLabel.frame = CGRect(
             x: 0,
-            y: Metrics.previewImageHeight,
+            y: previewImageView.frame.maxY + Metrics.previewLabelSpacing,
             width: Metrics.previewWidth,
             height: Metrics.previewLabelHeight
         )
         previewContainer.layer.cornerRadius = 16
+        updatePreviewImageBorder()
         updatePreviewPosition()
     }
 
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         guard pageCount > 0 else { return false }
+        setParentGestureBlocking(true)
         immediateGestureUpdatedValue = false
         let location = touch.location(in: self)
         let beganOnSelection = selectionView.frame.insetBy(dx: -8, dy: -8).contains(location)
@@ -266,6 +292,7 @@ final class ReaderThumbnailScrubberView: UIControl {
             hidePreview()
         }
         sendActions(for: .editingDidEnd)
+        setParentGestureBlocking(false)
     }
 
     override func cancelTracking(with event: UIEvent?) {
@@ -274,6 +301,7 @@ final class ReaderThumbnailScrubberView: UIControl {
             hidePreview()
         }
         sendActions(for: .editingDidEnd)
+        setParentGestureBlocking(false)
     }
 
     override func accessibilityIncrement() {
@@ -344,17 +372,15 @@ final class ReaderThumbnailScrubberView: UIControl {
 
         previewImageView.contentMode = .scaleAspectFill
         previewImageView.clipsToBounds = true
-        previewImageView.layer.cornerRadius = 16
-        previewImageView.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        previewImageView.layer.cornerRadius = Metrics.previewImageCornerRadius
+        previewImageView.layer.cornerCurve = .continuous
+        previewImageView.layer.borderWidth = 1
         previewContainer.contentView.addSubview(previewImageView)
 
-        previewLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+        previewLabel.font = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
         previewLabel.textColor = .secondaryLabel
         previewLabel.textAlignment = .center
         previewLabel.backgroundColor = .clear
-        previewLabel.layer.cornerRadius = 16
-        previewLabel.layer.maskedCorners = [.layerMinXMaxYCorner, .layerMaxXMaxYCorner]
-        previewLabel.clipsToBounds = true
         previewContainer.contentView.addSubview(previewLabel)
     }
 
@@ -454,9 +480,7 @@ final class ReaderThumbnailScrubberView: UIControl {
     private func updateSelectionFrame() {
         guard pageCount > 0 else { return }
         let logicalIndex = pageIndex(for: currentValue)
-        let height = isActivelyScrubbing
-            ? Metrics.activeSelectedPageHeight
-            : Metrics.selectedPageHeight
+        let height = Metrics.selectedPageHeight
         let width = height * Metrics.pageAspectRatio
         let proposedCenterX: CGFloat
         if usesContinuousProgress, maximumValue > minimumValue {
@@ -487,13 +511,6 @@ final class ReaderThumbnailScrubberView: UIControl {
     private func setSelectionExpanded(_ expanded: Bool) {
         guard isActivelyScrubbing != expanded else { return }
         isActivelyScrubbing = expanded
-        UIView.animate(
-            withDuration: Metrics.selectionAnimationDuration,
-            delay: 0,
-            options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
-        ) {
-            self.updatePreviewPosition()
-        }
     }
 
     private func beginActiveInteraction(producesFeedback: Bool) {
@@ -511,6 +528,7 @@ final class ReaderThumbnailScrubberView: UIControl {
         switch recognizer.state {
             case .began:
                 let location = recognizer.location(in: self)
+                setParentGestureBlocking(true)
                 if usesContinuousProgress {
                     immediateGestureUpdatedValue = true
                     beginActiveInteraction(producesFeedback: true)
@@ -524,6 +542,7 @@ final class ReaderThumbnailScrubberView: UIControl {
                 immediateGestureUpdatedValue = false
                 if !isTracking {
                     setSelectionExpanded(false)
+                    setParentGestureBlocking(false)
                 }
                 if shouldFinishValueChange {
                     sendActions(for: .editingDidEnd)
@@ -531,6 +550,12 @@ final class ReaderThumbnailScrubberView: UIControl {
             default:
                 break
         }
+    }
+
+    private func setParentGestureBlocking(_ blocked: Bool) {
+        guard isBlockingParentGestures != blocked else { return }
+        isBlockingParentGestures = blocked
+        onInteractionStateChange?(blocked)
     }
 
     private var maximumThumbnailWidth: CGFloat {
@@ -806,28 +831,42 @@ final class ReaderThumbnailScrubberView: UIControl {
     }
 
     private func hidePreview() {
-        previewShowWorkItem?.cancel()
-        previewShowWorkItem = nil
-        previewContainer.layer.removeAllAnimations()
-        previewContainer.alpha = 0
-        previewContainer.isHidden = true
-        onPreviewVisibilityChange?(false)
+        previewHideWorkItem?.cancel()
+        previewHideGeneration &+= 1
+        let generation = previewHideGeneration
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, generation == self.previewHideGeneration else { return }
+            UIView.animate(
+                withDuration: Metrics.previewFadeOutDuration,
+                delay: 0,
+                options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]
+            ) {
+                self.previewContainer.alpha = 0
+            } completion: { finished in
+                guard finished,
+                      generation == self.previewHideGeneration,
+                      !self.isTracking else { return }
+                self.previewContainer.isHidden = true
+                self.previewHideWorkItem = nil
+                self.onPreviewVisibilityChange?(false)
+            }
+        }
+        previewHideWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Metrics.previewDismissDelay,
+            execute: workItem
+        )
     }
 
     private func schedulePreviewShow() {
-        previewShowWorkItem?.cancel()
-
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self, !self.usesContinuousProgress, self.isTracking else { return }
-            self.previewContainer.isHidden = false
-            self.previewContainer.alpha = 1
-            self.onPreviewVisibilityChange?(true)
-        }
-        previewShowWorkItem = workItem
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Metrics.previewShowDelay,
-            execute: workItem
-        )
+        guard !usesContinuousProgress else { return }
+        previewHideWorkItem?.cancel()
+        previewHideWorkItem = nil
+        previewHideGeneration &+= 1
+        previewContainer.layer.removeAllAnimations()
+        previewContainer.isHidden = false
+        previewContainer.alpha = 1
+        onPreviewVisibilityChange?(true)
     }
 
     private func selectedImage(for index: Int) -> UIImage? {
@@ -846,6 +885,15 @@ final class ReaderThumbnailScrubberView: UIControl {
 
     func setOverlayAppearance(_ style: UIUserInterfaceStyle) {
         previewContainer.overrideUserInterfaceStyle = style
+        updatePreviewImageBorder()
+    }
+
+    private func updatePreviewImageBorder() {
+        let style = previewContainer.traitCollection.userInterfaceStyle
+        let color = style == .dark
+            ? UIColor.white.withAlphaComponent(0.24)
+            : UIColor.black.withAlphaComponent(0.18)
+        previewImageView.layer.borderColor = color.cgColor
     }
 }
 

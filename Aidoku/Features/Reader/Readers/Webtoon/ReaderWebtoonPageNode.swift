@@ -46,6 +46,7 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
     var ratio: CGFloat?
 
     private var pageLoadTask: Task<Void, Never>?
+    private var pageLoadGeneration = 0
     private var imageTask: ImageTask?
     private var imageProcessingTask: Task<UIImage?, Never>?
     private var pageLoadCancellationWorkItem: DispatchWorkItem?
@@ -334,13 +335,17 @@ extension ReaderWebtoonPageNode {
     private func startPageLoad() {
         guard pageLoadTask == nil, image == nil, text == nil else { return }
 
+        pageLoadGeneration &+= 1
+        let generation = pageLoadGeneration
         let taskPriority: TaskPriority? = Self.priorityLoadingEnabled
             ? (isVisible ? .userInitiated : .utility)
             : nil
         pageLoadTask = Task(priority: taskPriority) { [weak self] in
             guard let self else { return }
             await self.loadPage()
-            self.pageLoadTask = nil
+            if self.pageLoadGeneration == generation {
+                self.pageLoadTask = nil
+            }
         }
     }
 
@@ -361,6 +366,7 @@ extension ReaderWebtoonPageNode {
     }
 
     private func cancelPageLoad() {
+        pageLoadGeneration &+= 1
         pageLoadTask?.cancel()
         pageLoadTask = nil
 
@@ -403,6 +409,7 @@ extension ReaderWebtoonPageNode {
         } else {
             URLRequest(url: url)
         }
+        guard !Task.isCancelled else { return }
 
         let width = pageWidth
         let shouldDownsample = UserDefaults.standard.bool(forKey: "Reader.downsampleImages") && width > 0
@@ -427,6 +434,7 @@ extension ReaderWebtoonPageNode {
         } else if shouldUpscale {
             processors.append(UpscaleProcessor())
         }
+        guard !Task.isCancelled else { return }
 
         let requestPriority: ImageRequest.Priority = if Self.priorityLoadingEnabled {
             isVisible ? .veryHigh : .low
@@ -516,6 +524,7 @@ extension ReaderWebtoonPageNode {
 
         // check cache
         if ImagePipeline.shared.cache.containsCachedImage(for: request) {
+            guard !Task.isCancelled else { return }
             let imageContainer = ImagePipeline.shared.cache.cachedImage(for: request)
             image = imageContainer?.image
             if isNodeLoaded {
@@ -587,6 +596,9 @@ extension ReaderWebtoonPageNode {
     func displayPage() {
         guard text != nil || image != nil else {
             startPageLoad()
+            // An offscreen node may still have its previous image layout.
+            // Restore the progress node immediately when it is displayed again.
+            transition(animated: false)
             return
         }
 
@@ -634,7 +646,7 @@ extension ReaderWebtoonPageNode {
         image = nil
     }
 
-    private func transition() {
+    private func transition(animated: Bool = true) {
         let width = pageWidth
         guard width > 0 else { return }
         let ratio = if let image, image.size.width > 0 {
@@ -644,7 +656,7 @@ extension ReaderWebtoonPageNode {
         }
         let size = CGSize(width: width, height: width * ratio)
         frame = CGRect(origin: .zero, size: size)
-        transitionLayout(with: ASSizeRange(min: .zero, max: size), animated: true, shouldMeasureAsync: false)
+        transitionLayout(with: ASSizeRange(min: .zero, max: size), animated: animated, shouldMeasureAsync: false)
     }
 
     @MainActor

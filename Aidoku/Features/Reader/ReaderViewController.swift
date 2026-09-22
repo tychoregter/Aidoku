@@ -98,7 +98,11 @@ class ReaderViewController: BaseObservingViewController {
     @available(iOS 26.0, *)
     private lazy var readerToolbarEffectView = UIVisualEffectView(effect: UIGlassContainerEffect())
     @available(iOS 26.0, *)
-    private lazy var readerToolbarBackgroundEffectView = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
+    private lazy var readerToolbarBackgroundEffectView: UIVisualEffectView = {
+        let effect = UIGlassEffect(style: .regular)
+        effect.isInteractive = true
+        return UIVisualEffectView(effect: effect)
+    }()
 
     private var squeezeTimer: Timer?
     private var longSqueezeTimer: Timer?
@@ -272,6 +276,9 @@ class ReaderViewController: BaseObservingViewController {
             action: #selector(thumbnailScrubberStopped(_:)),
             for: .editingDidEnd
         )
+        toolbarView.thumbnailScrubberView.onInteractionStateChange = { [weak self] isInteracting in
+            self?.setScrubberGestureBlocking(isInteracting)
+        }
         toolbarView.onScrubberStyleChange = { [weak self] usesThumbnailScrubber in
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.viewIfLoaded?.window != nil else { return }
@@ -297,17 +304,19 @@ class ReaderViewController: BaseObservingViewController {
             overlayHost.addSubview(readerToolbar)
 
             readerToolbarEffectView.translatesAutoresizingMaskIntoConstraints = false
-            readerToolbarEffectView.isUserInteractionEnabled = false
+            readerToolbarEffectView.isUserInteractionEnabled = true
             readerToolbarEffectView.clipsToBounds = false
+            readerToolbarEffectView.contentView.clipsToBounds = false
             readerToolbar.addSubview(readerToolbarEffectView)
 
             readerToolbarBackgroundEffectView.translatesAutoresizingMaskIntoConstraints = false
-            readerToolbarBackgroundEffectView.isUserInteractionEnabled = false
+            readerToolbarBackgroundEffectView.isUserInteractionEnabled = true
             readerToolbarBackgroundEffectView.layer.cornerRadius = 22
             readerToolbarBackgroundEffectView.layer.cornerCurve = .continuous
-            readerToolbarBackgroundEffectView.clipsToBounds = true
+            readerToolbarBackgroundEffectView.clipsToBounds = false
+            readerToolbarBackgroundEffectView.contentView.clipsToBounds = false
             readerToolbarEffectView.contentView.addSubview(readerToolbarBackgroundEffectView)
-            readerToolbar.addSubview(toolbarView)
+            readerToolbarBackgroundEffectView.contentView.addSubview(toolbarView)
             toolbarView.moveThumbnailPageCounter(
                 to: overlayHost,
                 centeredOn: readerToolbar.centerXAnchor,
@@ -623,6 +632,23 @@ class ReaderViewController: BaseObservingViewController {
 }
 
 extension ReaderViewController {
+    private func setScrubberGestureBlocking(_ blocked: Bool) {
+        let isVerticalReader = reader is ReaderWebtoonViewController || readingMode == .vertical
+        let gestureRecognizers = (parent?.view.gestureRecognizers ?? [])
+            + (parent?.view.superview?.superview?.gestureRecognizers ?? [])
+
+        for recognizer in gestureRecognizers {
+            switch String(describing: type(of: recognizer)) {
+                case "_UIParallaxTransitionPanGestureRecognizer":
+                    recognizer.isEnabled = blocked ? false : isVerticalReader
+                case "_UIContentSwipeDismissGestureRecognizer":
+                    recognizer.isEnabled = blocked ? false : !isVerticalReader
+                default:
+                    break
+            }
+        }
+    }
+
     func disableSwipeGestures() {
         let isVerticalReader = reader is ReaderWebtoonViewController || readingMode == .vertical
 
@@ -658,6 +684,17 @@ extension ReaderViewController {
         )
         gestureRecognizer.addTarget(self, action: #selector(handleContentSwipeDismissGesture(_:)))
         observedContentSwipeDismissGesture = gestureRecognizer
+    }
+
+    private func touchIsInScrubber(_ touch: UITouch) -> Bool {
+        var view = touch.view
+        while let current = view {
+            if current === toolbarView.thumbnailScrubberView {
+                return true
+            }
+            view = current.superview
+        }
+        return false
     }
 
     @objc private func handleContentSwipeDismissGesture(_ gestureRecognizer: UIGestureRecognizer) {
@@ -2509,6 +2546,16 @@ extension ReaderViewController: UIGestureRecognizerDelegate {
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        let gestureType = String(describing: type(of: gestureRecognizer))
+        if
+            (gestureRecognizer === contentSwipeDismissGesture
+                || gestureType == "_UIParallaxTransitionPanGestureRecognizer"
+                || gestureType == "_UIContentSwipeDismissGestureRecognizer"),
+            touchIsInScrubber(touch)
+        {
+            return false
+        }
+
         guard
             gestureRecognizer === barDismissNavigationBarTapGesture
                 || gestureRecognizer === barToggleTapGesture
