@@ -14,7 +14,9 @@ actor KomgaApi {
     }
 
     private var progressCache: [String: ProgressCacheEntry] = [:]
-    private let progressCacheLifetime: TimeInterval = 5 * 60
+    private var progressCacheLifetime: TimeInterval? {
+        AppSettings.tracking.komgaProgressSyncInterval.get().timeInterval
+    }
 
     func shouldUseChapters(mangaId: MangaIdentifier) -> Bool {
         let key = "Manga.chapterDisplayMode.\(mangaId)"
@@ -129,7 +131,8 @@ actor KomgaApi {
     func getSeriesReadProgress(sourceKey: String, seriesId: String) async throws -> [String: ChapterReadProgress] {
         if
             let cache = progressCache[sourceKey],
-            Date().timeIntervalSince(cache.date) < progressCacheLifetime,
+            let cacheLifetime = progressCacheLifetime,
+            Date().timeIntervalSince(cache.date) < cacheLifetime,
             let progress = cache.progressBySeries[seriesId]
         {
             return progress
@@ -161,10 +164,14 @@ actor KomgaApi {
     /// request when refreshing the library's tracker state.
     func getLibraryReadProgress(
         sourceKey: String,
-        seriesIds: Set<String>
+        seriesIds: Set<String>,
+        forceRefresh: Bool = false
     ) async throws -> [String: [String: ChapterReadProgress]] {
         guard !seriesIds.isEmpty else { return [:] }
 
+        if forceRefresh {
+            progressCache[sourceKey] = nil
+        }
         let helper = KomgaHelper(sourceKey: sourceKey)
         let sortedSeriesIds = seriesIds.sorted()
         let chunkSize = 75

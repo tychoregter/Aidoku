@@ -102,9 +102,14 @@ final class KomgaTracker: EnhancedTracker, PageTracker {
 
     func getLibraryProgress(
         sourceKey: String,
-        seriesIds: Set<String>
+        seriesIds: Set<String>,
+        forceRefresh: Bool = false
     ) async throws -> [String: [String: ChapterReadProgress]] {
-        try await api.getLibraryReadProgress(sourceKey: sourceKey, seriesIds: seriesIds)
+        try await api.getLibraryReadProgress(
+            sourceKey: sourceKey,
+            seriesIds: seriesIds,
+            forceRefresh: forceRefresh
+        )
     }
 
     func logout() {

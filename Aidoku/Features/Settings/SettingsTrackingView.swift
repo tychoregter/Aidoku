@@ -131,7 +131,11 @@ struct SettingsTrackingView: View {
                     ]
                     ForEach(items, id: \.tracker.id) { tracker, sources in
                         if !sources.isEmpty {
-                            NavigationLink(destination: enhancedTrackerPage(name: tracker.name, sources: sources)) {
+                            NavigationLink(destination: enhancedTrackerPage(
+                                trackerId: tracker.id,
+                                name: tracker.name,
+                                sources: sources
+                            )) {
                                 HStack(spacing: 12) {
                                     if let icon = tracker.icon {
                                         Image(uiImage: icon)
@@ -211,7 +215,11 @@ struct SettingsTrackingView: View {
         }
     }
 
-    func enhancedTrackerPage(name: String, sources: [AidokuRunner.Source]) -> some View {
+    func enhancedTrackerPage(
+        trackerId: String,
+        name: String,
+        sources: [AidokuRunner.Source]
+    ) -> some View {
         List {
             Section {
                 ForEach(sources) { source in
@@ -231,6 +239,24 @@ struct SettingsTrackingView: View {
                 }
             } footer: {
                 Text(NSLocalizedString("ENHANCED_TRACKERS_TOGGLE_INFO"))
+            }
+
+            if trackerId == TrackerManager.komga.id {
+                Section {
+                    SettingView(
+                        setting: .init(
+                            key: AppSettings.tracking.komgaProgressSyncInterval.key,
+                            title: NSLocalizedString("KOMGA_PROGRESS_SYNC_INTERVAL"),
+                            value: .select(.init(
+                                values: TrackingSettings.KomgaProgressSyncInterval.allCases.map(\.rawValue),
+                                titles: TrackingSettings.KomgaProgressSyncInterval.allCases.map(\.title)
+                            ))
+                        )
+                    )
+                } footer: {
+                    Text(NSLocalizedString("KOMGA_PROGRESS_SYNC_INTERVAL_INFO"))
+                }
+                .disabled(!sources.contains { enhancedTrackingStates[$0.id, default: true] })
             }
         }
         .navigationTitle(name)

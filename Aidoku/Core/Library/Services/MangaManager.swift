@@ -459,6 +459,13 @@ extension MangaManager {
         }
         await libraryRefreshTask?.value
 
+        // A completed library refresh is an explicit Komga sync trigger. Run
+        // it in the background so refreshing the library does not block the
+        // library UI from updating while remote progress is fetched.
+        Task(priority: .utility) {
+            await KomgaLibraryProgressSyncCoordinator.shared.syncIfNeeded(trigger: .libraryRefresh)
+        }
+
         onLibraryRefreshProgress = nil
 
         self.targetCategory = nil

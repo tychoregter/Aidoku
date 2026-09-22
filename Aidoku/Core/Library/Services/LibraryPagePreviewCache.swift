@@ -39,6 +39,8 @@ actor LibraryPagePreviewCache {
         .appendingPathComponent("ChapterPreviews", isDirectory: true)
     private static let thumbnailDirectory = rootDirectory
         .appendingPathComponent("ReaderThumbnails", isDirectory: true)
+    private static let thumbnailCacheLimit: UInt64 = 600 * 1024 * 1024
+    private static let thumbnailExpiration: TimeInterval = 30 * 24 * 60 * 60
 
     private var inFlight: [String: Task<LoadedPreview?, Never>] = [:]
     private var inFlightPages: [String: Task<[Page], Never>] = [:]
@@ -46,6 +48,7 @@ actor LibraryPagePreviewCache {
     private var prewarmTask: Task<Void, Never>?
     private var generations: [MangaIdentifier: UInt64] = [:]
     private var resetGeneration: UInt64 = 0
+    private var lastThumbnailMaintenanceDate: Date?
 
     init() {
         Self.persistentDirectory.createDirectory()
@@ -54,6 +57,8 @@ actor LibraryPagePreviewCache {
         Self.removeSessionFiles()
         Self.sessionDirectory.createDirectory()
         Self.thumbnailDirectory.createDirectory()
+        Self.removeLegacyThumbnailFiles()
+        Self.cleanupThumbnailCache()
     }
 
     /// Returns a prepared current-page preview immediately. A cache miss is
@@ -144,6 +149,8 @@ actor LibraryPagePreviewCache {
     func cachedReaderThumbnail(for page: Page, pageIndex: Int, mangaId: MangaIdentifier) async -> UIImage? {
         let url = Self.thumbnailURL(for: page, pageIndex: pageIndex, mangaId: mangaId)
         guard let image = UIImage(contentsOfFile: url.path) else { return nil }
+        Self.markThumbnailUsed(url, mangaId: mangaId, chapterKey: page.chapterId)
+        enforceThumbnailPolicy(for: mangaId, activeChapterKey: page.chapterId)
         return await image.byPreparingForDisplay() ?? image
     }
 
@@ -153,9 +160,16 @@ actor LibraryPagePreviewCache {
         let url = Self.thumbnailURL(for: page, pageIndex: pageIndex, mangaId: mangaId)
         // The URL identity is part of the cache key, so an existing entry is
         // already the exact version required for this page.
-        guard !url.exists, let data = image.jpegData(compressionQuality: 0.82) else { return }
+        if url.exists {
+            Self.markThumbnailUsed(url, mangaId: mangaId, chapterKey: page.chapterId)
+            enforceThumbnailPolicy(for: mangaId, activeChapterKey: page.chapterId)
+            return
+        }
+        guard let data = image.jpegData(compressionQuality: 0.82) else { return }
         url.deletingLastPathComponent().createDirectory()
         try? data.write(to: url, options: .atomic)
+        Self.markThumbnailUsed(url, mangaId: mangaId, chapterKey: page.chapterId)
+        enforceThumbnailPolicy(for: mangaId, activeChapterKey: page.chapterId)
     }
 
     /// Removes only the cached variants belonging to a cover whose URL
@@ -456,11 +470,177 @@ actor LibraryPagePreviewCache {
         // the format version in the key prevents older 3x renders from being
         // decoded into memory after this optimization.
         let pageKey = "v4|\(page.chapterId)|\(pageIndex)|\(resourceIdentity)|\(contextIdentity)"
-        return mangaDirectory.appendingPathComponent(digest(pageKey)).appendingPathExtension("jpg")
+        let chapterDirectory = mangaDirectory
+            .appendingPathComponent(digest(page.chapterId), isDirectory: true)
+        return chapterDirectory
+            .appendingPathComponent(digest(pageKey))
+            .appendingPathExtension("jpg")
     }
 
     private static func removeThumbnails(for mangaId: MangaIdentifier) {
         thumbnailDirectory.appendingPathComponent(digest(mangaId.description), isDirectory: true).removeItem()
+    }
+
+    private static func removeLegacyThumbnailFiles() {
+        guard let mangaDirectories = try? FileManager.default.contentsOfDirectory(
+            at: thumbnailDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        ) else { return }
+
+        for mangaDirectory in mangaDirectories {
+            guard
+                (try? mangaDirectory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true,
+                let files = try? FileManager.default.contentsOfDirectory(
+                    at: mangaDirectory,
+                    includingPropertiesForKeys: [.isDirectoryKey]
+                )
+            else { continue }
+
+            // Previous versions stored the page files directly in the manga
+            // directory. The new chapter-aware layout cannot safely associate
+            // those files with a chapter, so discard only that legacy level.
+            for file in files {
+                if (try? file.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true {
+                    file.removeItem()
+                }
+            }
+        }
+    }
+
+    private static func markThumbnailUsed(_ url: URL, mangaId: MangaIdentifier, chapterKey: String) {
+        let now = Date()
+        setModificationDate(now, for: url)
+        setModificationDate(now, for: chapterDirectory(for: mangaId, chapterKey: chapterKey))
+    }
+
+    private func enforceThumbnailPolicy(for mangaId: MangaIdentifier, activeChapterKey: String) {
+        let now = Date()
+
+        let mangaDirectory = Self.thumbnailDirectory
+            .appendingPathComponent(Self.digest(mangaId.description), isDirectory: true)
+        Self.cleanupExpiredChapterDirectories(in: mangaDirectory, now: now)
+        guard let chapterDirectories = Self.chapterDirectories(in: mangaDirectory) else {
+            performThumbnailMaintenanceIfNeeded(now: now)
+            return
+        }
+
+        // Keep the active chapter and the most recently used previous chapter.
+        // Directory modification dates are updated on every cache hit/write,
+        // so this also survives app restarts without another metadata file.
+        let ordered = chapterDirectories.sorted {
+            Self.modificationDate(for: $0) > Self.modificationDate(for: $1)
+        }
+        let activeDirectory = Self.chapterDirectory(
+            for: mangaId,
+            chapterKey: activeChapterKey
+        )
+        let retained = Set<URL>([activeDirectory] + Array(ordered.prefix(2)))
+        for directory in chapterDirectories where !retained.contains(directory) {
+            directory.removeItem()
+        }
+
+        performThumbnailMaintenanceIfNeeded(now: now)
+    }
+
+    private func performThumbnailMaintenanceIfNeeded(now: Date) {
+        guard
+            lastThumbnailMaintenanceDate == nil
+                || now.timeIntervalSince(lastThumbnailMaintenanceDate!) >= 10
+        else { return }
+        lastThumbnailMaintenanceDate = now
+        Self.cleanupThumbnailCache()
+    }
+
+    private static func cleanupThumbnailCache() {
+        guard let mangaDirectories = try? FileManager.default.contentsOfDirectory(
+            at: thumbnailDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        ) else {
+            enforceGlobalThumbnailLimit()
+            return
+        }
+        let now = Date()
+        for mangaDirectory in mangaDirectories {
+            cleanupExpiredChapterDirectories(in: mangaDirectory, now: now)
+        }
+        enforceGlobalThumbnailLimit()
+    }
+
+    private static func cleanupExpiredChapterDirectories(in mangaDirectory: URL, now: Date) {
+        guard let chapters = chapterDirectories(in: mangaDirectory) else { return }
+        for chapter in chapters where now.timeIntervalSince(modificationDate(for: chapter)) > thumbnailExpiration {
+            chapter.removeItem()
+        }
+    }
+
+    private static func enforceGlobalThumbnailLimit() {
+        struct Entry {
+            let url: URL
+            let size: UInt64
+            let date: Date
+        }
+
+        guard let files = allThumbnailFiles() else { return }
+        var entries = files.compactMap { url -> Entry? in
+            guard
+                let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+                let size = values.fileSize,
+                let date = values.contentModificationDate
+            else { return nil }
+            return Entry(url: url, size: UInt64(size), date: date)
+        }
+
+        var total = entries.reduce(UInt64(0)) { $0 + $1.size }
+        guard total > thumbnailCacheLimit else { return }
+
+        entries.sort { $0.date < $1.date }
+        for entry in entries where total > thumbnailCacheLimit {
+            entry.url.removeItem()
+            total = total > entry.size ? total - entry.size : 0
+        }
+    }
+
+    private static func allThumbnailFiles() -> [URL]? {
+        guard let enumerator = FileManager.default.enumerator(
+            at: thumbnailDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey, .contentModificationDateKey]
+        ) else { return nil }
+        return enumerator.compactMap { item in
+            guard
+                let url = item as? URL,
+                (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true,
+                url.pathExtension == "jpg"
+            else { return nil }
+            return url
+        }
+    }
+
+    private static func chapterDirectories(in mangaDirectory: URL) -> [URL]? {
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: mangaDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        ) else { return nil }
+        return files.filter {
+            (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+        }
+    }
+
+    private static func chapterDirectory(for mangaId: MangaIdentifier, chapterKey: String) -> URL {
+        thumbnailDirectory
+            .appendingPathComponent(digest(mangaId.description), isDirectory: true)
+            .appendingPathComponent(digest(chapterKey), isDirectory: true)
+    }
+
+    private static func modificationDate(for url: URL) -> Date {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+            ?? .distantPast
+    }
+
+    private static func setModificationDate(_ date: Date, for url: URL) {
+        try? FileManager.default.setAttributes(
+            [.modificationDate: date],
+            ofItemAtPath: url.path
+        )
     }
 
     private static func digest(_ value: String) -> String {

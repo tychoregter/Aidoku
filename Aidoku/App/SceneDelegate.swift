@@ -76,7 +76,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     func sceneDidBecomeActive(_ scene: UIScene) {
         contentHideView.removeFromSuperview()
         Task(priority: .utility) {
-            await KomgaLibraryProgressSyncCoordinator.shared.syncIfNeeded()
+            await KomgaLibraryProgressSyncCoordinator.shared.syncIfNeeded(trigger: .appActivation)
         }
     }
 

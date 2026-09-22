@@ -10,21 +10,37 @@ import Foundation
 actor KomgaLibraryProgressSyncCoordinator {
     static let shared = KomgaLibraryProgressSyncCoordinator()
 
+    enum SyncTrigger: Sendable {
+        case appLaunch
+        case appActivation
+        case libraryRefresh
+    }
+
     /// Kill switch kept intentionally local so the new implementation can be
     /// disabled or reverted without touching the existing tracker behavior.
     nonisolated static let isEnabled = true
 
-    private let minimumSyncInterval: TimeInterval = 2 * 60
     private var isSyncing = false
-    private var lastSyncDate: Date?
+    private let lastSyncDateKey = "Tracking.komgaLastProgressSyncDate"
 
-    func syncIfNeeded(force: Bool = false) async {
+    func syncIfNeeded(trigger: SyncTrigger = .appActivation) async {
         guard Self.isEnabled, !isSyncing else { return }
-        if
-            !force,
-            let lastSyncDate,
-            Date().timeIntervalSince(lastSyncDate) < minimumSyncInterval
-        {
+
+        let interval = AppSettings.tracking.komgaProgressSyncInterval.get()
+        let isLibraryRefresh = trigger == .libraryRefresh
+        if !isLibraryRefresh {
+            if interval.timeInterval == nil, trigger != .appLaunch {
+                return
+            }
+            if let lastSyncDate,
+               let gracePeriod = interval.timeInterval,
+               Date().timeIntervalSince(lastSyncDate) < gracePeriod {
+                return
+            }
+        }
+
+        if !isLibraryRefresh, interval == .appLaunchAndRefresh,
+           trigger != .appLaunch {
             return
         }
 
@@ -33,7 +49,7 @@ actor KomgaLibraryProgressSyncCoordinator {
 
         let links = await loadLibraryLinks()
         guard !links.isEmpty else {
-            lastSyncDate = Date()
+            recordSyncDate()
             return
         }
 
@@ -47,7 +63,8 @@ actor KomgaLibraryProgressSyncCoordinator {
                 let seriesIds = Set(sourceLinks.map(\.seriesId))
                 let sourceProgress = try await TrackerManager.komga.getLibraryProgress(
                     sourceKey: sourceKey,
-                    seriesIds: seriesIds
+                    seriesIds: seriesIds,
+                    forceRefresh: isLibraryRefresh
                 )
                 guard KomgaTracker.isTrackingEnabled(for: sourceKey) else { continue }
                 didSyncAnySource = true
@@ -60,7 +77,9 @@ actor KomgaLibraryProgressSyncCoordinator {
             }
         }
 
-        guard didSyncAnySource else { return }
+        guard didSyncAnySource else {
+            return
+        }
         progressByManga = progressByManga.filter {
             KomgaTracker.isTrackingEnabled(for: $0.key.sourceKey)
         }
@@ -69,11 +88,22 @@ actor KomgaLibraryProgressSyncCoordinator {
             refreshLibrary: true,
             respectKomgaTrackingSetting: true
         )
-        lastSyncDate = Date()
+        recordSyncDate()
     }
 }
 
 private extension KomgaLibraryProgressSyncCoordinator {
+    var lastSyncDate: Date? {
+        guard let timestamp = UserDefaults.standard.object(forKey: lastSyncDateKey) as? Double else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: timestamp)
+    }
+
+    func recordSyncDate() {
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastSyncDateKey)
+    }
+
     struct LibraryLink: Sendable {
         let sourceKey: String
         let seriesId: String

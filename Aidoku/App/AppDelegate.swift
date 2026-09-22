@@ -209,7 +209,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         Task {
             await SourceManager.shared.start()
             Task(priority: .utility) {
-                await KomgaLibraryProgressSyncCoordinator.shared.syncIfNeeded()
+                await KomgaLibraryProgressSyncCoordinator.shared.syncIfNeeded(trigger: .appLaunch)
             }
             LibrarySpotlightIndexer.indexLibrary()
             await BackupManager.shared.scheduleAutoBackup()

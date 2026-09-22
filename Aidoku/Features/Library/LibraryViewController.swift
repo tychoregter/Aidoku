@@ -11,6 +11,8 @@ import SwiftUI
 import AidokuRunner
 
 class LibraryViewController: OldMangaCollectionViewController {
+    private var horizontalRowScrollViewObservations: [NSKeyValueObservation] = []
+
 
     typealias Scope = LibraryViewModel.Scope
     let scope: Scope
@@ -319,6 +321,45 @@ class LibraryViewController: OldMangaCollectionViewController {
             lockedStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             lockedStackView.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+
+        // UIKit implements orthogonal compositional-layout sections with
+        // nested scroll views. Continue Reading and horizontal pinned rows
+        // should still accept a small drag when their content is shorter than
+        // the viewport, then bounce back to the end of the row.
+        enableHorizontalRowBouncing(in: collectionView)
+    }
+
+    private func enableHorizontalRowBouncing(in view: UIView) {
+        if view === collectionView {
+            horizontalRowScrollViewObservations.forEach { $0.invalidate() }
+            horizontalRowScrollViewObservations.removeAll()
+        }
+
+        for subview in view.subviews {
+            if let scrollView = subview as? UIScrollView, scrollView !== collectionView {
+                scrollView.isScrollEnabled = true
+                scrollView.alwaysBounceHorizontal = true
+                scrollView.bounces = true
+
+                horizontalRowScrollViewObservations.append(
+                    scrollView.observe(\.isScrollEnabled, options: [.new]) { [weak scrollView] _, _ in
+                        guard let scrollView, !scrollView.isScrollEnabled else { return }
+                        scrollView.isScrollEnabled = true
+                    }
+                )
+                horizontalRowScrollViewObservations.append(
+                    scrollView.observe(\.alwaysBounceHorizontal, options: [.new]) { [weak scrollView] _, _ in
+                        guard let scrollView, !scrollView.alwaysBounceHorizontal else { return }
+                        scrollView.alwaysBounceHorizontal = true
+                    }
+                )
+            }
+            enableHorizontalRowBouncing(in: subview)
+        }
     }
 
     override func observe() {
@@ -1157,6 +1198,14 @@ extension LibraryViewController {
 
         dataSource.apply(snapshot) { [weak self] in
             self?.updateVisibleSectionHeaders()
+            // A diffable update can recreate UIKit's orthogonal scroll view
+            // after the layout pass that configured the previous one. Apply
+            // the bounce behavior again once the new hierarchy is installed.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.view.layoutIfNeeded()
+                self.enableHorizontalRowBouncing(in: self.collectionView)
+            }
         }
 
         if isFavoritesTab {
