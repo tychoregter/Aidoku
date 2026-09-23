@@ -341,14 +341,14 @@ class TabBarController: UITabBarController {
             return true
         }
 
-        let (sortedChapters, nextChapter) = await MangaManager.shared.getNextChapter(mangaId: mangaInfo.id)
+        let (sourceOrderedChapters, nextChapter) = await MangaManager.shared.getNextChapter(mangaId: mangaInfo.id)
 
         if let nextChapter {
             let manga = AidokuRunner.Manga(
                 sourceKey: sourceKey,
                 key: mangaKey,
                 title: infoManga.title,
-                chapters: sortedChapters
+                chapters: sourceOrderedChapters
             )
             let readerController = ReaderViewController(
                 source: source,

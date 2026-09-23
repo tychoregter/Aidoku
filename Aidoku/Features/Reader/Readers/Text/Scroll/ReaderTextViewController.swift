@@ -479,7 +479,10 @@ extension ReaderTextViewController {
         hasReachedEnd = false
         self.chapter = chapter
 
-        await viewModel.loadPages(chapter: chapter)
+        guard await viewModel.loadPages(chapter: chapter) else {
+            isLoadingChapter = false
+            return
+        }
         delegate?.setPages(viewModel.pages)
 
         await MainActor.run {
@@ -565,8 +568,7 @@ extension ReaderTextViewController {
 
         Task {
             // Preload the next chapter's pages
-            await viewModel.preload(chapter: nextCh)
-            let newPages = viewModel.preloadedPages
+            let newPages = await viewModel.preload(chapter: nextCh)
             guard !newPages.isEmpty else {
                 loadingNext = false
                 return
@@ -641,8 +643,7 @@ extension ReaderTextViewController {
         loadingPrevious = true
 
         Task {
-            await viewModel.preload(chapter: prevCh)
-            let newPages = viewModel.preloadedPages
+            let newPages = await viewModel.preload(chapter: prevCh)
             guard !newPages.isEmpty else {
                 loadingPrevious = false
                 return

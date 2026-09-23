@@ -45,6 +45,8 @@ class ReaderPagedViewController: BaseObservingViewController {
     private lazy var pagesToPreload = UserDefaults.standard.integer(forKey: "Reader.pagesToPreload")
     private let pagePrefetcher = ReaderPagePrefetcher()
     private var nextChapterPreloadTask: Task<Void, Never>?
+    private var chapterLoadTask: Task<Void, Never>?
+    private var chapterLoadGeneration = 0
 
     // Split pages tracking
     private var actualPageIndices: [Int] = []
@@ -504,16 +506,14 @@ extension ReaderPagedViewController {
             await previousTask?.value
             guard let self, !Task.isCancelled, nextChapter == self.nextChapter else { return }
 
-            await viewModel.preload(chapter: nextChapter)
+            let pages = await viewModel.preload(chapter: nextChapter)
 
             guard
                 !Task.isCancelled,
                 nextChapter == self.nextChapter,
-                viewModel.preloadedChapter == nextChapter
+                !pages.isEmpty
             else { return }
 
-            let pages = viewModel.preloadedPages
-            guard !pages.isEmpty else { return }
             let sourceKey = viewModel.manga.sourceKey
 
             if
@@ -953,45 +953,63 @@ extension ReaderPagedViewController: ReaderReaderDelegate {
             }
         }
         self.chapter = chapter
-        Task {
-            await loadChapter(startPage: startPage, isChapterChange: isChapterChange)
+        chapterLoadTask?.cancel()
+        chapterLoadGeneration += 1
+        let generation = chapterLoadGeneration
+        chapterLoadTask = Task { [weak self] in
+            await self?.loadChapter(
+                chapter: chapter,
+                startPage: startPage,
+                isChapterChange: isChapterChange,
+                generation: generation
+            )
         }
     }
 
-    func loadChapter(startPage: Int, isChapterChange: Bool = true) async {
-        guard let chapter else { return }
-        await viewModel.loadPages(chapter: chapter)
+    private func loadChapter(
+        chapter: AidokuRunner.Chapter,
+        startPage: Int,
+        isChapterChange: Bool,
+        generation: Int
+    ) async {
+        let applied = await viewModel.loadPages(chapter: chapter)
+        guard
+            applied,
+            !Task.isCancelled,
+            generation == chapterLoadGeneration,
+            self.chapter == chapter,
+            viewModel.chapter == chapter
+        else { return }
+
         delegate?.setPages(viewModel.pages)
         if !viewModel.pages.isEmpty {
-            await MainActor.run {
-                if !isChapterChange, let key = splitPageCacheKey {
-                    Self.splitStore[key] = nil
-                }
-                splitPages = [:]
-
-                loadPageControllers(chapter: chapter)
-
-                if isChapterChange {
-                    resetIsolation()
-                }
-
-                let clampedStart = max(startPage, 1)
-                let targetPage: Int
-                if
-                    splitWideImages,
-                    let key = splitPageCacheKey,
-                    let pos = savedSplitPosition(for: key),
-                    pos.page == clampedStart,
-                    splitPages[pos.page] != nil
-                {
-                    let first = firstDisplayPage(forActual: pos.page)
-                    let last = lastDisplayPage(forActual: pos.page)
-                    targetPage = min(first + pos.offset, last)
-                } else {
-                    targetPage = firstDisplayPage(forActual: clampedStart)
-                }
-                move(toPage: max(1, min(targetPage, displayPageCount)), animated: false)
+            if !isChapterChange, let key = splitPageCacheKey {
+                Self.splitStore[key] = nil
             }
+            splitPages = [:]
+
+            loadPageControllers(chapter: chapter)
+
+            if isChapterChange {
+                resetIsolation()
+            }
+
+            let clampedStart = max(startPage, 1)
+            let targetPage: Int
+            if
+                splitWideImages,
+                let key = splitPageCacheKey,
+                let pos = savedSplitPosition(for: key),
+                pos.page == clampedStart,
+                splitPages[pos.page] != nil
+            {
+                let first = firstDisplayPage(forActual: pos.page)
+                let last = lastDisplayPage(forActual: pos.page)
+                targetPage = min(first + pos.offset, last)
+            } else {
+                targetPage = firstDisplayPage(forActual: clampedStart)
+            }
+            move(toPage: max(1, min(targetPage, displayPageCount)), animated: false)
         }
     }
 
@@ -1059,13 +1077,17 @@ extension ReaderPagedViewController: UIPageViewControllerDelegate {
                 // preload previous
                 if let previousChapter = previousChapter {
                     Task {
-                        await viewModel.preload(chapter: previousChapter)
-                        if currentIndex > 0, let lastPage = viewModel.preloadedPages.last {
-                            pageViewControllers[currentIndex - 1].setPage(
-                                lastPage,
-                                sourceId: viewModel.source?.key ?? viewModel.manga.sourceKey
-                            )
-                        }
+                        let pages = await viewModel.preload(chapter: previousChapter)
+                        guard
+                            self.previousChapter == previousChapter,
+                            currentIndex > 0,
+                            self.pageViewControllers.indices.contains(currentIndex - 1),
+                            let lastPage = pages.last
+                        else { return }
+                        self.pageViewControllers[currentIndex - 1].setPage(
+                            lastPage,
+                            sourceId: self.viewModel.source?.key ?? self.viewModel.manga.sourceKey
+                        )
                     }
                 }
 

@@ -91,7 +91,9 @@ enum AidokuWidgetSnapshotStore {
                 )
             }
             let chapters = (manga.chapters?.allObjects as? [ChapterObject]) ?? []
-            let currentChapter = historyChapter ?? chapters.min { $0.sourceOrder < $1.sourceOrder }
+            // Source order zero is the newest chapter. An unread title starts
+            // at the oldest chapter, at the opposite end of reading order.
+            let currentChapter = historyChapter ?? chapters.max { $0.sourceOrder < $1.sourceOrder }
             let position = currentChapter.flatMap { chapter in
                 if let volume = chapter.volume, let number = chapter.chapter {
                     return "Chapter \(volume), Chapter \(number)"
@@ -100,7 +102,7 @@ enum AidokuWidgetSnapshotStore {
                 if let number = chapter.chapter { return "Chapter \(number)" }
                 return chapter.title
             }
-            let finalChapter = chapters.max { $0.sourceOrder < $1.sourceOrder }
+            let finalChapter = chapters.min { $0.sourceOrder < $1.sourceOrder }
             let isFinalChapter = currentChapter != nil && currentChapter?.sourceOrder == finalChapter?.sourceOrder
             // A title without history starts at its first chapter. Treat that
             // as volume 1 when the source does not provide an explicit volume,

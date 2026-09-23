@@ -2270,7 +2270,7 @@ extension LibraryViewController {
         if AppSettings.library.opensReaderView.get() {
             Task {
                 // get next chapter to read
-                let (sortedChapters, nextChapter) = await MangaManager.shared.getNextChapter(mangaId: info.id)
+                let (sourceOrderedChapters, nextChapter) = await MangaManager.shared.getNextChapter(mangaId: info.id)
 
                 if let chapter = nextChapter {
                     // open reader view
@@ -2281,12 +2281,13 @@ extension LibraryViewController {
                         sourceKey: info.id.sourceKey,
                         key: info.id.mangaKey,
                         title: info.title ?? "",
-                        chapters: sortedChapters
+                        chapters: sourceOrderedChapters
                     )
                     let readerController = ReaderViewController(
                         source: source,
                         manga: manga,
-                        chapter: chapter
+                        chapter: chapter,
+                        darkensIncognitoBanner: !isFavoritesTab
                     )
                     let navigationController = ReaderNavigationController(
                         readerViewController: readerController,
@@ -2664,7 +2665,8 @@ extension LibraryViewController {
             source: source,
             manga: target.manga,
             chapter: target.chapter,
-            startPage: target.pageIndex + 1
+            startPage: target.pageIndex + 1,
+            darkensIncognitoBanner: !isFavoritesTab
         )
         let navigationController = ReaderNavigationController(
             readerViewController: readerController,

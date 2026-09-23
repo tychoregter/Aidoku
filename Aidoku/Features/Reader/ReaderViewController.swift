@@ -21,6 +21,7 @@ class ReaderViewController: BaseObservingViewController {
     let source: AidokuRunner.Source?
     let manga: AidokuRunner.Manga
     var chapter: AidokuRunner.Chapter
+    private let darkensIncognitoBanner: Bool
     var pages: [Page] = []
     var readingMode: ReadingMode = .rtl
     var defaultReadingMode: ReadingMode?
@@ -188,11 +189,13 @@ class ReaderViewController: BaseObservingViewController {
         source: AidokuRunner.Source?,
         manga: AidokuRunner.Manga,
         chapter: AidokuRunner.Chapter,
-        startPage: Int? = nil
+        startPage: Int? = nil,
+        darkensIncognitoBanner: Bool = false
     ) {
         self.source = source
         self.manga = manga
         self.chapter = chapter
+        self.darkensIncognitoBanner = darkensIncognitoBanner
         self.chapterList = manga.chapters ?? []
         self.chaptersToMark = [chapter]
         self.defaultReadingMode = switch manga.viewer {
@@ -632,6 +635,14 @@ class ReaderViewController: BaseObservingViewController {
 }
 
 extension ReaderViewController {
+    private func notifyReaderBarsHidden(immediately: Bool) {
+        NotificationCenter.default.post(
+            name: .readerHidingBars,
+            object: immediately ? true : nil,
+            userInfo: ["darkenIncognitoBanner": darkensIncognitoBanner]
+        )
+    }
+
     private func setScrubberGestureBlocking(_ blocked: Bool) {
         let isVerticalReader = reader is ReaderWebtoonViewController || readingMode == .vertical
         let gestureRecognizers = (parent?.view.gestureRecognizers ?? [])
@@ -2235,7 +2246,7 @@ extension ReaderViewController {
             isBeingPresented || navigationController?.isBeingPresented == true,
             let coordinator = transitionCoordinator
         else {
-            NotificationCenter.default.post(name: .readerHidingBars, object: true)
+            notifyReaderBarsHidden(immediately: true)
             return
         }
 
@@ -2253,7 +2264,7 @@ extension ReaderViewController {
                 !self.isBeingDismissed,
                 self.openingTransitionCornerMaskGeneration == generation
             else { return }
-            NotificationCenter.default.post(name: .readerHidingBars, object: true)
+            self.notifyReaderBarsHidden(immediately: true)
             self.showOpeningCornerMask(afterDisplayFrames: additionalDisplayFrames)
         }
     }
@@ -2355,7 +2366,7 @@ extension ReaderViewController {
         cancelReaderProgressContrastUpdate()
 
         if notifyBanner {
-            NotificationCenter.default.post(name: .readerHidingBars, object: true)
+            notifyReaderBarsHidden(immediately: true)
         }
         UIView.performWithoutAnimation {
             statusBarHidden = true
@@ -2458,7 +2469,7 @@ extension ReaderViewController {
             self.setNeedsStatusBarAppearanceUpdate()
             self.setNeedsUpdateOfHomeIndicatorAutoHidden()
         } completion: { _ in
-            NotificationCenter.default.post(name: .readerHidingBars, object: nil)
+            self.notifyReaderBarsHidden(immediately: false)
 
             UIView.animate(withDuration: CATransaction.animationDuration()) {
                 navigationController.navigationBar.alpha = 0

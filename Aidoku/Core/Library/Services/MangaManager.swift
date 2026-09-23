@@ -73,7 +73,8 @@ actor MangaManager {
         })
     }
 
-    /// Fetches the stored chapters for a manga in the user's sort order, along with the next chapter to read.
+    /// Fetches stored chapters in canonical source order, along with the next chapter to read.
+    /// Display ordering is applied by chapter-list views and must not affect reading progression.
     nonisolated func getNextChapter(
         mangaId: MangaIdentifier,
         fallbackChapters: [AidokuRunner.Chapter]? = nil,
@@ -98,41 +99,15 @@ actor MangaManager {
             }
         }
 
-        let filters = await CoreDataManager.shared.container.performBackgroundTask { context in
-            CoreDataManager.shared.getMangaChapterFilters(
-                mangaId: mangaId,
-                context: context
-            )
-        }
-        let sortOption = ChapterSortOption(flags: filters.flags)
-        let sortAscending = filters.flags & ChapterFlagMask.sortAscending != 0
-
-        let sortedChapters: [AidokuRunner.Chapter] = switch sortOption {
-            case .sourceOrder:
-                sortAscending ? chapters.reversed() : chapters
-            case .chapter:
-                chapters.sorted {
-                    let lhs = $0.chapterNumber ?? -1
-                    let rhs = $1.chapterNumber ?? -1
-                    return sortAscending ? lhs < rhs : lhs > rhs
-                }
-            case .uploadDate:
-                chapters.sorted {
-                    let lhs = $0.dateUploaded ?? .distantPast
-                    let rhs = $1.dateUploaded ?? .distantPast
-                    return sortAscending ? lhs < rhs : lhs > rhs
-                }
-        }
-
         let manga = AidokuRunner.Manga(sourceKey: mangaId.sourceKey, key: mangaId.mangaKey, title: "")
         let nextChapter = getNextChapter(
             manga: manga,
-            chapters: sortedChapters,
+            chapters: Array(chapters.reversed()),
             readingHistory: readingHistory,
-            sortAscending: sortAscending
+            sortAscending: true
         )
 
-        return (sortedChapters, nextChapter)
+        return (chapters, nextChapter)
     }
 }
 

@@ -194,7 +194,10 @@ struct MangaView: View {
                                 openChapter = nextChapter
                             }
                         case .readLatest:
-                            if let latestChapter = viewModel.chapters.first {
+                            let visibleChapterKeys = Set(viewModel.chapters.map(\.key))
+                            if let latestChapter = viewModel.manga.chapters?.first(where: {
+                                visibleChapterKeys.contains($0.key)
+                            }) ?? viewModel.chapters.first {
                                 openChapter = latestChapter
                             }
                     }
@@ -242,8 +245,19 @@ struct MangaView: View {
                     source: viewModel.source,
                     manga: {
                         var mangaWithFilteredChapters = viewModel.manga
-                        mangaWithFilteredChapters.chapters = if viewModel.chapterSortAscending {
-                            viewModel.chapters.reversed()
+                        let visibleChapterKeys = Set(viewModel.chapters.map(\.key))
+                        let sourceOrderedChapters = viewModel.manga.chapters?.filter {
+                            visibleChapterKeys.contains($0.key)
+                        } ?? []
+
+                        // The info page may display chapters in either direction,
+                        // but reader navigation always expects the source's canonical
+                        // descending order. The reader chapter sheet applies the
+                        // user's presentation order separately.
+                        mangaWithFilteredChapters.chapters = if sourceOrderedChapters.count == viewModel.chapters.count {
+                            sourceOrderedChapters
+                        } else if viewModel.chapterSortAscending {
+                            Array(viewModel.chapters.reversed())
                         } else {
                             viewModel.chapters
                         }

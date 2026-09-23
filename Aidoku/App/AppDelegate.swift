@@ -1006,10 +1006,12 @@ private enum LibraryReadingStatus {
         }
 
         if latestHistory.completed {
-            let nextIndex = chapters.index(after: currentIndex)
-            guard nextIndex < chapters.endIndex else {
+            // Stored source order is newest to oldest. Advancing in reading
+            // order therefore moves toward the start of this array.
+            guard currentIndex > chapters.startIndex else {
                 return manga.status == AidokuRunner.PublishingStatus.completed.rawValue ? "Finished" : "Caught up"
             }
+            let nextIndex = chapters.index(before: currentIndex)
             return chapterSubtitle(for: chapters[nextIndex])
         }
 

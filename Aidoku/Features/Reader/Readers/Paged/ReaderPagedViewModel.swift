@@ -20,6 +20,9 @@ class ReaderPagedViewModel {
     var preloadedChapter: AidokuRunner.Chapter?
     var preloadedPages: [Page] = []
 
+    private var loadGeneration = 0
+    private var preloadGeneration = 0
+
     init(
         source: AidokuRunner.Source?,
         manga: AidokuRunner.Manga,
@@ -30,26 +33,59 @@ class ReaderPagedViewModel {
         self.temporaryPageStore = temporaryPageStore
     }
 
-    func loadPages(chapter: AidokuRunner.Chapter) async {
+    @discardableResult
+    func loadPages(chapter: AidokuRunner.Chapter) async -> Bool {
+        loadGeneration += 1
+        let generation = loadGeneration
+
         if preloadedChapter == chapter {
             pages = preloadedPages
             preloadedPages = []
             preloadedChapter = nil
+            self.chapter = chapter
+            return true
         } else {
-            if !pages.isEmpty {
-                preloadedChapter = chapter
-                preloadedPages = pages
+            let previousChapter = self.chapter
+            let previousPages = pages
+            let loadedPages = await getPages(chapter: chapter)
+
+            guard !Task.isCancelled, generation == loadGeneration else { return false }
+
+            // Keep the chapter we are leaving available for an immediate
+            // reverse transition. Previously these pages were incorrectly
+            // labelled as the destination chapter, which could restore the
+            // wrong page list and scrubber when moving backwards quickly.
+            if let previousChapter, previousChapter != chapter, !previousPages.isEmpty {
+                preloadGeneration += 1
+                preloadedChapter = previousChapter
+                preloadedPages = previousPages
             }
             self.chapter = chapter
-            pages = await getPages(chapter: chapter)
+            pages = loadedPages
+            return true
         }
     }
 
-    func preload(chapter: AidokuRunner.Chapter) async {
-        guard preloadedChapter != chapter else { return }
-        preloadedChapter = nil
-        preloadedPages = await getPages(chapter: chapter)
-        preloadedChapter = chapter
+    @discardableResult
+    func preload(chapter: AidokuRunner.Chapter) async -> [Page] {
+        if preloadedChapter == chapter {
+            return preloadedPages
+        }
+
+        preloadGeneration += 1
+        let generation = preloadGeneration
+        let loadedPages = await getPages(chapter: chapter)
+
+        guard !Task.isCancelled else { return [] }
+
+        // The caller can safely use its own result even if another adjacent
+        // chapter began preloading in the meantime. Only the newest request
+        // is allowed to replace the shared one-chapter cache.
+        if generation == preloadGeneration {
+            preloadedPages = loadedPages
+            preloadedChapter = chapter
+        }
+        return loadedPages
     }
 
     private func getPages(chapter: AidokuRunner.Chapter) async -> [Page] {

@@ -51,11 +51,7 @@ class IncognitoBannerView: UIView {
     }
 
     func configure() {
-        backgroundColor = .init(dynamicProvider: { traitCollection in
-            traitCollection.userInterfaceStyle == .dark
-                ? .systemGray3
-                : .systemGray5
-        })
+        backgroundColor = .systemGray5
         stackView.addArrangedSubview(iconView)
         stackView.addArrangedSubview(textLabel)
         addSubview(stackView)
@@ -65,7 +61,10 @@ class IncognitoBannerView: UIView {
         let center = NotificationCenter.default
         notificationTokens.append(
             center.addObserver(forName: .readerHidingBars, object: nil, queue: .main) { [weak self] notification in
-                guard AppSettings.general.incognitoMode.get() else { return }
+                guard
+                    AppSettings.general.incognitoMode.get(),
+                    notification.userInfo?["darkenIncognitoBanner"] as? Bool == true
+                else { return }
                 let immediate = notification.object as? Bool ?? false
                 self?.setReaderBarsHidden(true, animated: !immediate)
             }
@@ -84,9 +83,7 @@ class IncognitoBannerView: UIView {
 
         let update = { [weak self] in
             guard let self else { return }
-            self.backgroundColor = hidden ? .black : UIColor { traits in
-                traits.userInterfaceStyle == .dark ? .systemGray3 : .systemGray5
-            }
+            self.backgroundColor = hidden ? .black : .systemGray5
         }
         if animated {
             UIView.animate(
