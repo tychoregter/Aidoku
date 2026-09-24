@@ -100,14 +100,14 @@ struct ChapterTableCell: View {
     }
 
     private var subtitle: String? {
-        if showPageCounts.value {
+        if showPageCounts.value, let source, source.legacySource == nil {
             return loadedPageCount.map { String(format: NSLocalizedString("%i_PAGES"), $0) }
         }
         return chapter.formattedSubtitle(page: page, sourceKey: sourceKey)
     }
 
     private func loadPageCountIfNeeded() async {
-        guard showPageCounts.value, loadedPageCount == nil, let source else { return }
+        guard showPageCounts.value, loadedPageCount == nil, let source, source.legacySource == nil else { return }
         guard let pages = try? await source.getPageList(manga: manga, chapter: chapter) else { return }
         guard !Task.isCancelled else { return }
         loadedPageCount = pages.count

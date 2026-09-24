@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		AIDW00000000000000000002 /* AidokuWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = AIDW00000000000000000005 /* AidokuWidget.swift */; };
 		EE7A41CB2F5CF7710044AF4C /* CHoshiDicts in Frameworks */ = {isa = PBXBuildFile; productRef = EE7A41CA2F5CF7710044AF4C /* CHoshiDicts */; };
 		FB17114B296770CC00AD523D /* NukeUI in Frameworks */ = {isa = PBXBuildFile; productRef = FB17114A296770CC00AD523D /* NukeUI */; };
 		FB2C83992E43F074003CA85F /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = FB2C83982E43F074003CA85F /* SwiftSoup */; };
@@ -31,10 +30,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		AIDW00000000000000000004 /* AidokuWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AidokuWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		AIDW00000000000000000005 /* AidokuWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AidokuWidget.swift; sourceTree = "<group>"; };
-		AIDW00000000000000000007 /* AidokuWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AidokuWidget.entitlements; sourceTree = "<group>"; };
-		AIDW00000000000000000008 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		FB1B4835277CE1920056D02C /* Aidoku.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Aidoku.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FBB44E722EC635620032EFBB /* AidokuTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AidokuTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -56,13 +51,6 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		AIDW00000000000000000009 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		FB1B4832277CE1920056D02C /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -90,21 +78,10 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		AIDW00000000000000000010 /* AidokuWidget */ = {
-			isa = PBXGroup;
-			children = (
-				AIDW00000000000000000005 /* AidokuWidget.swift */,
-				AIDW00000000000000000007 /* AidokuWidget.entitlements */,
-				AIDW00000000000000000008 /* Info.plist */,
-			);
-			path = AidokuWidget;
-			sourceTree = "<group>";
-		};
 		FB1B4825277CE18D0056D02C = {
 			isa = PBXGroup;
 			children = (
 				FB77CD38303A838B00DF3DA3 /* Aidoku */,
-				AIDW00000000000000000010 /* AidokuWidget */,
 				FBB44E732EC635620032EFBB /* AidokuTests */,
 				FB1B4836277CE1920056D02C /* Products */,
 				FB1B4875277CE7FE0056D02C /* Frameworks */,
@@ -119,7 +96,6 @@
 			children = (
 				FB1B4835277CE1920056D02C /* Aidoku.app */,
 				FBB44E722EC635620032EFBB /* AidokuTests.xctest */,
-				AIDW00000000000000000004 /* AidokuWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -141,23 +117,6 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		AIDW00000000000000000006 /* AidokuWidget */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = AIDW00000000000000000021 /* Build configuration list for PBXNativeTarget "AidokuWidget" */;
-			buildPhases = (
-				AIDW00000000000000000013 /* Sources */,
-				AIDW00000000000000000009 /* Frameworks */,
-				AIDW00000000000000000014 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = AidokuWidget;
-			productName = AidokuWidget;
-			productReference = AIDW00000000000000000004 /* AidokuWidget.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
 		FB1B4834277CE1920056D02C /* Aidoku */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = FB1B484A277CE1920056D02C /* Build configuration list for PBXNativeTarget "Aidoku" */;
@@ -224,9 +183,6 @@
 				LastSwiftUpdateCheck = 2600;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
-					AIDW00000000000000000006 = {
-						CreatedOnToolsVersion = 27.0;
-					};
 					FB1B4834277CE1920056D02C = {
 						CreatedOnToolsVersion = 13.2.1;
 						LastSwiftMigration = 1340;
@@ -303,19 +259,11 @@
 			targets = (
 				FB1B4834277CE1920056D02C /* Aidoku */,
 				FBB44E712EC635620032EFBB /* AidokuTests */,
-				AIDW00000000000000000006 /* AidokuWidget */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		AIDW00000000000000000014 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		FB1B4833277CE1920056D02C /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -354,14 +302,6 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		AIDW00000000000000000013 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				AIDW00000000000000000002 /* AidokuWidget.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		FB1B4831277CE1920056D02C /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -387,46 +327,6 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		AIDW00000000000000000022 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = AidokuWidget/AidokuWidget.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 100;
-				DEVELOPMENT_TEAM = 7FJM32M2RU;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = AidokuWidget/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 9.0;
-				PRODUCT_BUNDLE_IDENTIFIER = io.orangebyte.Aidoku.Widget;
-				PRODUCT_NAME = AidokuWidget;
-				SDKROOT = iphoneos;
-				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Debug;
-		};
-		AIDW00000000000000000023 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = AidokuWidget/AidokuWidget.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 100;
-				DEVELOPMENT_TEAM = 7FJM32M2RU;
-				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = AidokuWidget/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = io.orangebyte.Aidoku.Widget;
-				PRODUCT_NAME = AidokuWidget;
-				SDKROOT = iphoneos;
-				SKIP_INSTALL = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
 		FB1B4848277CE1920056D02C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -567,7 +467,7 @@
 				CODE_SIGN_ENTITLEMENTS = Aidoku/Aidoku.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 100;
+				CURRENT_PROJECT_VERSION = 102;
 				DEVELOPMENT_TEAM = 7FJM32M2RU;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -613,7 +513,7 @@
 				CODE_SIGN_ENTITLEMENTS = Aidoku/Aidoku.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 100;
+				CURRENT_PROJECT_VERSION = 102;
 				DEVELOPMENT_TEAM = 7FJM32M2RU;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -708,15 +608,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		AIDW00000000000000000021 /* Build configuration list for PBXNativeTarget "AidokuWidget" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				AIDW00000000000000000022 /* Debug */,
-				AIDW00000000000000000023 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		FB1B4829277CE18D0056D02C /* Build configuration list for PBXProject "Aidoku" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

@@ -46,7 +46,6 @@ extension HistoryManager {
             }
         }
         NotificationCenter.default.post(name: .historySet, object: (chapterId, progress))
-        Task { await AidokuWidgetSnapshotRefreshCoordinator.shared.schedule() }
         await LibraryPagePreviewCache.shared.invalidate(mangaId: mangaId)
         if !completed {
             Task {

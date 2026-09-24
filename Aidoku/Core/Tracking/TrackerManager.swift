@@ -528,7 +528,6 @@ actor TrackerManager {
         for mangaId in changedManga {
             await LibraryPagePreviewCache.shared.invalidate(mangaId: mangaId)
         }
-        Task { await AidokuWidgetSnapshotRefreshCoordinator.shared.schedule() }
         if refreshLibrary {
             NotificationCenter.default.post(name: .updateLibrary, object: nil)
         }

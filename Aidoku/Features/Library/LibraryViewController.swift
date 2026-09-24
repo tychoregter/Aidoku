@@ -1392,7 +1392,7 @@ extension LibraryViewController {
 
         if isFavoritesTab {
             // Favorites is a view of the Library, not a pin source. It must not
-            // replace global shortcuts or widget content when it refreshes.
+            // replace global shortcuts when it refreshes.
         } else if usesDedicatedContinueReadingSection {
             UIApplication.shared.appDelegate?.updateHomeScreenQuickActions(
                 for: viewModel.continueReadingManga,
@@ -1406,8 +1406,6 @@ extension LibraryViewController {
                 isFavoritesPin: viewModel.pinType == .favorites
             )
         }
-        Task { await AidokuWidgetSnapshotStore.update() }
-
         // handle empty library or category
         emptyStackView.isHidden = !snapshot.itemIdentifiers.isEmpty
         collectionView.isScrollEnabled = emptyStackView.isHidden && lockedStackView.isHidden
