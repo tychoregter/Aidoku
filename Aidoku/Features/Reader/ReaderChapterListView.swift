@@ -51,7 +51,7 @@ struct ReaderChapterListView: View {
                                 Text(chapter.sourceDisplayTitle)
                                     .foregroundColor(.primary)
                                     .font(.subheadline)
-                                if showPageCounts.value {
+                                if showPageCounts.value, supportsPageCounts {
                                     Text(
                                         String(
                                             format: NSLocalizedString("%i_PAGES"),
@@ -115,8 +115,12 @@ struct ReaderChapterListView: View {
         return order.orderedChapters(chapterList, for: manga)
     }
 
+    private var supportsPageCounts: Bool {
+        ["komga", "kavita", "suwayomi"].contains { manga.sourceKey.hasPrefix($0) }
+    }
+
     private func loadPageCount(for chapter: AidokuRunner.Chapter) async {
-        guard showPageCounts.value, pageCounts[chapter.key] == nil, let source else { return }
+        guard showPageCounts.value, supportsPageCounts, pageCounts[chapter.key] == nil, let source else { return }
         guard let pages = try? await source.getPageList(manga: manga, chapter: chapter) else { return }
         guard !Task.isCancelled else { return }
         pageCounts[chapter.key] = pages.count
