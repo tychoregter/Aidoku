@@ -100,14 +100,18 @@ struct ChapterTableCell: View {
     }
 
     private var subtitle: String? {
-        if showPageCounts.value, let source, source.legacySource == nil {
+        if showPageCounts.value, supportsPageCounts {
             return loadedPageCount.map { String(format: NSLocalizedString("%i_PAGES"), $0) }
         }
         return chapter.formattedSubtitle(page: page, sourceKey: sourceKey)
     }
 
+    private var supportsPageCounts: Bool {
+        ["komga", "kavita", "suwayomi"].contains { sourceKey.hasPrefix($0) }
+    }
+
     private func loadPageCountIfNeeded() async {
-        guard showPageCounts.value, loadedPageCount == nil, let source, source.legacySource == nil else { return }
+        guard showPageCounts.value, supportsPageCounts, loadedPageCount == nil, let source else { return }
         guard let pages = try? await source.getPageList(manga: manga, chapter: chapter) else { return }
         guard !Task.isCancelled else { return }
         loadedPageCount = pages.count
