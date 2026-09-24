@@ -9,6 +9,7 @@ import UIKit
 import LocalAuthentication
 import SwiftUI
 import AidokuRunner
+import PhotosUI
 
 class LibraryViewController: OldMangaCollectionViewController {
     private var horizontalRowScrollViewObservations: [NSKeyValueObservation] = []
@@ -17,6 +18,8 @@ class LibraryViewController: OldMangaCollectionViewController {
     typealias Scope = LibraryViewModel.Scope
     let scope: Scope
     private var isFavoritesTab: Bool { scope == .favorites }
+    private var isStackView: Bool { LibraryBundleFeature.isEnabled && viewModel.stackID != nil }
+    private var pendingCustomCoverStackID: UUID?
     var settingsPresentationHandler: (() -> Void)?
 
     func scrollToTop(animated: Bool = true) {
@@ -46,7 +49,7 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     init(scope: Scope = .library) {
         self.scope = scope
-        viewModel = LibraryViewModel(scope: scope)
+        viewModel = LibraryViewModel(loadsDedicatedContinueReading: scope == .library, scope: scope)
         super.init()
     }
 
@@ -63,6 +66,12 @@ class LibraryViewController: OldMangaCollectionViewController {
         titleKey: "TOGGLE_LOCK"
     )
     private lazy var moreBarButton =  makeBarButton(
+        systemName: "ellipsis",
+        action: nil,
+        titleKey: "MORE_BARBUTTON",
+        sharesBackground: false
+    )
+    private lazy var stackActionsBarButton = makeBarButton(
         systemName: "ellipsis",
         action: nil,
         titleKey: "MORE_BARBUTTON",
@@ -127,7 +136,7 @@ class LibraryViewController: OldMangaCollectionViewController {
     }
 
     private func showsHeader(for section: Section?) -> Bool {
-        guard !isFavoritesTab else { return false }
+        guard !isFavoritesTab, !isStackView else { return false }
         return switch section {
             case .continueReading:
                 true
@@ -195,7 +204,13 @@ class LibraryViewController: OldMangaCollectionViewController {
     override func configure() {
         super.configure()
 
-        title = isFavoritesTab ? "Favorites" : NSLocalizedString("LIBRARY")
+        title = if isFavoritesTab {
+            "Favorites"
+        } else if LibraryBundleFeature.isEnabled, let stackID = viewModel.stackID {
+            LibraryStackStore.shared.stack(id: stackID)?.name ?? "Bundle"
+        } else {
+            NSLocalizedString("LIBRARY")
+        }
 
         navigationController?.navigationBar.prefersLargeTitles = true
         collectionView.contentInset.top = 8
@@ -232,7 +247,7 @@ class LibraryViewController: OldMangaCollectionViewController {
         // pull to refresh
         // Keep the system's default indicator color, but ensure the control
         // itself is not dimmed by the surrounding hierarchy.
-        if !isFavoritesTab {
+        if !isFavoritesTab, !isStackView {
             refreshControl.alpha = 1
             refreshControl.addTarget(self, action: #selector(updateLibraryRefresh(refreshControl:)), for: .valueChanged)
             collectionView.refreshControl = refreshControl
@@ -416,9 +431,16 @@ class LibraryViewController: OldMangaCollectionViewController {
         addObserver(forName: .updateLibrary) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
+                if let stackID = self.viewModel.stackID,
+                   LibraryStackStore.shared.stack(id: stackID) == nil {
+                    self.navigationController?.popViewController(animated: true)
+                    return
+                }
+                self.viewModel.synchronizeSharedLibraryOptions()
                 await self.viewModel.loadLibrary()
                 self.updateEmptyStack()
                 self.updateDataSource()
+                self.updateMoreMenu()
                 if self.shouldRestoreLargeTitleAfterRefresh {
                     self.shouldRestoreLargeTitleAfterRefresh = false
                     self.scrollToTop(animated: true)
@@ -827,6 +849,151 @@ class LibraryViewController: OldMangaCollectionViewController {
     }
 }
 
+// MARK: - Library Stacks
+private extension LibraryViewController {
+    func reloadAfterStackChange() {
+        Task { @MainActor in
+            if let stackID = viewModel.stackID, LibraryStackStore.shared.stack(id: stackID) == nil {
+                navigationController?.popViewController(animated: true)
+                return
+            }
+            await viewModel.loadLibrary()
+            updateDataSource()
+        }
+    }
+
+    func makeStackMembershipMenu(for manga: MangaInfo) -> UIMenu {
+        guard LibraryBundleFeature.isEnabled else { return UIMenu(title: "") }
+        let currentStack = LibraryStackStore.shared.stack(containing: manga.id)
+        var destinations = LibraryStackStore.shared.sortedStacks
+            .filter { $0.id != currentStack?.id }
+            .map { stack in
+                UIAction(title: stack.name, image: UIImage(systemName: "square.stack.3d.up")) { [weak self] _ in
+                    LibraryStackStore.shared.move(manga.id, to: stack.id)
+                    self?.reloadAfterStackChange()
+                }
+            }
+        destinations.append(UIAction(title: "New Bundle…", image: UIImage(systemName: "plus")) { [weak self] _ in
+            self?.presentStackNamePrompt(title: "New Bundle") { name in
+                guard LibraryStackStore.shared.create(name: name, firstMember: manga.id) != nil else {
+                    self?.presentAlert(title: "Unable to Create Bundle", message: "Bundle names must be unique.")
+                    return
+                }
+                self?.reloadAfterStackChange()
+            }
+        })
+
+        var children: [UIMenuElement] = []
+        if let stackID = viewModel.stackID {
+            children.append(UIAction(title: "Set as Cover", image: UIImage(systemName: "photo")) { [weak self] _ in
+                LibraryStackStore.shared.setCover(stackID: stackID, manga: manga.id)
+                self?.reloadAfterStackChange()
+            })
+        }
+        children.append(UIMenu(
+            title: currentStack == nil ? "Bundle" : "Rebundle",
+            image: UIImage(systemName: "square.stack.3d.up"),
+            children: destinations
+        ))
+        if currentStack != nil {
+            children.append(UIAction(
+                title: "Unbundle",
+                image: UIImage(systemName: "square.stack.3d.up.slash")
+            ) { [weak self] _ in
+                LibraryStackStore.shared.remove(manga.id)
+                self?.reloadAfterStackChange()
+            })
+        }
+        return UIMenu(options: .displayInline, children: children)
+    }
+
+    func stackContextMenuConfiguration(stackID: UUID) -> UIContextMenuConfiguration? {
+        guard LibraryBundleFeature.isEnabled else { return nil }
+        guard let stack = LibraryStackStore.shared.stack(id: stackID) else { return nil }
+        return UIContextMenuConfiguration(identifier: stackID.uuidString as NSString, previewProvider: nil) { [weak self] _ in
+            self?.makeStackActionsMenu(stackID: stackID)
+        }
+    }
+
+    func makeStackActionsMenu(stackID: UUID) -> UIMenu? {
+        guard let stack = LibraryStackStore.shared.stack(id: stackID) else { return nil }
+        return UIMenu(children: [
+            UIAction(title: "Custom Cover…", image: UIImage(systemName: "photo.badge.plus")) { [weak self] _ in
+                guard let self else { return }
+                self.pendingCustomCoverStackID = stackID
+                var configuration = PHPickerConfiguration()
+                configuration.filter = .images
+                configuration.selectionLimit = 1
+                let picker = PHPickerViewController(configuration: configuration)
+                picker.delegate = self
+                self.present(picker, animated: true)
+            },
+            UIAction(title: "Rename Bundle", image: UIImage(systemName: "pencil")) { [weak self] _ in
+                guard let self else { return }
+                self.presentStackNamePrompt(title: "Rename Bundle", initialValue: stack.name) { name in
+                    guard LibraryStackStore.shared.rename(id: stackID, name: name) else {
+                        self.presentAlert(title: "Unable to Rename Bundle", message: "Bundle names must be unique.")
+                        return
+                    }
+                    self.reloadAfterStackChange()
+                    self.title = LibraryStackStore.shared.stack(id: stackID)?.name ?? "Bundle"
+                }
+            },
+            UIAction(title: "Delete Bundle", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+                guard let self else { return }
+                self.confirmAction(continueActionName: "Delete Bundle") {
+                    LibraryStackStore.shared.delete(id: stackID)
+                    self.reloadAfterStackChange()
+                }
+            }
+        ])
+    }
+
+    func presentStackNamePrompt(
+        title: String,
+        initialValue: String? = nil,
+        completion: @escaping (String) -> Void
+    ) {
+        let alert = UIAlertController(title: title, message: nil, preferredStyle: .alert)
+        alert.addTextField { textField in
+            textField.text = initialValue
+            textField.placeholder = "Bundle Name"
+            textField.clearButtonMode = .whileEditing
+            textField.autocapitalizationType = .words
+        }
+        alert.addAction(UIAlertAction(title: NSLocalizedString("CANCEL"), style: .cancel))
+        alert.addAction(UIAlertAction(title: NSLocalizedString("DONE"), style: .default) { _ in
+            guard let name = alert.textFields?.first?.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !name.isEmpty else { return }
+            completion(name)
+        })
+        present(alert, animated: true)
+    }
+}
+
+extension LibraryViewController: PHPickerViewControllerDelegate {
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+        guard let stackID = pendingCustomCoverStackID,
+              let provider = results.first?.itemProvider,
+              provider.canLoadObject(ofClass: UIImage.self) else {
+            pendingCustomCoverStackID = nil
+            return
+        }
+        pendingCustomCoverStackID = nil
+        provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
+            guard let image = object as? UIImage else { return }
+            Task { @MainActor in
+                guard LibraryStackStore.shared.setCustomCover(stackID: stackID, image: image) else {
+                    self?.presentAlert(title: "Unable to Set Cover", message: "The selected image could not be saved.")
+                    return
+                }
+                self?.reloadAfterStackChange()
+            }
+        }
+    }
+}
+
 extension LibraryViewController {
     func updateNavbarItems() {
         if isEditing {
@@ -853,7 +1020,9 @@ extension LibraryViewController {
             )]
         } else {
             updateCategoryMenu()
-            var items: [UIBarButtonItem] = if isFavoritesTab || AppSettings.appearance.dedicatedSettingsTab.get() {
+            var items: [UIBarButtonItem] = if isStackView {
+                [stackActionsBarButton, moreBarButton]
+            } else if isFavoritesTab || AppSettings.appearance.dedicatedSettingsTab.get() {
                 [moreBarButton]
             } else {
                 [settingsBarButton, moreBarButton]
@@ -950,10 +1119,19 @@ extension LibraryViewController {
     // updates library empty message
     // should be called when category changes and when library loads initially
     func updateEmptyStack() {
-        emptyStackView.imageSystemName = isFavoritesTab ? "star.fill" : "books.vertical.fill"
+        emptyStackView.imageSystemName = if isFavoritesTab {
+            "star.fill"
+        } else if isStackView {
+            "square.stack.3d.up.fill"
+        } else {
+            "books.vertical.fill"
+        }
         if isFavoritesTab {
             emptyStackView.title = "Favorites"
             emptyStackView.text = "Items marked as favorite will appear here."
+        } else if isStackView {
+            emptyStackView.title = "No Items"
+            emptyStackView.text = NSLocalizedString("LIBRARY_ADJUST_FILTERS")
         } else {
             emptyStackView.title = viewModel.currentCategory == nil
                 ? NSLocalizedString("LIBRARY_EMPTY")
@@ -1129,7 +1307,7 @@ extension LibraryViewController {
     }
 
     func updateDataSource() {
-        if isFavoritesTab {
+        if isFavoritesTab || isStackView {
             usesSeparatedPinnedSections = false
             var snapshot = NSDiffableDataSourceSnapshot<Section, MangaInfo>()
             if !locked, !viewModel.manga.isEmpty {
@@ -1140,6 +1318,9 @@ extension LibraryViewController {
             emptyStackView.isHidden = !snapshot.itemIdentifiers.isEmpty
             collectionView.isScrollEnabled = emptyStackView.isHidden && lockedStackView.isHidden
             collectionView.refreshControl = nil
+            if isStackView, let stackID = viewModel.stackID {
+                title = LibraryStackStore.shared.stack(id: stackID)?.name ?? "Bundle"
+            }
             return
         }
         let shouldSeparate = isSeparatedPinnedLayoutEnabled
@@ -1183,12 +1364,13 @@ extension LibraryViewController {
                 } else {
                     viewModel.manga
                 }
-                if !libraryManga.isEmpty {
+                let stackedLibraryManga = viewModel.stackLibraryItems(libraryManga)
+                if !stackedLibraryManga.isEmpty {
                     snapshot.appendSections([.regular])
-                    snapshot.appendItems(libraryManga, toSection: .regular)
+                    snapshot.appendItems(stackedLibraryManga, toSection: .regular)
                 }
             } else {
-                let libraryManga = viewModel.pinnedManga + viewModel.manga
+                let libraryManga = viewModel.pinnedManga + viewModel.stackLibraryItems(viewModel.manga)
                 if !libraryManga.isEmpty {
                     snapshot.appendSections([.regular])
                     snapshot.appendItems(libraryManga, toSection: .regular)
@@ -1580,6 +1762,9 @@ extension LibraryViewController {
             } else {
                 updateMoreMenu()
             }
+            if isStackView {
+                NotificationCenter.default.post(name: .updateLibrary, object: nil)
+            }
         }
     }
 
@@ -1624,6 +1809,9 @@ extension LibraryViewController {
                 updateFilterMenuState()
             } else {
                 updateMoreMenu()
+            }
+            if isStackView {
+                NotificationCenter.default.post(name: .updateLibrary, object: nil)
             }
         }
     }
@@ -1683,6 +1871,9 @@ extension LibraryViewController {
                 await self.viewModel.loadLibrary()
                 self.updateDataSource()
                 self.updateMoreMenu()
+                if self.isStackView {
+                    NotificationCenter.default.post(name: .updateLibrary, object: nil)
+                }
             }
         }
     }
@@ -2166,7 +2357,7 @@ extension LibraryViewController {
                 filterMenu = filterMenu.replacingChildren(filterMenu.children + [self.removeFilterAction()])
             }
 
-            completion(self.isFavoritesTab ? [filterMenu] : [filterMenu, self.makePinTitlesMenu()])
+            completion(self.isFavoritesTab || self.isStackView ? [filterMenu] : [filterMenu, self.makePinTitlesMenu()])
         }
 
         moreBarButton.menu = UIMenu(
@@ -2179,6 +2370,8 @@ extension LibraryViewController {
 
         moreBarButton.isSelected = false
         moreBarButton.image = UIImage(systemName: "line.3.horizontal.decrease")
+
+        stackActionsBarButton.menu = viewModel.stackID.flatMap { makeStackActionsMenu(stackID: $0) }
     }
 }
 
@@ -2218,11 +2411,17 @@ extension LibraryViewController: LibraryCategorySelectionHeaderDelegate {
 extension LibraryViewController {
     // support two finger drag to select
     func collectionView(_ collectionView: UICollectionView, shouldBeginMultipleSelectionInteractionAt indexPath: IndexPath) -> Bool {
-        dataSource.itemIdentifier(for: indexPath)?.isEmptyPinnedPlaceholder == false
+        guard let item = dataSource.itemIdentifier(for: indexPath), !item.isEmptyPinnedPlaceholder else {
+            return false
+        }
+        return !item.isLibraryStack
     }
 
     func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
-        dataSource.itemIdentifier(for: indexPath)?.isEmptyPinnedPlaceholder == false
+        guard let item = dataSource.itemIdentifier(for: indexPath), !item.isEmptyPinnedPlaceholder else {
+            return false
+        }
+        return !isEditing || !item.isLibraryStack
     }
 
     func collectionView(_ collectionView: UICollectionView, didBeginMultipleSelectionInteractionAt indexPath: IndexPath) {
@@ -2250,6 +2449,13 @@ extension LibraryViewController {
             }
             updateNavbarItems()
             updateToolbar()
+            return
+        }
+
+        if LibraryBundleFeature.isEnabled, let stackID = info.stackID {
+            let controller = LibraryViewController(scope: .stack(stackID))
+            navigationController?.pushViewController(controller, animated: true)
+            collectionView.deselectItem(at: indexPath, animated: true)
             return
         }
 
@@ -2287,7 +2493,7 @@ extension LibraryViewController {
                         source: source,
                         manga: manga,
                         chapter: chapter,
-                        darkensIncognitoBanner: !isFavoritesTab
+                        darkensIncognitoBanner: scope == .library
                     )
                     let navigationController = ReaderNavigationController(
                         readerViewController: readerController,
@@ -2360,6 +2566,9 @@ extension LibraryViewController {
         }
 
         let mangaInfo = indexPaths.compactMap { dataSource.itemIdentifier(for: $0) }
+        if LibraryBundleFeature.isEnabled, let stackID = manga.stackID {
+            return stackContextMenuConfiguration(stackID: stackID)
+        }
         let section = dataSource.snapshot().sectionIdentifiers[safe: indexPath.section]
         let viewContext = CoreDataManager.shared.container.viewContext
         let nonLibraryContinueReading = section == .continueReading && mangaInfo.contains { manga in
@@ -2429,6 +2638,10 @@ extension LibraryViewController {
                         self.updateDataSource()
                     }
                 })
+                if LibraryBundleFeature.isEnabled,
+                   CoreDataManager.shared.hasLibraryManga(mangaId: manga.id, context: viewContext) {
+                    actions.append(self.makeStackMembershipMenu(for: manga))
+                }
             }
 
             if !self.viewModel.categories.isEmpty {

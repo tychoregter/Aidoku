@@ -165,6 +165,9 @@ extension MangaManager {
     }
 
     func removeFromLibrary(mangaId: MangaIdentifier) async {
+        if LibraryBundleFeature.isEnabled {
+            await LibraryStackStore.shared.remove(mangaId)
+        }
         await LibraryPagePreviewCache.shared.remove(mangaId: mangaId)
         await CoreDataManager.shared.container.performBackgroundTask { context in
             CoreDataManager.shared.removeManga(mangaId: mangaId, context: context)
@@ -182,6 +185,11 @@ extension MangaManager {
     }
 
     func removeFromLibrary(mangaIds: [MangaIdentifier]) async {
+        if LibraryBundleFeature.isEnabled {
+            for mangaId in mangaIds {
+                await LibraryStackStore.shared.remove(mangaId)
+            }
+        }
         for mangaId in mangaIds {
             await LibraryPagePreviewCache.shared.remove(mangaId: mangaId)
         }

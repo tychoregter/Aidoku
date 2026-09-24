@@ -58,7 +58,7 @@ class OldMangaCollectionViewController: BaseCollectionViewController {
 
     // MARK: Cell Registration
     func configure(cell: MangaGridCell, info: MangaInfo, indexPath: IndexPath) {
-        cell.identifier = info.id
+        cell.identifier = info.coverIdentifier ?? info.id
         cell.title = info.title
         cell.setNSFW(info.isNSFW, title: info.title)
 

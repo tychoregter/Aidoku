@@ -114,6 +114,11 @@ actor BackupManager {
         } else {
             []
         }
+        let stacks: [BackupLibraryStack] = if options.libraryEntries {
+            await LibraryStackStore.shared.backupStacks()
+        } else {
+            []
+        }
         return await CoreDataManager.shared.container.performBackgroundTask { context in
             let library: [BackupLibraryManga] = if options.libraryEntries {
                 CoreDataManager.shared.getLibraryManga(context: context).map {
@@ -180,6 +185,7 @@ actor BackupManager {
 
             return Backup(
                 library: library,
+                stacks: stacks,
                 history: history,
                 manga: manga,
                 chapters: chapters,
@@ -425,6 +431,12 @@ extension BackupManager {
                 }
             }
         }
+        let stacksTask = Task {
+            try await libraryTask.value
+            guard let stacks = backup.stacks else { return }
+            let validManga = Set((backup.library ?? []).map(\.identifier))
+            await LibraryStackStore.shared.restore(stacks, validManga: validManga)
+        }
         let historyTask = Task {
             if let backupHistory = backup.history {
                 let result = await CoreDataManager.shared.container.performBackgroundTask { context in
@@ -606,6 +618,7 @@ extension BackupManager {
 
         // wait for db changes to finish
         do {
+            try await stacksTask.value
             try await updatesTask.value
             try await sessionsTask.value
             try await vocabTask.value

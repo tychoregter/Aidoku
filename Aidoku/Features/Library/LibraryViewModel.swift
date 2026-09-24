@@ -11,9 +11,10 @@ import UIKit
 
 @MainActor
 class LibraryViewModel {
-    enum Scope {
+    enum Scope: Equatable {
         case library
         case favorites
+        case stack(UUID)
     }
     private static let favoritesKey = "library.favoriteMangaIdentifiers"
 
@@ -25,6 +26,13 @@ class LibraryViewModel {
     var libraryPinnedManga: [MangaInfo] = []
     var sourceKeys: [String] = []
     var collections: [String] = []
+    private var unfilteredLibraryManga: [MangaIdentifier: MangaInfo] = [:]
+
+    var isFavoritesScope: Bool { scope == .favorites }
+    var stackID: UUID? {
+        guard case let .stack(id) = scope else { return nil }
+        return id
+    }
 
     enum PinType: String, CaseIterable {
         case none
@@ -208,7 +216,7 @@ class LibraryViewModel {
         self.loadsDedicatedContinueReading = loadsDedicatedContinueReading
         self.usesContinueReadingSettings = usesContinueReadingSettings
         let savedPinType = PinType(rawValue: AppSettings.library.pinTitles.get()) ?? .none
-        pinType = (scope == .favorites || (Self.isDedicatedContinueReadingEnabled && savedPinType == .started))
+        pinType = (scope != .library || (Self.isDedicatedContinueReadingEnabled && savedPinType == .started))
             ? .none
             : savedPinType
         sortMethod = SortMethod(rawValue: scope == .favorites
@@ -256,6 +264,23 @@ class LibraryViewModel {
         }
         UserDefaults.standard.set(Array(favoriteIds), forKey: Self.favoritesKey)
         NotificationCenter.default.post(name: .favoriteChanged, object: mangaId)
+    }
+
+    func synchronizeSharedLibraryOptions() {
+        guard scope == .library else { return }
+
+        sortMethod = SortMethod(rawValue: AppSettings.library.sortOption.get()) ?? .lastOpened
+        sortAscending = AppSettings.library.sortAscending.get()
+
+        let decodedFilters = AppSettings.library.filtersData.get()
+            .flatMap { try? JSONDecoder().decode([LibraryFilter].self, from: $0) } ?? []
+        var retainedGenre = false
+        filters = decodedFilters.filter { filter in
+            guard filter.type == .genre else { return true }
+            guard !filter.exclude, !retainedGenre else { return false }
+            retainedGenre = true
+            return true
+        }
     }
 }
 
@@ -372,11 +397,10 @@ extension LibraryViewModel {
             && AppSettings.library.continueReadingHideCaughtUpTitles.get()
         let includesNonLibraryContinueReadingTitles = usesContinueReadingSettings
             && AppSettings.library.continueReadingIncludeNonLibraryTitles.get()
-        let nonLibraryHistoryDates = if includesNonLibraryContinueReadingTitles,
-                                        currentCategory == nil || currentCategory?.isEmpty == true {
-            await loadNonLibraryContinueReadingMetadata()
-        } else {
-            [MangaIdentifier: Date]()
+        var nonLibraryHistoryDates: [MangaIdentifier: Date] = [:]
+        if includesNonLibraryContinueReadingTitles,
+           currentCategory == nil || currentCategory?.isEmpty == true {
+            nonLibraryHistoryDates = await loadNonLibraryContinueReadingMetadata()
         }
         let ignoredFilterIdentifiers = if usesContinueReadingSettings {
             AppSettings.library.continueReadingIgnoredFilters.get()
@@ -390,6 +414,12 @@ extension LibraryViewModel {
         )
 
         let isFavoritesOnly = scope == .favorites
+        let stackMembers: Set<MangaIdentifier>? = LibraryBundleFeature.isEnabled ? stackID.flatMap {
+            LibraryStackStore.shared.stack(id: $0).map { Set($0.members) }
+        } : nil
+        let stackedMemberIDs = LibraryBundleFeature.isEnabled && scope == .library
+            ? Set(LibraryStackStore.shared.stacks.flatMap(\.members))
+            : Set<MangaIdentifier>()
         let (
             success,
             actuallyEmpty,
@@ -399,14 +429,16 @@ extension LibraryViewModel {
             ignoredFilterPinnedManga,
             sourceKeys,
             unappliedFilters,
-            availableGenres
-        ) = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [sortMethod, sortAscending, pinType, favoriteIds, pinTitlesIgnoreFilters, ignoredPinFilterMethods, nonLibraryHistoryDates, isFavoritesOnly] context in
+            availableGenres,
+            allLibraryManga
+        ) = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [sortMethod, sortAscending, pinType, favoriteIds, pinTitlesIgnoreFilters, ignoredPinFilterMethods, nonLibraryHistoryDates, isFavoritesOnly, stackMembers, stackedMemberIDs] context in
             var pinnedManga: [MangaInfo] = []
             var libraryPinnedManga: [MangaInfo] = []
             var manga: [MangaInfo] = []
             var ignoredFilterPinnedManga: [MangaInfo] = []
             var sourceKeys: Set<String> = []
             var unappliedFilters: [LibraryFilter] = []
+            var allLibraryManga: [MangaInfo] = []
 
             let request = LibraryMangaObject.fetchRequest()
             if let currentCategory {
@@ -427,7 +459,17 @@ extension LibraryViewModel {
                 ]
             }
             guard let libraryObjects = try? context.fetch(request) else {
-                return (false, true, pinnedManga, libraryPinnedManga, manga, ignoredFilterPinnedManga, sourceKeys, unappliedFilters, [LibraryFilter.Genre]())
+                return (false, true, pinnedManga, libraryPinnedManga, manga, ignoredFilterPinnedManga, sourceKeys, unappliedFilters, [LibraryFilter.Genre](), allLibraryManga)
+            }
+
+            var stackLibraryObjects: [LibraryMangaObject] = []
+            if !stackedMemberIDs.isEmpty {
+                let stackRequest = LibraryMangaObject.fetchRequest()
+                stackRequest.predicate = NSPredicate(format: "manga != nil")
+                let objects = (try? context.fetch(stackRequest)) ?? []
+                stackLibraryObjects = objects.filter { object in
+                    object.manga.map { stackedMemberIDs.contains($0.identifier) } ?? false
+                }
             }
 
             let actuallyEmpty = libraryObjects.isEmpty
@@ -454,6 +496,32 @@ extension LibraryViewModel {
 
             var ids = Set<MangaIdentifier>()
 
+            let infoLibraryObjects = (libraryObjects + stackLibraryObjects).reduce(into: [LibraryMangaObject]()) {
+                result, object in
+                guard let identifier = object.manga?.identifier,
+                      !result.contains(where: { $0.manga?.identifier == identifier }) else { return }
+                result.append(object)
+            }
+            allLibraryManga = infoLibraryObjects.enumerated().compactMap { index, libraryObject in
+                guard let mangaObject = libraryObject.manga else { return nil }
+                var info = MangaInfo(
+                    id: mangaObject.identifier,
+                    coverUrl: mangaObject.cover.flatMap { URL(string: $0) },
+                    title: mangaObject.title,
+                    author: mangaObject.author,
+                    url: mangaObject.url.flatMap { URL(string: $0) }
+                )
+                info.isNSFW = mangaObject.nsfw == MangaContentRating.nsfw.rawValue
+                info.lastRead = libraryObject.lastRead
+                info.libraryLastOpened = libraryObject.lastOpened
+                info.libraryLastUpdated = libraryObject.lastUpdated
+                info.libraryDateAdded = libraryObject.dateAdded
+                info.libraryLastChapter = libraryObject.lastChapter
+                info.totalChapters = mangaObject.chapters?.count ?? 0
+                info.librarySortIndex = index
+                return info
+            }
+
             main: for (librarySortIndex, libraryObject) in libraryObjects.enumerated() {
                 guard
                     let mangaObject = libraryObject.manga,
@@ -462,6 +530,8 @@ extension LibraryViewModel {
                 else {
                     continue
                 }
+
+                guard stackMembers?.contains(mangaObject.identifier) ?? true else { continue }
 
                 guard !isFavoritesOnly || favoriteIds.contains(mangaObject.identifier.description) else {
                     continue
@@ -478,6 +548,11 @@ extension LibraryViewModel {
                 )
                 info.isNSFW = mangaObject.nsfw == MangaContentRating.nsfw.rawValue
                 info.lastRead = libraryObject.lastRead
+                info.libraryLastOpened = libraryObject.lastOpened
+                info.libraryLastUpdated = libraryObject.lastUpdated
+                info.libraryDateAdded = libraryObject.dateAdded
+                info.libraryLastChapter = libraryObject.lastChapter
+                info.totalChapters = mangaObject.chapters?.count ?? 0
                 info.librarySortIndex = librarySortIndex
 
                 if pinType == .started {
@@ -818,10 +893,18 @@ extension LibraryViewModel {
                 }
             }
 
-            return (true, actuallyEmpty, pinnedManga, libraryPinnedManga, manga, ignoredFilterPinnedManga, sourceKeys, unappliedFilters, availableGenres)
+            return (true, actuallyEmpty, pinnedManga, libraryPinnedManga, manga, ignoredFilterPinnedManga, sourceKeys, unappliedFilters, availableGenres, allLibraryManga)
         }
 
         guard success else { return }
+
+        if LibraryBundleFeature.isEnabled, scope == .library {
+            LibraryStackStore.shared.prune(validManga: Set(allLibraryManga.map(\.id)))
+            unfilteredLibraryManga = Dictionary(
+                allLibraryManga.map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+        }
 
         self.pinnedManga = pinnedManga
         self.libraryPinnedManga = libraryPinnedManga
@@ -836,7 +919,13 @@ extension LibraryViewModel {
         }.sorted().reduce(into: []) { result, value in
             if result.last != value { result.append(value) }
         }
-        self.actuallyEmpty = scope == .favorites ? manga.isEmpty : actuallyEmpty
+        self.actuallyEmpty = if stackID != nil {
+            stackMembers?.isEmpty ?? true
+        } else if scope == .library {
+            actuallyEmpty
+        } else {
+            manga.isEmpty
+        }
 
         await fetchUnreads(skipSortCheck: true)
         await fetchDownloadCounts()
@@ -901,6 +990,163 @@ extension LibraryViewModel {
             await sortLibrary()
         }
 
+    }
+
+    func stackLibraryItems(_ items: [MangaInfo]) -> [MangaInfo] {
+        guard LibraryBundleFeature.isEnabled, scope == .library else { return items }
+        let stacks = LibraryStackStore.shared.stacks
+        guard !stacks.isEmpty else { return items }
+
+        let stackByMember = stacks.reduce(into: [MangaIdentifier: LibraryStack]()) { result, stack in
+            for member in stack.members { result[member] = stack }
+        }
+        let visibleIDs = Set(items.map(\.id))
+        let pinnedIDs = Set(pinnedManga.map(\.id))
+        var result = items.filter { stackByMember[$0.id] == nil }
+        let currentInfo = Dictionary(
+            (manga + pinnedManga + libraryPinnedManga + items).map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+
+        for stack in stacks {
+            let members = stack.members.compactMap { currentInfo[$0] ?? unfilteredLibraryManga[$0] }
+            guard !members.isEmpty else { continue }
+            let hasVisibleMember = stack.members.contains(where: visibleIDs.contains)
+            let canRecoverAggregateFilterMatch = !activeFilters.isEmpty
+                && stack.members.contains { !pinnedIDs.contains($0) }
+                && stackMatchesActiveFilters(stack, infoByID: currentInfo)
+            guard hasVisibleMember || canRecoverAggregateFilterMatch else { continue }
+            let coverID = stack.coverManga ?? stack.members.first
+            let storedCover = coverID.flatMap {
+                CoreDataManager.shared.getManga(
+                    mangaId: $0,
+                    context: CoreDataManager.shared.container.viewContext
+                )
+            }
+            let coverMember = coverID.flatMap { currentInfo[$0] ?? unfilteredLibraryManga[$0] }
+            let customCover = LibraryStackStore.shared.customCoverURL(for: stack)
+            result.append(.libraryStack(
+                id: stack.id,
+                title: stack.name,
+                coverURL: customCover
+                    ?? storedCover?.cover.flatMap { URL(string: $0) }
+                    ?? coverMember?.coverUrl
+                    ?? members[0].coverUrl,
+                coverIdentifier: customCover == nil ? coverID : nil,
+                itemCount: stack.members.count,
+                dateCreated: stack.dateCreated,
+                unread: members.reduce(0) { $0 + $1.unread },
+                downloads: members.reduce(0) { $0 + $1.downloads },
+                lastRead: members.compactMap(\.lastRead).max(),
+                lastOpened: members.compactMap(\.libraryLastOpened).max(),
+                lastUpdated: members.compactMap(\.libraryLastUpdated).max(),
+                lastChapter: members.compactMap(\.libraryLastChapter).max(),
+                totalChapters: members.reduce(0) { $0 + $1.totalChapters },
+                librarySortIndex: members.map(\.librarySortIndex).min() ?? 0,
+                isNSFW: customCover == nil && (
+                    storedCover.map { $0.nsfw == MangaContentRating.nsfw.rawValue }
+                        ?? coverMember?.isNSFW
+                        ?? members[0].isNSFW
+                )
+            ))
+        }
+
+        return result.sorted { lhs, rhs in
+            switch sortMethod {
+                case .alphabetical:
+                    let comparison = (lhs.title ?? "").localizedStandardCompare(rhs.title ?? "")
+                    return sortAscending ? comparison == .orderedDescending : comparison == .orderedAscending
+                case .unreadChapters:
+                    return sortAscending ? lhs.unread < rhs.unread : lhs.unread > rhs.unread
+                case .lastRead, .lastOpened, .lastUpdated, .dateAdded, .lastChapter:
+                    let lhsDate: Date? = switch sortMethod {
+                        case .lastRead: lhs.lastRead
+                        case .lastOpened: lhs.libraryLastOpened
+                        case .lastUpdated: lhs.libraryLastUpdated
+                        case .dateAdded: lhs.libraryDateAdded
+                        case .lastChapter: lhs.libraryLastChapter
+                        default: nil
+                    }
+                    let rhsDate: Date? = switch sortMethod {
+                        case .lastRead: rhs.lastRead
+                        case .lastOpened: rhs.libraryLastOpened
+                        case .lastUpdated: rhs.libraryLastUpdated
+                        case .dateAdded: rhs.libraryDateAdded
+                        case .lastChapter: rhs.libraryLastChapter
+                        default: nil
+                    }
+                    return sortAscending
+                        ? (lhsDate ?? .distantPast) < (rhsDate ?? .distantPast)
+                        : (lhsDate ?? .distantPast) > (rhsDate ?? .distantPast)
+                case .totalChapters:
+                    return sortAscending
+                        ? lhs.totalChapters < rhs.totalChapters
+                        : lhs.totalChapters > rhs.totalChapters
+            }
+        }
+    }
+
+    private func stackMatchesActiveFilters(
+        _ stack: LibraryStack,
+        infoByID: [MangaIdentifier: MangaInfo]
+    ) -> Bool {
+        guard !activeFilters.isEmpty else { return true }
+        let context = CoreDataManager.shared.container.viewContext
+        let objects = stack.members.compactMap { identifier in
+            CoreDataManager.shared.getManga(mangaId: identifier, context: context)
+        }
+        guard !objects.isEmpty else { return false }
+
+        func matches(_ filter: LibraryFilter, manga: MangaObject) -> Bool {
+            let identifier = manga.identifier
+            let info = infoByID[identifier] ?? unfilteredLibraryManga[identifier]
+            switch filter.type {
+                case .downloaded: return (info?.downloads ?? 0) > 0
+                case .tracking: return CoreDataManager.shared.hasTrack(mangaId: identifier, context: context)
+                case .hasUnread: return (info?.unread ?? 0) > 0
+                case .caughtUp: return (info?.unread ?? 0) == 0
+                case .started: return CoreDataManager.shared.hasHistory(mangaId: identifier, context: context)
+                case .completed: return manga.status == AidokuRunner.PublishingStatus.completed.rawValue
+                case .source: return filter.value == identifier.sourceKey
+                case .contentRating:
+                    guard let contentRating = filter.value.flatMap(MangaContentRating.init) else {
+                        return false
+                    }
+                    return Int16(contentRating.rawValue) == manga.nsfw
+                case .category:
+                    let categories = (manga.libraryObject?.categories?.allObjects as? [CategoryObject])?.compactMap(\.title) ?? []
+                    return filter.value.map(categories.contains) ?? false
+                case .favorite: return favoriteIds.contains(identifier.description)
+                case .collection:
+                    let memberships = (
+                        UserDefaults.standard.dictionary(forKey: "\(identifier.sourceKey).collectionMembership")
+                            as? [String: [String]] ?? [:]
+                    )[identifier.mangaKey] ?? []
+                    return filter.value.map(memberships.contains) ?? false
+                case .genre:
+                    guard let value = filter.value,
+                          let genre = LibraryGenreFilterSettings.matchingGenre(
+                            for: value,
+                            in: availableGenres,
+                            configuration: LibraryGenreFilterSettings.load()
+                          ) else { return false }
+                    let genres = identifier.sourceKey.hasPrefix(KomgaSourceRunner.sourceKeyPrefix)
+                        ? KomgaGenreStore.genres(sourceKey: identifier.sourceKey, mangaKey: identifier.mangaKey)
+                        : manga.tags ?? []
+                    return genres.contains(where: genre.matches)
+            }
+        }
+
+        for filter in activeFilters where filter.exclude {
+            if objects.allSatisfy({ matches(filter, manga: $0) }) { return false }
+        }
+        let included = Dictionary(grouping: activeFilters.filter { !$0.exclude }, by: \.type)
+        for filters in included.values {
+            guard objects.contains(where: { manga in filters.contains { matches($0, manga: manga) } }) else {
+                return false
+            }
+        }
+        return true
     }
 
     // updates unread counts and manga sort order for history change
@@ -1047,11 +1293,15 @@ extension LibraryViewModel {
             return await loadLibrary()
         }
 
-        let currentManga = self.manga + self.pinnedManga + self.continueReadingManga
+        let currentManga = Array(Dictionary(
+            (self.manga + self.pinnedManga + self.continueReadingManga + Array(unfilteredLibraryManga.values))
+                .map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        ).values)
 
         // fetch new unread counts
-        let unreadCounts = await withTaskGroup(of: (Int, Int).self) { group in
-            var unreadCounts: [Int: Int] = [:]
+        let unreadCounts = await withTaskGroup(of: (MangaIdentifier, Int).self) { group in
+            var unreadCounts: [MangaIdentifier: Int] = [:]
             for manga in currentManga {
                 group.addTask {
                     let context = CoreDataManager.shared.container.newBackgroundContext()
@@ -1063,7 +1313,7 @@ extension LibraryViewModel {
                             scanlators: filters.scanlators,
                             context: context
                         )
-                        return (manga.hashValue, count)
+                        return (manga.id, count)
                     }
                 }
             }
@@ -1075,16 +1325,20 @@ extension LibraryViewModel {
 
         // set unread counts
         for (i, manga) in self.manga.enumerated() {
-            guard let count = unreadCounts[manga.hashValue] else { continue }
+            guard let count = unreadCounts[manga.id] else { continue }
             self.manga[i].unread = count
         }
         for (i, manga) in self.pinnedManga.enumerated() {
-            guard let count = unreadCounts[manga.hashValue] else { continue }
+            guard let count = unreadCounts[manga.id] else { continue }
             self.pinnedManga[i].unread = count
         }
         for (i, manga) in self.continueReadingManga.enumerated() {
-            guard let count = unreadCounts[manga.hashValue] else { continue }
+            guard let count = unreadCounts[manga.id] else { continue }
             self.continueReadingManga[i].unread = count
+        }
+        for identifier in Array(unfilteredLibraryManga.keys) {
+            guard let count = unreadCounts[identifier] else { continue }
+            unfilteredLibraryManga[identifier]?.unread = count
         }
 
         // re-sort library if needed
@@ -1139,7 +1393,11 @@ extension LibraryViewModel {
         if let identifier {
             downloadCounts[identifier] = await DownloadManager.shared.downloadsCount(for: identifier)
         } else {
-            let currentManga = self.manga + self.pinnedManga + self.continueReadingManga
+            let currentManga = Array(Dictionary(
+                (self.manga + self.pinnedManga + self.continueReadingManga + Array(unfilteredLibraryManga.values))
+                    .map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first }
+            ).values)
             for manga in currentManga {
                 let identifier = manga.id
                 downloadCounts[identifier] = await DownloadManager.shared.downloadsCount(for: identifier)
@@ -1158,6 +1416,11 @@ extension LibraryViewModel {
         for (i, manga) in self.continueReadingManga.enumerated() {
             if let count = downloadCounts[manga.id] {
                 self.continueReadingManga[i].downloads = count
+            }
+        }
+        for identifier in Array(unfilteredLibraryManga.keys) {
+            if let count = downloadCounts[identifier] {
+                unfilteredLibraryManga[identifier]?.downloads = count
             }
         }
     }

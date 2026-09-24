@@ -11,6 +11,7 @@ struct Backup: Codable, Hashable, Identifiable, Sendable {
     var id: Int { hashValue }
 
     var library: [BackupLibraryManga]?
+    var stacks: [BackupLibraryStack]?
     var history: [BackupHistory]?
     var manga: [BackupManga]?
     var chapters: [BackupChapter]?
