@@ -178,6 +178,7 @@ class MangaListCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        url = nil
         coverImageView.image = UIImage(named: "MangaPlaceholder")
         originalCoverImage = nil
         grayscalesCaughtUpCover = false
@@ -280,6 +281,7 @@ extension MangaListCell {
         titleLabel.text = info.title
         subtitleLabel.text = info.author
         subtitleLabel.isHidden = subtitleLabel.text?.isEmpty ?? true
+        showCachedImage(url: info.coverUrl)
 
         Task {
             await loadImage(url: info.coverUrl)
@@ -316,6 +318,21 @@ extension MangaListCell {
 }
 
 extension MangaListCell {
+    private func showCachedImage(url: URL?) {
+        guard let url else { return }
+        let imageURL = url.toAidokuFileUrl() ?? url
+        self.url = imageURL.absoluteString
+        let request = ImageRequest(
+            urlRequest: URLRequest(url: imageURL),
+            processors: [CoverDownsampleProcessor(shortestSide: 630)]
+        )
+        guard let image = ImagePipeline.shared.cache.cachedImage(for: request, caches: [.memory])?.image else {
+            return
+        }
+        originalCoverImage = image
+        updateCoverImage()
+    }
+
     private func loadImage(url: URL?) async {
         guard let url else { return }
 
@@ -325,11 +342,14 @@ extension MangaListCell {
 
         self.coverImageView.stopAnimatingGIF()
 
-        let source: AidokuRunner.Source? = if let sourceKey = identifier?.sourceKey {
+        let currentIdentifier = identifier
+        let source: AidokuRunner.Source? = if let sourceKey = currentIdentifier?.sourceKey {
             await SourceManager.shared.source(for: sourceKey)
         } else {
             nil
         }
+
+        guard identifier == currentIdentifier else { return }
 
         var urlRequest = URLRequest(url: url)
         var cached = ImagePipeline.shared.cache.containsCachedImage(for: .init(urlRequest: urlRequest))
@@ -341,6 +361,8 @@ extension MangaListCell {
                 urlRequest = await source.getModifiedImageRequest(url: url, context: nil)
             }
         }
+
+        guard identifier == currentIdentifier else { return }
 
         self.url = (urlRequest.url ?? url).absoluteString
 
@@ -354,6 +376,7 @@ extension MangaListCell {
             processors: processors,
             userInfo: [.processesKey: source?.features.processesCovers ?? false]
         )
+        let storesProcessedCover = source?.features.processesCovers != true
 
         cached = cached || ImagePipeline.shared.cache.containsCachedImage(for: request)
 
@@ -363,6 +386,11 @@ extension MangaListCell {
                 case .success(let response):
                     if response.request.imageID != self.url {
                         return
+                    }
+                    if storesProcessedCover {
+                        Task.detached(priority: .utility) {
+                            await CoverProcessedCacheWriter.shared.store(response.container, for: request)
+                        }
                     }
                     Task { @MainActor in
                         self.originalCoverImage = response.image

@@ -177,27 +177,27 @@ actor LibraryPagePreviewCache {
     /// untouched.
     func invalidateCoverCache(for url: URL, sourceKey: String) async {
         let source = await SourceManager.shared.source(for: sourceKey)
-        var requests: [ImageRequest] = [ImageRequest(urlRequest: URLRequest(url: url))]
+        let originalRequest = URLRequest(url: url)
+        var urlRequests = [originalRequest]
 
         if let fileURL = url.toAidokuFileUrl() {
-            requests.append(ImageRequest(urlRequest: URLRequest(url: fileURL)))
+            urlRequests.append(URLRequest(url: fileURL))
         } else if let source {
             let modifiedRequest = await source.getModifiedImageRequest(url: url, context: nil)
-            requests.append(ImageRequest(urlRequest: modifiedRequest))
-
-            var processors: [ImageProcessing] = [await CoverDownsampleProcessor(shortestSide: 630)]
-            if source.features.processesCovers {
-                processors.append(CoverInterceptorProcessor(source: source))
-            }
-            requests.append(ImageRequest(
-                urlRequest: modifiedRequest,
-                processors: processors,
-                userInfo: [.processesKey: true]
-            ))
+            urlRequests.append(modifiedRequest)
         }
 
-        for request in requests {
-            ImagePipeline.shared.cache.removeCachedImage(for: request)
+        for urlRequest in urlRequests {
+            ImagePipeline.shared.cache.removeCachedImage(for: ImageRequest(urlRequest: urlRequest))
+            var processors: [ImageProcessing] = [await CoverDownsampleProcessor(shortestSide: 630)]
+            if let source, source.features.processesCovers {
+                processors.append(CoverInterceptorProcessor(source: source))
+            }
+            ImagePipeline.shared.cache.removeCachedImage(for: ImageRequest(
+                urlRequest: urlRequest,
+                processors: processors,
+                userInfo: [.processesKey: source?.features.processesCovers ?? false]
+            ))
         }
     }
 

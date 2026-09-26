@@ -925,6 +925,13 @@ extension AppDelegate {
 }
 
 extension AppDelegate: ImagePipeline.Delegate {
+    nonisolated func dataCache(for request: ImageRequest, pipeline: ImagePipeline) -> (any DataCaching)? {
+        if request.processors.contains(where: { $0 is CoverDownsampleProcessor }) {
+            return CoverProcessedDataCache.shared ?? pipeline.configuration.dataCache
+        }
+        return pipeline.configuration.dataCache
+    }
+
     nonisolated func imageDecoder(for context: ImageDecodingContext, pipeline: ImagePipeline) -> (any ImageDecoding)? {
         if context.request.userInfo[.processesKey] as? Bool == true {
             // when using a page processor, don't decode data as an image since it may be invalid

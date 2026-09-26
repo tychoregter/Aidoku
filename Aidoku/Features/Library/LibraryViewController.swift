@@ -1207,6 +1207,7 @@ extension LibraryViewController {
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        updateDirectionalCoverPrefetch(for: scrollView)
         guard refreshControl.isRefreshing else { return }
         let top = -scrollView.adjustedContentInset.top
         if scrollView.contentOffset.y > top + refreshDismissalDistance {

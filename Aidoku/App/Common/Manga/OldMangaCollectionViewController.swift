@@ -5,6 +5,8 @@
 //  Created by Skitty on 8/1/22.
 //
 
+import AidokuRunner
+import Nuke
 import UIKit
 
 class OldMangaCollectionViewController: BaseCollectionViewController {
@@ -16,6 +18,21 @@ class OldMangaCollectionViewController: BaseCollectionViewController {
     var usesListLayout = false
 
     lazy var dataSource = makeDataSource()
+
+    // Decode nearby covers that are already on disk before their cells appear.
+    // Nuke's existing memory cache owns the images and its normal size limit.
+    private let coverPrefetcher = ImagePrefetcher(
+        pipeline: .shared,
+        destination: .memoryCache,
+        maxConcurrentRequestCount: 3
+    )
+    private var coverPreparationTasks: [IndexPath: Task<Void, Never>] = [:]
+    private var coverPreparationIDs: [IndexPath: UUID] = [:]
+    private var prefetchedCoverRequests: [IndexPath: ImageRequest] = [:]
+    private var directionalCoverIndexPaths = Set<IndexPath>()
+    private var lastCoverPrefetchOffsetY: CGFloat?
+    private var lastCoverPrefetchAnchor: IndexPath?
+    private var lastCoverPrefetchWasForward = true
 
     private var focusedIndexPath: IndexPath? {
         didSet {
@@ -33,6 +50,7 @@ class OldMangaCollectionViewController: BaseCollectionViewController {
         collectionView.register(MangaGridCell.self, forCellWithReuseIdentifier: "MangaGridCell")
         collectionView.register(MangaListCell.self, forCellWithReuseIdentifier: "MangaListCell")
         collectionView.dataSource = dataSource
+        collectionView.prefetchDataSource = self
         collectionView.contentInset = UIEdgeInsets(
             top: 0,
             left: 0,
@@ -56,11 +74,29 @@ class OldMangaCollectionViewController: BaseCollectionViewController {
         }
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        updateDirectionalCoverPrefetch(for: collectionView)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        coverPreparationTasks.values.forEach { $0.cancel() }
+        coverPreparationTasks.removeAll()
+        coverPreparationIDs.removeAll()
+        prefetchedCoverRequests.removeAll()
+        directionalCoverIndexPaths.removeAll()
+        lastCoverPrefetchOffsetY = nil
+        lastCoverPrefetchAnchor = nil
+        coverPrefetcher.stopPrefetching()
+    }
+
     // MARK: Cell Registration
     func configure(cell: MangaGridCell, info: MangaInfo, indexPath: IndexPath) {
         cell.identifier = info.coverIdentifier ?? info.id
         cell.title = info.title
         cell.setNSFW(info.isNSFW, title: info.title)
+        cell.showCachedImage(url: info.coverUrl)
 
         Task {
             await cell.loadImage(url: info.coverUrl)
@@ -102,6 +138,137 @@ class OldMangaCollectionViewController: BaseCollectionViewController {
         config.interSectionSpacing = Self.itemSpacing + Self.sectionSpacing
         layout.configuration = config
         return layout
+    }
+}
+
+extension OldMangaCollectionViewController: UICollectionViewDataSourcePrefetching {
+    func updateDirectionalCoverPrefetch(for scrollView: UIScrollView) {
+        guard scrollView === collectionView else { return }
+        let offsetY = scrollView.contentOffset.y
+        let previousOffset = lastCoverPrefetchOffsetY
+        if let previousOffset, abs(offsetY - previousOffset) < 30 { return }
+
+        let forward = previousOffset.map { offsetY >= $0 } ?? true
+        let visible = collectionView.indexPathsForVisibleItems.sorted()
+        guard let anchor = forward ? visible.last : visible.first else { return }
+        lastCoverPrefetchOffsetY = offsetY
+        guard anchor != lastCoverPrefetchAnchor || forward != lastCoverPrefetchWasForward else { return }
+        lastCoverPrefetchAnchor = anchor
+        lastCoverPrefetchWasForward = forward
+
+        var newPaths = [IndexPath]()
+        var next = anchor
+        for _ in 0..<24 {
+            guard let following = nextCoverIndexPath(after: next, forward: forward) else { break }
+            newPaths.append(following)
+            next = following
+        }
+
+        let newSet = Set(newPaths)
+        let obsolete = directionalCoverIndexPaths.subtracting(newSet)
+        directionalCoverIndexPaths = newSet
+        collectionView(collectionView, cancelPrefetchingForItemsAt: Array(obsolete))
+        collectionView(collectionView, prefetchItemsAt: newPaths)
+    }
+
+    private func nextCoverIndexPath(after indexPath: IndexPath, forward: Bool) -> IndexPath? {
+        guard indexPath.section < collectionView.numberOfSections else { return nil }
+        if forward {
+            let nextItem = indexPath.item + 1
+            if nextItem < collectionView.numberOfItems(inSection: indexPath.section) {
+                return IndexPath(item: nextItem, section: indexPath.section)
+            }
+            if indexPath.section + 1 < collectionView.numberOfSections {
+                for section in (indexPath.section + 1)..<collectionView.numberOfSections
+                where collectionView.numberOfItems(inSection: section) > 0 {
+                    return IndexPath(item: 0, section: section)
+                }
+            }
+        } else {
+            if indexPath.item > 0 {
+                return IndexPath(item: indexPath.item - 1, section: indexPath.section)
+            }
+            for section in (0..<indexPath.section).reversed()
+            where collectionView.numberOfItems(inSection: section) > 0 {
+                return IndexPath(item: collectionView.numberOfItems(inSection: section) - 1, section: section)
+            }
+        }
+        return nil
+    }
+
+    func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
+        for indexPath in indexPaths {
+            guard
+                coverPreparationTasks[indexPath] == nil,
+                prefetchedCoverRequests[indexPath] == nil,
+                let info = dataSource.itemIdentifier(for: indexPath),
+                !info.isEmptyPinnedPlaceholder,
+                let coverURL = info.coverUrl
+            else { continue }
+
+            let preparationID = UUID()
+            coverPreparationIDs[indexPath] = preparationID
+            coverPreparationTasks[indexPath] = Task { @MainActor [weak self] in
+                guard let self else { return }
+                defer {
+                    if self.coverPreparationIDs[indexPath] == preparationID {
+                        self.coverPreparationTasks[indexPath] = nil
+                        self.coverPreparationIDs[indexPath] = nil
+                    }
+                }
+
+                let sourceKey = (info.coverIdentifier ?? info.id).sourceKey
+                let source = await SourceManager.shared.source(for: sourceKey)
+                guard !Task.isCancelled else { return }
+
+                let urlRequest: URLRequest
+                if let fileURL = coverURL.toAidokuFileUrl() {
+                    urlRequest = URLRequest(url: fileURL)
+                } else if let source {
+                    urlRequest = await source.getModifiedImageRequest(url: coverURL, context: nil)
+                } else {
+                    urlRequest = URLRequest(url: coverURL)
+                }
+                guard
+                    !Task.isCancelled,
+                    self.coverPreparationIDs[indexPath] == preparationID,
+                    self.dataSource.itemIdentifier(for: indexPath)?.id == info.id,
+                    self.dataSource.itemIdentifier(for: indexPath)?.coverUrl == coverURL
+                else { return }
+
+                var processors: [ImageProcessing] = [CoverDownsampleProcessor(shortestSide: 630)]
+                if let source, source.features.processesCovers {
+                    processors.append(CoverInterceptorProcessor(source: source))
+                }
+                let request = ImageRequest(
+                    urlRequest: urlRequest,
+                    processors: processors,
+                    userInfo: [.processesKey: source?.features.processesCovers ?? false]
+                )
+                // This pipeline stores original bytes on disk, without the
+                // cover processor in the disk key. Local cover files are also
+                // safe to decode without any network request.
+                var dataRequest = request
+                dataRequest.processors = []
+                guard urlRequest.url?.isFileURL == true
+                    || ImagePipeline.shared.cache.containsData(for: request)
+                    || ImagePipeline.shared.cache.containsData(for: dataRequest)
+                else { return }
+                self.prefetchedCoverRequests[indexPath] = request
+                self.coverPrefetcher.startPrefetching(with: [request])
+            }
+        }
+    }
+
+    func collectionView(_ collectionView: UICollectionView, cancelPrefetchingForItemsAt indexPaths: [IndexPath]) {
+        for indexPath in indexPaths {
+            guard !directionalCoverIndexPaths.contains(indexPath) else { continue }
+            coverPreparationTasks.removeValue(forKey: indexPath)?.cancel()
+            coverPreparationIDs[indexPath] = nil
+            if let request = prefetchedCoverRequests.removeValue(forKey: indexPath) {
+                coverPrefetcher.stopPrefetching(with: [request])
+            }
+        }
     }
 }
 
