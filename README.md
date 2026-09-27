@@ -44,6 +44,7 @@ Some changes I made are currently non-configurable as I never planned for this t
 - Option to show reading progress as a percentage instead of page count for webtoons.
 - Option for UI elements to hide automatically when the reader is opened.
 - Optimized and improved how the reader loads pages, fixing the issue of pages taking a long time to load (mostly relevant for webtoons).
+- The transition screen in between chapters now follows the reader background settings you pick.
 
 ### Miscellaneous
 - Added spotlight support for searching library items.
@@ -51,12 +52,16 @@ Some changes I made are currently non-configurable as I never planned for this t
 - Browse, History and Favorites can be placed either in Settings or as dedicated tab-bar tabs.
 - Added option to move settings to a top bar button.
 - Updates was moved from the Library top bar into Settings.
+- Added a dedicated Favorites view (either in settings or as a tab bar item).
 - Added tab-bar scroll-to-top.
 - Removed the refresh popup, when manually triggered by pulling down, the spinner now stays visible until the refresh finished.
 - Slightly changed the look of the browse view.
 - Added default sort options for chapters.
 - Added option to show page count in chapter lists (for compatible sources)
+- Changed how chapters are displayed in the chapters list.
 - Added an option to use a FlareSolverr server to resolve source Cloudflare challenges.
+- Improved some animations.
+- Added the option to disable search history.
 - Probably more I forgot about.
 
 
