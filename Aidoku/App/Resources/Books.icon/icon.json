@@ -1,6 +1,6 @@
 {
   "fill" : {
-    "automatic-gradient" : "srgb:1.00000,0.18431,0.32157,1.00000"
+    "solid" : "srgb:1.00000,0.18431,0.32157,1.00000"
   },
   "groups" : [
     {
@@ -84,40 +84,35 @@
       ]
     },
     {
-      "blend-mode" : "normal",
-      "hidden" : false,
       "layers" : [
         {
           "blend-mode-specializations" : [
             {
-              "appearance" : "dark",
+              "appearance" : "light",
+              "idiom" : "square",
               "value" : "normal"
             }
           ],
           "fill-specializations" : [
             {
-              "appearance" : "dark",
+              "appearance" : "light",
+              "idiom" : "square",
               "value" : {
-                "automatic-gradient" : "display-p3:1.00000,0.26667,0.37647,1.00000"
-              }
-            },
-            {
-              "appearance" : "tinted",
-              "value" : {
-                "solid" : "gray:0.69700,1.00000"
+                "linear-gradient" : [
+                  "display-p3:1.00000,1.00000,1.00000,0.95000",
+                  "srgb:1.00000,1.00000,1.00000,1.00000"
+                ]
               }
             }
           ],
           "glass" : true,
           "image-name" : "2.cover.svg",
-          "name" : "2.cover",
+          "name" : "読",
           "opacity-specializations" : [
             {
+              "appearance" : "light",
+              "idiom" : "square",
               "value" : 0.6
-            },
-            {
-              "appearance" : "dark",
-              "value" : 0.93
             }
           ]
         }
