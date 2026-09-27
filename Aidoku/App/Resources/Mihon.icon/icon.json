@@ -17,8 +17,8 @@
           ],
           "glass" : true,
           "hidden" : false,
-          "image-name" : "読.svg",
-          "name" : "読",
+          "image-name" : "mihon.svg",
+          "name" : "mihon",
           "position" : {
             "scale" : 1,
             "translation-in-points" : [

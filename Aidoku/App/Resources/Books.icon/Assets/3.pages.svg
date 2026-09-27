@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--Generator: Apple Native CoreSVG 362-->
+<!DOCTYPE svg
+PUBLIC "-//W3C//DTD SVG 1.1//EN"
+       "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1024 1024">
+ <defs>
+  <linearGradient id="SVGID_1_" x1="184" y1="502.175" x2="840" y2="502.175" gradientUnits="userSpaceOnUse">
+   <stop offset="0" stop-color="#ffffff" stop-opacity="0.9"/>
+   <stop offset="0.706246" stop-color="#ffffff" stop-opacity="1"/>
+  </linearGradient>
+ </defs>
+ <g/>
+ <g id="pages">
+  <path d="M793.295 232.551C717.867 215.246 605.782 221.029 512 292.175c-93.7825-71.1453-205.866-76.9283-281.295-59.6238c-27.3077 6.26489-46.7055 30.4964-46.7055 58.5135L184 696.453c0 26.2984 24.9268 45.3653 50.3486 38.6321c98.0862-25.979 181.941-6.8808 243.32 34.5316C487.797 776.45 499.782 780 512 780h6.1e-05c12.2178 0 24.2032-3.55042 34.3313-10.3838c61.3792-41.4124 145.234-60.5106 243.32-34.5316C815.073 741.818 840 722.751 840 696.453l0.0001831-405.388C840 263.047 820.602 238.816 793.295 232.551z" fill="url(#SVGID_1_)" style="fill:url(#SVGID_1_);"/>
+ </g>
+</svg>

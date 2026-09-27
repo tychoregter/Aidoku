@@ -380,7 +380,9 @@ extension SettingsView {
 
     @ViewBuilder
     func customContentHandler(_ setting: Setting) -> some View {
-        if setting.key == AppSettings.appearance.layout.key {
+        if setting.key == "Appearance.appIcon" {
+            AppIconSettingsView()
+        } else if setting.key == AppSettings.appearance.layout.key {
             LayoutSettingView()
         } else if setting.key == AppSettings.library.defaultCategory.key {
             CategorySelectSettingView(setting: setting, categories: $categoriesOnly)

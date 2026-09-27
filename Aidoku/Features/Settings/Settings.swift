@@ -254,6 +254,16 @@ extension Settings {
             ]))
         ),
         .init(
+            title: "App Icon",
+            value: .group(.init(items: [
+                .init(
+                    key: "Appearance.appIcon",
+                    title: "App Icon",
+                    value: .custom
+                )
+            ]))
+        ),
+        .init(
             title: "Navigation",
             value: .group(.init(
                 footer: "Choose up to three tabs to show alongside Library. If none are enabled, the tab bar is hidden.",
