@@ -65,7 +65,6 @@ Some changes I made are currently non-configurable as I never planned for this t
 - Improved some animations.
 - Added the option to disable search history.
 - Probably more I forgot about.
-
 - Dropped support for older iOS versions because it would go against the philosophy of the fork to add fallback options for unsupported APIs and features, and I deemed it unnecessary to put time into this as this is still mostly a personal project. 
 
 
