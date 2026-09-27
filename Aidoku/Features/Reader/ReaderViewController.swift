@@ -279,6 +279,18 @@ class ReaderViewController: BaseObservingViewController {
             action: #selector(thumbnailScrubberStopped(_:)),
             for: .editingDidEnd
         )
+        toolbarView.sliderView.addTarget(
+            self,
+            action: #selector(legacyScrubberMoved(_:)),
+            for: .valueChanged
+        )
+        toolbarView.sliderView.addTarget(
+            self,
+            action: #selector(legacyScrubberStopped(_:)),
+            for: .editingDidEnd
+        )
+        toolbarView.sliderView.addTarget(self, action: #selector(legacyScrubberTouchBegan), for: .touchDown)
+        toolbarView.sliderView.addTarget(self, action: #selector(legacyScrubberTouchEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])
         toolbarView.thumbnailScrubberView.onInteractionStateChange = { [weak self] isInteracting in
             self?.setScrubberGestureBlocking(isInteracting)
         }
@@ -468,6 +480,11 @@ class ReaderViewController: BaseObservingViewController {
         addObserver(forName: AppSettings.reader.scrubberDataSaver.key) { [weak self] _ in
             guard let self, !self.pages.isEmpty else { return }
             self.configureThumbnailScrubber(with: self.pages)
+        }
+        addObserver(forName: AppSettings.reader.useLegacyScrubber.key) { [weak self] _ in
+            guard let self else { return }
+            self.toolbarView.setUsesLegacyScrubber(AppSettings.reader.useLegacyScrubber.get())
+            self.updateReaderToolbarMetrics(usesThumbnailScrubber: self.toolbarView.usesThumbnailScrubber)
         }
         addObserver(forName: .readerTapZones) { [weak self] _ in
             self?.updateTapZone()
@@ -700,7 +717,7 @@ extension ReaderViewController {
     private func touchIsInScrubber(_ touch: UITouch) -> Bool {
         var view = touch.view
         while let current = view {
-            if current === toolbarView.thumbnailScrubberView {
+            if current === toolbarView.thumbnailScrubberView || current === toolbarView.sliderView {
                 return true
             }
             view = current.superview
@@ -886,6 +903,22 @@ extension ReaderViewController {
     }
     @objc func thumbnailScrubberStopped(_ sender: ReaderThumbnailScrubberView) {
         reader?.sliderStopped(value: sender.currentValue)
+    }
+
+    @objc private func legacyScrubberMoved(_ sender: ReaderSliderView) {
+        reader?.sliderMoved(value: sender.currentValue)
+    }
+
+    @objc private func legacyScrubberStopped(_ sender: ReaderSliderView) {
+        reader?.sliderStopped(value: sender.currentValue)
+    }
+
+    @objc private func legacyScrubberTouchBegan() {
+        setScrubberGestureBlocking(true)
+    }
+
+    @objc private func legacyScrubberTouchEnded() {
+        setScrubberGestureBlocking(false)
     }
 }
 
@@ -1564,7 +1597,12 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
                 .filter { seenCandidates.insert($0).inserted }
             for candidate in cachedCandidates {
                 guard let url = URL(string: candidate) else { continue }
-                let request = await ReaderPageView.imageRequest(url: url, context: page.context, source: source)
+                let request = await ReaderPageView.imageRequest(
+                    url: url,
+                    context: page.context,
+                    source: source,
+                    appliesUpscaling: false
+                )
                 if let image = await cachedScrubberThumbnail(
                     for: request,
                     options: options,
@@ -1577,7 +1615,12 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         }
 
         if let requestedURLString, let url = URL(string: requestedURLString) {
-            var request = await ReaderPageView.imageRequest(url: url, context: page.context, source: source)
+            var request = await ReaderPageView.imageRequest(
+                url: url,
+                context: page.context,
+                source: source,
+                appliesUpscaling: false
+            )
             request.thumbnail = options
             // Keep active page previews ahead of strip thumbnails while
             // allowing strip requests to run at their normal priority.

@@ -179,16 +179,31 @@ extension ReaderPageView {
     }
 
     /// Creates the image request used to fetch a page image.
-    static func imageRequest(url: URL, context: PageContext? = nil, sourceKey: String? = nil) async -> ImageRequest {
+    static func imageRequest(
+        url: URL,
+        context: PageContext? = nil,
+        sourceKey: String? = nil,
+        appliesUpscaling: Bool = true
+    ) async -> ImageRequest {
         let source: AidokuRunner.Source? = if let sourceKey {
             await SourceManager.shared.source(for: sourceKey)
         } else {
             nil
         }
-        return await imageRequest(url: url, context: context, source: source)
+        return await imageRequest(
+            url: url,
+            context: context,
+            source: source,
+            appliesUpscaling: appliesUpscaling
+        )
     }
 
-    static func imageRequest(url: URL, context: PageContext? = nil, source: AidokuRunner.Source?) async -> ImageRequest {
+    static func imageRequest(
+        url: URL,
+        context: PageContext? = nil,
+        source: AidokuRunner.Source?,
+        appliesUpscaling: Bool = true
+    ) async -> ImageRequest {
         let urlRequest = if !url.isFileURL, let source {
             await source.getModifiedImageRequest(url: url, context: context)
         } else {
@@ -211,7 +226,7 @@ extension ReaderPageView {
         }
         if UserDefaults.standard.bool(forKey: "Reader.downsampleImages") {
             processors.append(DownsampleProcessor(width: UIScreen.main.bounds.width))
-        } else if UserDefaults.standard.bool(forKey: "Reader.upscaleImages") {
+        } else if appliesUpscaling, UserDefaults.standard.bool(forKey: "Reader.upscaleImages") {
             processors.append(UpscaleProcessor())
         }
 

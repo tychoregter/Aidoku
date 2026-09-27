@@ -7,6 +7,12 @@
 
 import UIKit
 
+enum ReaderProgressAppearance {
+    static func contrastColor(forDarkBackdrop isDark: Bool) -> UIColor {
+        isDark ? .white : .black
+    }
+}
+
 class ReaderToolbarView: UIView {
     private var currentPageValue: Int?
     var currentPage: Int? {
@@ -17,6 +23,7 @@ class ReaderToolbarView: UIView {
     }
 
     let thumbnailScrubberView = ReaderThumbnailScrubberView()
+    let sliderView = ReaderSliderView()
     var onScrubberStyleChange: ((Bool) -> Void)?
     var onThumbnailScrubberPreferredWidthChange: ((CGFloat?) -> Void)?
     private(set) var usesThumbnailScrubber = false
@@ -24,6 +31,7 @@ class ReaderToolbarView: UIView {
     private let thumbnailPageCounterLabel = UILabel()
     private var thumbnailPageCounterPositionConstraints: [NSLayoutConstraint] = []
     private var supportsThumbnailScrubber = false
+    private(set) var usesLegacyScrubber = AppSettings.reader.useLegacyScrubber.get()
     private var pageCounterControlsVisible = true
     private var usesWebtoonProgress = false
     private var showsWebtoonScrollPercentage = true
@@ -45,6 +53,10 @@ class ReaderToolbarView: UIView {
     }
 
     func configure() {
+        sliderView.semanticContentAttribute = .playback
+        sliderView.isHidden = !usesLegacyScrubber
+        addSubview(sliderView)
+
         thumbnailScrubberView.semanticContentAttribute = .playback
         thumbnailScrubberView.isHidden = true
         thumbnailScrubberView.onPreviewVisibilityChange = { [weak self] isVisible in
@@ -92,6 +104,7 @@ class ReaderToolbarView: UIView {
     }
 
     func constrain() {
+        sliderView.translatesAutoresizingMaskIntoConstraints = false
         thumbnailScrubberView.translatesAutoresizingMaskIntoConstraints = false
         thumbnailPageCounterView.translatesAutoresizingMaskIntoConstraints = false
         thumbnailPageCounterLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -102,6 +115,11 @@ class ReaderToolbarView: UIView {
         ]
 
         NSLayoutConstraint.activate([
+            sliderView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            sliderView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            sliderView.topAnchor.constraint(equalTo: topAnchor),
+            sliderView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
             thumbnailScrubberView.leadingAnchor.constraint(equalTo: leadingAnchor),
             thumbnailScrubberView.trailingAnchor.constraint(equalTo: trailingAnchor),
             thumbnailScrubberView.topAnchor.constraint(equalTo: topAnchor),
@@ -138,7 +156,7 @@ class ReaderToolbarView: UIView {
         pageCounterControlsVisible = true
         cancelTemporaryPagesLeftDisplay()
         updatePageLabels()
-        thumbnailPageCounterView.isHidden = !usesThumbnailScrubber
+        thumbnailPageCounterView.isHidden = !(usesThumbnailScrubber || usesLegacyScrubber)
     }
 
     func finishHidingPageCounter() {
@@ -149,7 +167,7 @@ class ReaderToolbarView: UIView {
     }
 
     @objc private func handlePageCounterTap() {
-        guard usesThumbnailScrubber,
+        guard usesThumbnailScrubber || usesLegacyScrubber,
               pageCounterControlsVisible,
               let totalPages,
               let currentPage = currentPage ?? currentPageValue else { return }
@@ -210,9 +228,10 @@ class ReaderToolbarView: UIView {
         } else if !usesWebtoonProgress || !showsWebtoonScrollPercentage {
             updatePageLabel(page: boundedPage, totalPages: totalPages)
         }
-        if usesWebtoonProgress && showsWebtoonScrollPercentage {
+        let isScrubberTracking = usesLegacyScrubber ? sliderView.isTracking : thumbnailScrubberView.isTracking
+        if usesWebtoonProgress && showsWebtoonScrollPercentage && !usesLegacyScrubber {
             let percentage = Int((webtoonProgress * 100).rounded())
-            if thumbnailScrubberView.isTracking,
+            if isScrubberTracking,
                let lastWebtoonHapticPercentage,
                lastWebtoonHapticPercentage != percentage {
                 let feedbackGenerator = UISelectionFeedbackGenerator()
@@ -222,18 +241,20 @@ class ReaderToolbarView: UIView {
             // scrubber tracking, so a jump-to-position tap cannot pulse twice.
             lastWebtoonHapticPercentage = percentage
         } else if currentPageValue != boundedPage,
-                  (!usesWebtoonProgress || thumbnailScrubberView.isTracking) {
+                  (!usesWebtoonProgress || isScrubberTracking) {
             let feedbackGenerator = UISelectionFeedbackGenerator()
             feedbackGenerator.selectionChanged()
         }
         currentPageValue = boundedPage
         if usesWebtoonProgress {
             thumbnailScrubberView.accessibilityValue = "\(Int((webtoonProgress * 100).rounded())) percent"
+            sliderView.accessibilityValue = "\(Int((webtoonProgress * 100).rounded())) percent"
             return
         }
         let value = CGFloat(boundedPage - 1) / max(CGFloat(totalPages - 1), 1)
         thumbnailScrubberView.move(toValue: value)
         thumbnailScrubberView.accessibilityValue = "\(boundedPage) of \(totalPages)"
+        sliderView.accessibilityValue = "\(boundedPage) of \(totalPages)"
         if showingTemporaryPagesLeft {
             updatePagesLeftLabel(page: boundedPage, totalPages: totalPages)
         } else {
@@ -371,10 +392,19 @@ class ReaderToolbarView: UIView {
 
     func setSliderDirection(_ direction: ReaderThumbnailScrubberView.Direction) {
         thumbnailScrubberView.direction = direction
+        sliderView.direction = direction == .forward ? .forward : .backward
     }
 
     func moveSlider(to value: CGFloat) {
         thumbnailScrubberView.move(toValue: value)
+        sliderView.move(toValue: value)
+    }
+
+    func setUsesLegacyScrubber(_ enabled: Bool) {
+        guard usesLegacyScrubber != enabled else { return }
+        usesLegacyScrubber = enabled
+        refreshScrubberStyle()
+        updateSliderPosition()
     }
 
     func configureThumbnails(
@@ -408,12 +438,13 @@ class ReaderToolbarView: UIView {
     }
 
     private func refreshScrubberStyle() {
-        let usesThumbnails = supportsThumbnailScrubber
+        let usesThumbnails = supportsThumbnailScrubber && !usesLegacyScrubber
         let styleChanged = usesThumbnails != usesThumbnailScrubber
         usesThumbnailScrubber = usesThumbnails
+        sliderView.isHidden = !usesLegacyScrubber
         thumbnailScrubberView.isHidden = !usesThumbnails
         thumbnailScrubberView.setLoadingEnabled(usesThumbnails)
-        thumbnailPageCounterView.isHidden = !usesThumbnails || !pageCounterControlsVisible
+        thumbnailPageCounterView.isHidden = !(usesThumbnails || usesLegacyScrubber) || !pageCounterControlsVisible
         if styleChanged {
             onScrubberStyleChange?(usesThumbnails)
         }

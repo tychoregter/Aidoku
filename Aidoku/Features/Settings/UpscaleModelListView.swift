@@ -173,6 +173,7 @@ struct UpscaleModelListView: View {
                 await ModelManager.shared.removeModel(withFile: file)
                 if enabledModel == file {
                     enabledModel = nil
+                    ModelManager.shared.setEnabledModel(fileName: nil)
                 }
             }
             if let newAvailableModels = await ModelManager.shared.getAvailableModels() {
