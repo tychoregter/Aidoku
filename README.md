@@ -66,8 +66,12 @@ Some changes I made are currently non-configurable as I never planned for this t
 - Added the option to disable search history.
 - Probably more I forgot about.
 
+- Dropped support for older iOS versions because it would go against the philosophy of the fork to add fallback options for unsupported APIs and features, and I deemed it unnecessary to put time into this as this is still mostly a personal project. 
+
 
 AI disclosure: some more complex changes were made with the help of Codex, changes were audited and approved by me, a human.
+
+Also note that this fork lacks community translations for its additional features, these will all be in English only.
 
 # Aidoku - Original README
 
