@@ -15,7 +15,7 @@ struct AppIconSettingsView: View {
 
     var body: some View {
         HStack(spacing: 48) {
-            iconOption(title: "Kanji", imageName: "KanjiIconPreview", iconName: nil)
+            iconOption(title: "Aidoku", imageName: "KanjiIconPreview", iconName: nil)
             iconOption(title: "Mihon", imageName: "MihonIconPreview", iconName: "Mihon")
             iconOption(title: "Books", imageName: "BooksIconPreview", iconName: "Books")
         }
