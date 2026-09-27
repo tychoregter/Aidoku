@@ -8,11 +8,16 @@ Some changes I made are currently non-configurable as I never planned for this t
 ## List of changes (as of the moment of writing):
 
 ### Library
+- Added a continue reading section, including extra compatibility and syncing in combination with Komga.
 - Modernized the look of covers/posters.
 - Removed the title on top of covers.
 - Modernized the look of the unread/download badge.
 - Added the ability to mark items as favorite, including a filter and pinned title option.
 - Added configurable current-page previews in library context menus.
+- Added the ability to hide covers for NSFW titles and show a generic cover instead.
+- Improved cover loading, covers load almost instantly now.
+- Optimized memory usage.
+- Added option to grayscale finished titles.
 
 ### Pins
 - Added more configurable pinned title types.
@@ -35,15 +40,23 @@ Some changes I made are currently non-configurable as I never planned for this t
 - Sorting now toggles ascending/descending by selecting the same sort option again, with direction shown only for the active option similar to some Apple apps like Files.
 
 ### Reader
-- Added an optional Apple Books-inspired thumbnail page scrubber.
-- Modernized the old page scrubber.
-- UI elements hide automatically when the reader is opened.
+- Modernized the look and feel of the reader with a new Apple Books-inspired thumbnail-style scrubber.
+- Option to show reading progress as a percentage instead of page count for webtoons.
+- Option for UI elements to hide automatically when the reader is opened.
+- Optimized and improved how the reader loads pages, fixing the issue of pages taking a long time to load (mostly relevant for webtoons).
 
 ### Miscellaneous
-- Browse and History can be placed either in Settings or as dedicated tab-bar tabs.
+- Added spotlight support for searching library items.
+- Added continue reading/pins to the iOS Home Screen long press menu.
+- Browse, History and Favorites can be placed either in Settings or as dedicated tab-bar tabs.
+- Added option to move settings to a top bar button.
 - Updates was moved from the Library top bar into Settings.
 - Added tab-bar scroll-to-top.
 - Removed the refresh popup, when manually triggered by pulling down, the spinner now stays visible until the refresh finished.
+- Slightly changed the look of the browse view.
+- Added default sort options for chapters.
+- Added option to show page count in chapter lists (for compatible sources)
+- Added an option to use a FlareSolverr server to resolve source Cloudflare challenges.
 - Probably more I forgot about.
 
 
