@@ -10,6 +10,7 @@ import UIKit
 struct SmallSectionHeaderConfiguration: UIContentConfiguration {
 
     var title: String?
+    var leadingInset: CGFloat = 0
 
     func makeContentView() -> UIView & UIContentView {
         SmallSectionHeaderContentView(self)
@@ -29,6 +30,7 @@ class SmallSectionHeaderContentView: UIView, UIContentView {
     }
 
     let titleLabel = UILabel()
+    private var leadingConstraint: NSLayoutConstraint!
 
     init(_ configuration: UIContentConfiguration) {
         self.configuration = configuration
@@ -40,12 +42,12 @@ class SmallSectionHeaderContentView: UIView, UIContentView {
         titleLabel.adjustsFontForContentSizeCategory = true
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
+        leadingConstraint = titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor)
 
         NSLayoutConstraint.activate([
             titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 12),
             titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: 0),
-            // Align section titles with source icons rather than the table's edge.
-            titleLabel.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor, constant: 9.5),
+            leadingConstraint,
             titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: layoutMarginsGuide.trailingAnchor)
         ])
 
@@ -59,5 +61,6 @@ class SmallSectionHeaderContentView: UIView, UIContentView {
     func configure() {
         guard let configuration = configuration as? SmallSectionHeaderConfiguration else { return }
         titleLabel.text = configuration.title
+        leadingConstraint.constant = configuration.leadingInset
     }
 }

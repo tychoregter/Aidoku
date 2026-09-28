@@ -293,6 +293,9 @@ class LibraryViewController: OldMangaCollectionViewController {
                 case .regular:
                     header?.configure(title: NSLocalizedString("LIBRARY"))
             }
+            if let header {
+                self.alignSectionHeader(header, at: indexPath)
+            }
             return header
         }
 
@@ -341,11 +344,40 @@ class LibraryViewController: OldMangaCollectionViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
+        for indexPath in collectionView.indexPathsForVisibleSupplementaryElements(
+            ofKind: UICollectionView.elementKindSectionHeader
+        ) {
+            if let header = collectionView.supplementaryView(
+                forElementKind: UICollectionView.elementKindSectionHeader,
+                at: indexPath
+            ) as? LibrarySectionHeader {
+                alignSectionHeader(header, at: indexPath)
+            }
+        }
+
         // UIKit implements orthogonal compositional-layout sections with
         // nested scroll views. Continue Reading and horizontal pinned rows
         // should still accept a small drag when their content is shorter than
         // the viewport, then bounce back to the end of the row.
         enableHorizontalRowBouncing(in: collectionView)
+    }
+
+    private func alignSectionHeader(_ header: LibrarySectionHeader, at indexPath: IndexPath) {
+        guard let navigationBar = navigationController?.navigationBar else { return }
+        let marginFrame = navigationBar.layoutMarginsGuide.layoutFrame
+        let isRightToLeft = view.effectiveUserInterfaceLayoutDirection == .rightToLeft
+        let titleEdge = isRightToLeft ? marginFrame.maxX : marginFrame.minX
+        let titleEdgeInCollection = navigationBar.convert(
+            CGPoint(x: titleEdge, y: 0),
+            to: collectionView
+        ).x
+        let headerFrame = collectionView.collectionViewLayout.layoutAttributesForSupplementaryView(
+            ofKind: UICollectionView.elementKindSectionHeader,
+            at: indexPath
+        )?.frame ?? header.frame
+        header.leadingInset = isRightToLeft
+            ? headerFrame.maxX - titleEdgeInCollection
+            : titleEdgeInCollection - headerFrame.minX
     }
 
     private func enableHorizontalRowBouncing(in view: UIView) {
@@ -1512,7 +1544,12 @@ private final class LibrarySectionHeader: UICollectionReusableView {
     static let reuseIdentifier = "LibrarySectionHeader"
 
     private let titleButton = UIButton(type: .system)
+    private var titleLeadingConstraint: NSLayoutConstraint!
     private var titleAction: UIAction?
+
+    var leadingInset: CGFloat = 0 {
+        didSet { titleLeadingConstraint.constant = leadingInset }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -1532,9 +1569,10 @@ private final class LibrarySectionHeader: UICollectionReusableView {
         titleButton.titleLabel?.adjustsFontForContentSizeCategory = true
         titleButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleButton)
+        titleLeadingConstraint = titleButton.leadingAnchor.constraint(equalTo: leadingAnchor)
         NSLayoutConstraint.activate([
-            titleButton.leadingAnchor.constraint(equalTo: leadingAnchor),
-            titleButton.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -18),
+            titleLeadingConstraint,
+            titleButton.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -20),
             titleButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)
         ])
     }

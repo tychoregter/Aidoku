@@ -149,6 +149,35 @@ class BrowseViewController: BaseTableViewController {
         }
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        for section in 0..<tableView.numberOfSections {
+            guard
+                let header = tableView.headerView(forSection: section),
+                var configuration = header.contentConfiguration as? SmallSectionHeaderConfiguration
+            else { continue }
+            let leadingInset = sectionTitleLeadingInset(for: header)
+            if configuration.leadingInset != leadingInset {
+                configuration.leadingInset = leadingInset
+                header.contentConfiguration = configuration
+            }
+        }
+    }
+
+    private func sectionTitleLeadingInset(for header: UIView) -> CGFloat {
+        guard let navigationBar = navigationController?.navigationBar else {
+            return view.directionalLayoutMargins.leading
+        }
+        let marginFrame = navigationBar.layoutMarginsGuide.layoutFrame
+        let isRightToLeft = view.effectiveUserInterfaceLayoutDirection == .rightToLeft
+        let titleEdge = isRightToLeft ? marginFrame.maxX : marginFrame.minX
+        let titleEdgeInTable = navigationBar.convert(CGPoint(x: titleEdge, y: 0), to: tableView).x
+        let headerFrame = header.convert(header.bounds, to: tableView)
+        return isRightToLeft
+            ? headerFrame.maxX - titleEdgeInTable
+            : titleEdgeInTable - headerFrame.minX
+    }
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.isToolbarHidden = true
@@ -358,6 +387,8 @@ extension BrowseViewController {
             case .external:
                 config.title = NSLocalizedString("EXTERNAL")
         }
+        config.leadingInset = navigationController?.navigationBar.layoutMarginsGuide.layoutFrame.minX
+            ?? view.directionalLayoutMargins.leading
         cell.contentConfiguration = config
         return cell
     }

@@ -292,7 +292,7 @@ extension OldMangaCollectionViewController {
         group.interItemSpacing = .fixed(spacing)
 
         let section = NSCollectionLayoutSection(group: group)
-        section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16)
+        section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 18, bottom: 0, trailing: 18)
         section.interGroupSpacing = spacing
 
         return section
@@ -318,7 +318,7 @@ extension OldMangaCollectionViewController {
         group.interItemSpacing = .fixed(itemSpacing)
 
         let section = NSCollectionLayoutSection(group: group)
-        section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 18, bottom: 0, trailing: 18)
+        section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20)
         section.interGroupSpacing = itemSpacing
 
         return section
@@ -326,6 +326,7 @@ extension OldMangaCollectionViewController {
 
     static func makeHorizontalGridLayoutSection(environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection {
         let itemsPerRow = gridItemsPerRow(environment: environment)
+        let scale: CGFloat = 1.0
 
         let item = NSCollectionLayoutItem(layoutSize: NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1),
@@ -333,14 +334,14 @@ extension OldMangaCollectionViewController {
         ))
         let group = NSCollectionLayoutGroup.horizontal(
             layoutSize: NSCollectionLayoutSize(
-                widthDimension: .fractionalWidth(1 / CGFloat(itemsPerRow)),
-                heightDimension: .fractionalWidth(3 / (2 * CGFloat(itemsPerRow)))
+                widthDimension: .fractionalWidth(scale / CGFloat(itemsPerRow)),
+                heightDimension: .fractionalWidth(scale * 3 / (2 * CGFloat(itemsPerRow)))
             ),
             subitems: [item]
         )
 
         let section = NSCollectionLayoutSection(group: group)
-        section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 18, bottom: 0, trailing: 18)
+        section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20)
         section.interGroupSpacing = itemSpacing
         section.orthogonalScrollingBehavior = .continuous
         return section
