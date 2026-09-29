@@ -9,6 +9,8 @@ import SwiftUI
 import NukeUI
 
 struct SourceIconView: View {
+    @Environment(\.displayScale) private var displayScale
+
     let sourceId: String
     var imageUrl: URL?
     var iconSize: CGFloat = 48
@@ -33,13 +35,18 @@ struct SourceIconView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12 * iconSize / 48, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12 * iconSize / 48, style: .continuous)
-                        .strokeBorder(MangaCoverBorderStyle.swiftUIColor, lineWidth: 1)
+                        .strokeBorder(
+                            MangaCoverBorderStyle.swiftUIColor,
+                            lineWidth: MangaCoverBorderStyle.width(displayScale: displayScale)
+                        )
                 )
         }
     }
 }
 
 private struct IconView: View {
+    @Environment(\.displayScale) private var displayScale
+
     let imageUrl: URL?
     var iconSize: CGFloat = 48
 
@@ -52,7 +59,10 @@ private struct IconView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12 * iconSize / 48, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12 * iconSize / 48, style: .continuous)
-                .strokeBorder(MangaCoverBorderStyle.swiftUIColor, lineWidth: 1)
+                .strokeBorder(
+                    MangaCoverBorderStyle.swiftUIColor,
+                    lineWidth: MangaCoverBorderStyle.width(displayScale: displayScale)
+                )
         )
     }
 }

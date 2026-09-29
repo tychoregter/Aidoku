@@ -8,9 +8,19 @@
 import AidokuRunner
 import SwiftUI
 
+final class MangaToolbarTransitionState: ObservableObject {
+    @Published var isLeaving = false
+}
+
 class MangaViewController: UIHostingController<MangaView> {
     let manga: AidokuRunner.Manga
     let mangaInfo: MangaInfo?
+    private let toolbarTransitionState: MangaToolbarTransitionState
+    private var previousTabBarAppearance: (
+        standard: UITabBarAppearance,
+        scrollEdge: UITabBarAppearance?,
+        isTranslucent: Bool
+    )?
 
     convenience init(
         source: AidokuRunner.Source? = nil,
@@ -39,12 +49,15 @@ class MangaViewController: UIHostingController<MangaView> {
     ) {
         self.manga = manga
         self.mangaInfo = mangaInfo
+        let toolbarTransitionState = MangaToolbarTransitionState()
+        self.toolbarTransitionState = toolbarTransitionState
         super.init(rootView: MangaView(
             source: source,
             manga: manga,
             path: NavigationCoordinator(rootViewController: parent),
             chapterKey: chapterKey,
-            openAction: openAction
+            openAction: openAction,
+            toolbarTransitionState: toolbarTransitionState
         ))
 
         navigationItem.title = manga.title
@@ -54,5 +67,43 @@ class MangaViewController: UIHostingController<MangaView> {
 
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        toolbarTransitionState.isLeaving = false
+
+        guard let tabBar = tabBarController?.tabBar else { return }
+        if previousTabBarAppearance == nil {
+            previousTabBarAppearance = (
+                tabBar.standardAppearance,
+                tabBar.scrollEdgeAppearance,
+                tabBar.isTranslucent
+            )
+        }
+
+        // Keep the system's floating controls, but let the scrolling page show
+        // through the bar in both its normal and scroll-edge states.
+        let appearance = (tabBar.standardAppearance.copy() as? UITabBarAppearance) ?? UITabBarAppearance()
+        appearance.backgroundColor = .clear
+        appearance.backgroundEffect = nil
+        appearance.backgroundImage = nil
+        appearance.shadowColor = .clear
+        appearance.shadowImage = nil
+        tabBar.standardAppearance = appearance
+        tabBar.scrollEdgeAppearance = appearance
+        tabBar.isTranslucent = true
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        toolbarTransitionState.isLeaving = true
+
+        if let previousTabBarAppearance, let tabBar = tabBarController?.tabBar {
+            tabBar.standardAppearance = previousTabBarAppearance.standard
+            tabBar.scrollEdgeAppearance = previousTabBarAppearance.scrollEdge
+            tabBar.isTranslucent = previousTabBarAppearance.isTranslucent
+            self.previousTabBarAppearance = nil
+        }
     }
 }

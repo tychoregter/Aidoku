@@ -226,6 +226,11 @@ extension Settings {
                 value: .toggle(.init())
             ),
             .init(
+                key: AppSettings.library.showCoverAuthors.key,
+                title: NSLocalizedString("SHOW_COVER_AUTHORS", value: "Show Author on Covers", comment: "Show the author instead of the chapter count beneath regular library covers"),
+                value: .toggle(.init())
+            ),
+            .init(
                 key: AppSettings.appearance.blurNSFWCovers.key,
                 title: Bundle.main.localizedString(
                     forKey: "BLUR_NSFW_COVERS",
@@ -1152,32 +1157,6 @@ extension Settings {
             ))
         ),
         .init(
-            title: NSLocalizedString("LOGGING"),
-            value: .group(.init(items: [
-                .init(
-                    key: "Logs.logServer",
-                    title: NSLocalizedString("LOG_SERVER"),
-                    value: .text(.init(
-                        placeholder: "http://127.0.0.1",
-                        autocapitalizationType: 0,
-                        keyboardType: 3,
-                        returnKeyType: 9,
-                        autocorrectionDisabled: true,
-                    ))
-                ),
-                .init(
-                    key: "Logs.export",
-                    title: NSLocalizedString("EXPORT_LOGS"),
-                    value: .button(.init())
-                ),
-                .init(
-                    key: "Logs.display",
-                    title: NSLocalizedString("DISPLAY_LOGS"),
-                    value: .button(.init())
-                )
-            ]))
-        ),
-        .init(
             title: NSLocalizedString("ADVANCED"),
             value: .group(.init(items: [
                 .init(
@@ -1214,6 +1193,42 @@ extension Settings {
                     key: "Advanced.reset",
                     title: NSLocalizedString("RESET"),
                     value: .button(.init())
+                )
+            ]))
+        ),
+        .init(
+            title: NSLocalizedString("DEVELOPER", value: "Developer", comment: "Developer"),
+            value: .group(.init(items: [
+                .init(
+                    title: NSLocalizedString("LOGGING"),
+                    value: .group(.init(items: [
+                        .init(
+                            key: "Logs.logServer",
+                            title: NSLocalizedString("LOG_SERVER"),
+                            value: .text(.init(
+                                placeholder: "http://127.0.0.1",
+                                autocapitalizationType: 0,
+                                keyboardType: 3,
+                                returnKeyType: 9,
+                                autocorrectionDisabled: true,
+                            ))
+                        ),
+                        .init(
+                            key: "Logs.export",
+                            title: NSLocalizedString("EXPORT_LOGS"),
+                            value: .button(.init())
+                        ),
+                        .init(
+                            key: "Logs.display",
+                            title: NSLocalizedString("DISPLAY_LOGS"),
+                            value: .button(.init())
+                        )
+                    ]))
+                ),
+                .init(
+                    key: AppSettings.general.developerMode.key,
+                    title: NSLocalizedString("DEVELOPER_MODE", value: "Screenshot Mode", comment: "Screenshot Mode"),
+                    value: .toggle(.init())
                 )
             ]))
         )

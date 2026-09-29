@@ -10,6 +10,8 @@ import SwiftUI
 import NukeUI
 
 struct MangaGridItem: View {
+    @Environment(\.displayScale) private var displayScale
+
     var source: AidokuRunner.Source?
     let title: String
     let coverImage: String
@@ -41,7 +43,10 @@ struct MangaGridItem: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(MangaCoverBorderStyle.swiftUIColor, lineWidth: MangaCoverBorderStyle.width)
+                    .strokeBorder(
+                        MangaCoverBorderStyle.swiftUIColor,
+                        lineWidth: MangaCoverBorderStyle.width(displayScale: displayScale)
+                    )
             )
         if coverImage.hasSuffix("gif") {
             // if the image is a gif, we can't use drawingGroup (static image)
@@ -66,13 +71,24 @@ struct MangaGridItem: View {
     }
 
     static var placeholder: some View {
+        MangaGridItemPlaceholder()
+    }
+}
+
+private struct MangaGridItemPlaceholder: View {
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
         Rectangle()
             .fill(Color(uiColor: .secondarySystemFill))
             .aspectRatio(2/3, contentMode: .fill)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(MangaCoverBorderStyle.swiftUIColor, lineWidth: MangaCoverBorderStyle.width)
+                    .strokeBorder(
+                        MangaCoverBorderStyle.swiftUIColor,
+                        lineWidth: MangaCoverBorderStyle.width(displayScale: displayScale)
+                    )
             )
     }
 }

@@ -12,7 +12,13 @@ import Nuke
 import NukeUI
 
 enum MangaCoverBorderStyle {
-    static let width: CGFloat = 0.5
+    static func width(displayScale: CGFloat) -> CGFloat {
+        2 / max(displayScale, 1)
+    }
+
+    static func width(for traits: UITraitCollection) -> CGFloat {
+        width(displayScale: traits.displayScale)
+    }
 
     static func color(for traits: UITraitCollection) -> UIColor {
         traits.userInterfaceStyle == .dark
@@ -26,14 +32,20 @@ enum MangaCoverBorderStyle {
 }
 
 struct MangaCoverView: View {
+    @Environment(\.displayScale) private var displayScale
+
     var source: AidokuRunner.Source?
 
     let coverImage: String
     var width: CGFloat?
     var height: CGFloat?
     var downsampleWidth: CGFloat?
+    var coverDownsampleSide: CGFloat?
     var contentMode: ContentMode = .fill
+    var cornerRadius: CGFloat = 12
+    var borderColor: Color? = nil
     var placeholder = "MangaPlaceholder"
+    var privacyPlaceholder = false
     var bookmarked: Bool = false
 
     var body: some View {
@@ -43,17 +55,22 @@ struct MangaCoverView: View {
             width: width,
             height: height,
             downsampleWidth: downsampleWidth,
+            coverDownsampleSide: coverDownsampleSide,
             contentMode: contentMode,
-            placeholder: placeholder
+            placeholder: placeholder,
+            privacyPlaceholder: privacyPlaceholder
         )
         .overlay(
             bookmarkView,
             alignment: .topTrailing
         )
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(MangaCoverBorderStyle.swiftUIColor, lineWidth: MangaCoverBorderStyle.width)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(
+                    borderColor ?? MangaCoverBorderStyle.swiftUIColor,
+                    lineWidth: MangaCoverBorderStyle.width(displayScale: displayScale)
+                )
         )
     }
 

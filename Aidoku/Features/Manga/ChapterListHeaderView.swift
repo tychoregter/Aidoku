@@ -9,8 +9,6 @@ import SwiftUI
 import AidokuRunner
 
 struct ChapterListHeaderView: View {
-    private let chapterCount: Int?
-
     @Binding var sortOption: ChapterSortOption
     @Binding var sortAscending: Bool
 
@@ -20,23 +18,22 @@ struct ChapterListHeaderView: View {
 
     @Binding var displayMode: ChapterTitleDisplayMode
 
-    private var showMenu: Bool = false
     private var languages: [String] = []
     private var scanlators: [String] = []
     private var mangaId: MangaIdentifier
+    private var usesLightMenuLabel: Bool
 
     init(
         allChapters: [AidokuRunner.Chapter]? = nil,
-        filteredChapters: [AidokuRunner.Chapter]? = nil,
         sortOption: Binding<ChapterSortOption>,
         sortAscending: Binding<Bool>,
         filters: Binding<[ChapterFilterOption]>,
         langFilter: Binding<String?>,
         scanlatorFilter: Binding<[String]>,
         displayMode: Binding<ChapterTitleDisplayMode>,
-        mangaId: MangaIdentifier
+        mangaId: MangaIdentifier,
+        usesLightMenuLabel: Bool = false
     ) {
-        self.chapterCount = filteredChapters?.count
         self._sortOption = sortOption
         self._sortAscending = sortAscending
         self._filters = filters
@@ -44,6 +41,7 @@ struct ChapterListHeaderView: View {
         self._scanlatorFilter = scanlatorFilter
         self._displayMode = displayMode
         self.mangaId = mangaId
+        self.usesLightMenuLabel = usesLightMenuLabel
 
         if let allChapters, !allChapters.isEmpty {
             var languages: Set<String> = []
@@ -62,33 +60,17 @@ struct ChapterListHeaderView: View {
             }
             self.languages = languages.sorted()
             self.scanlators = scanlators.sorted()
-            self.showMenu = true
         }
     }
 
     var body: some View {
         HStack {
-            let text = if let chapterCount {
-                if chapterCount == 0 {
-                    NSLocalizedString("NO_CHAPTERS")
-                } else if chapterCount == 1 {
-                    NSLocalizedString("1_CHAPTER").lowercased()
-                } else {
-                    String(format: NSLocalizedString("%i_CHAPTERS"), chapterCount).lowercased()
-                }
-            } else {
-                NSLocalizedString("LOADING_ELLIPSIS")
-            }
-            Text(text)
-                .font(.headline)
-                .transition(.scale) // for some reason this makes it animate correctly
+            Text(NSLocalizedString("CHAPTERS"))
+                .font(.system(size: 20, weight: .semibold))
                 .id("chapters")
 
             Spacer()
 
-            if showMenu {
-                menu
-            }
         }
     }
 
@@ -182,8 +164,7 @@ struct ChapterListHeaderView: View {
             .menuActionDismissDisabled()
         } label: {
             Image(systemName: "line.3.horizontal.decrease")
-                .font(.system(size: 21, weight: .regular))
+                .foregroundStyle(usesLightMenuLabel ? Color.white : Color.primary)
         }
-        .foregroundStyle(.tint)
     }
 }

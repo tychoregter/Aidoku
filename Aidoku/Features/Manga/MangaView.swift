@@ -11,6 +11,7 @@ import SwiftUI
 
 struct MangaView: View {
     @StateObject private var viewModel: ViewModel
+    @ObservedObject private var toolbarTransitionState: MangaToolbarTransitionState
 
     @State private var targetChapterKey: String?
     @State private var openAction: OpenAction?
@@ -18,19 +19,24 @@ struct MangaView: View {
     @State private var editMode = EditMode.inactive
     @State private var selectedChapters = Set<String>()
 
-    @State private var showingCoverView = false
     @State private var showRemoveAllConfirm = false
     @State private var showRemoveSelectedConfirm = false
     @State private var showConnectionAlert = false
 
     @State private var detailsLoaded = false
-    @State private var descriptionExpanded = false
+    @State private var isOverHero = true
+    @State private var heroBottom: CGFloat?
+    @State private var originalNavigationTint: UIColor?
+    @State private var statusBarStyleOwner = UUID()
+
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var loadingAlert: UIAlertController?
 
     @State private var openChapter: AidokuRunner.Chapter?
 
     @StateObject private var refreshController = RefreshController()
+    @StateObject private var developerMode = UserDefaultsBool(key: AppSettings.general.developerMode.key)
 
     private var path: NavigationCoordinator
 
@@ -42,16 +48,22 @@ struct MangaView: View {
         case readLatest
     }
 
+    private var usesLightToolbarIcons: Bool {
+        isOverHero && !toolbarTransitionState.isLeaving
+    }
+
     init(
         source: AidokuRunner.Source? = nil,
         manga: AidokuRunner.Manga,
         path: NavigationCoordinator,
         chapterKey: String? = nil,
-        openAction: OpenAction? = nil
+        openAction: OpenAction? = nil,
+        toolbarTransitionState: MangaToolbarTransitionState = MangaToolbarTransitionState()
     ) {
         let source = source ?? SourceManager.shared.store.source(for: manga.sourceKey)
         self._viewModel = StateObject(wrappedValue: ViewModel(source: source, manga: manga))
         self.path = path
+        self.toolbarTransitionState = toolbarTransitionState
         self._targetChapterKey = State(initialValue: chapterKey)
         self._openAction = State(initialValue: openAction)
     }
@@ -59,7 +71,8 @@ struct MangaView: View {
     var body: some View {
         let list = ScrollViewReader { proxy in
             List(selection: $selectedChapters) {
-                headerView
+                headerView(section: .cover)
+                headerView(section: .details)
 
                 if let error = viewModel.error {
                     ErrorView(
@@ -79,13 +92,13 @@ struct MangaView: View {
                         viewForChapter(chapter, index: index)
                     }
 
-                    // hide the separator if there are no chapters, or all the chapters are filtered and the other section is shown
-                    if !viewModel.chapters.isEmpty || (!(viewModel.manga.chapters?.isEmpty ?? true) && !viewModel.otherDownloadedChapters.isEmpty) {
-                        bottomSeparator
-                    }
                 }
 
                 if !viewModel.otherDownloadedChapters.isEmpty {
+                    if !viewModel.chapters.isEmpty || !(viewModel.manga.chapters?.isEmpty ?? true) {
+                        bottomSeparator
+                    }
+
                     VStack {
                         HStack {
                             Text(NSLocalizedString("DOWNLOADED_CHAPTERS"))
@@ -104,18 +117,24 @@ struct MangaView: View {
                         viewForChapter(chapter, index: index, secondSection: true)
                     }
 
-                    bottomSeparator
                 }
+                Color.clear
+                    .frame(height: 16)
+                    .listRowInsets(.zero)
+                    .listRowBackground(Color(uiColor: .systemBackground))
+                    .listRowSeparator(.hidden)
             }
             // decrease the min row height for the bottom separator/spacing
             .environment(\.defaultMinListRowHeight, 10)
             .transition(.opacity)
             .listStyle(.plain)
+            .contentMargins(.top, 0, for: .scrollContent)
             .refreshable {
                 await viewModel.refresh()
             }
             .introspect(.list, on: .iOS(.v18, .v26, .v27)) { list in
                 refreshController.list = list
+                list.refreshControl?.tintColor = .white
             }
             .navigationBarTitleDisplayMode(.inline)
             .confirmationDialogOrAlert(
@@ -168,14 +187,33 @@ struct MangaView: View {
                 }
             )
             .scrollBackgroundHiddenPlease()
-            .navigationBarBackButtonHidden(editMode == .active)
-            .fullScreenCover(isPresented: $showingCoverView) {
-                MangaCoverPageView(
-                    source: viewModel.source,
-                    manga: viewModel.manga
-                )
-                .navigationTransitionZoom(sourceID: viewModel.manga.identifier, in: transitionNamespace)
+            .background {
+                GeometryReader { geometry in
+                    ZStack {
+                        Color(uiColor: .systemBackground)
+                        MangaDetailsBackdrop(
+                            source: viewModel.source,
+                            coverImage: viewModel.manga.cover ?? "",
+                            privacyPlaceholder: developerMode.value
+                        )
+                        .mask(alignment: .top) {
+                            Rectangle()
+                                .frame(height: max(
+                                    0,
+                                    (heroBottom ?? geometry.frame(in: .global).maxY)
+                                        - geometry.frame(in: .global).minY
+                                ))
+                        }
+                    }
+                }
+                .ignoresSafeArea()
             }
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .tabBar)
+            .toolbarColorScheme(isOverHero ? .dark : colorScheme, for: .navigationBar)
+            .onChange(of: isOverHero) { _ in updateNavigationAppearance() }
+            .onChange(of: colorScheme) { _ in updateNavigationAppearance() }
+            .navigationBarBackButtonHidden(editMode == .active)
             .task {
                 guard !detailsLoaded else { return }
 
@@ -215,8 +253,18 @@ struct MangaView: View {
             }
             .onAppear {
                 viewModel.refreshReadButtonState()
+                updateNavigationAppearance()
+            }
+            .onDisappear {
+                if let navigationController = path.navigationController as? NavigationController {
+                    navigationController.setStatusBarStyleOverride(nil, owner: statusBarStyleOwner)
+                    if let originalNavigationTint {
+                        navigationController.navigationBar.tintColor = originalNavigationTint
+                    }
+                }
             }
             .onChange(of: editMode) { mode in
+                updateNavigationAppearance()
                 guard let navigationController = path.rootViewController?.navigationController
                 else { return }
                 if mode == .active {
@@ -293,49 +341,67 @@ struct MangaView: View {
 }
 
 extension MangaView {
-    var headerView: some View {
-        ZStack {
-            MangaDetailsHeaderView(
-                source: $viewModel.source,
-                manga: $viewModel.manga,
-                chapters: $viewModel.chapters,
-                nextChapter: $viewModel.nextChapter,
-                readingInProgress: $viewModel.readingInProgress,
-                allChaptersLocked: $viewModel.allChaptersLocked,
-                allChaptersRead: $viewModel.allChaptersRead,
-                initialDataLoaded: $viewModel.initialDataLoaded,
-                bookmarked: $viewModel.bookmarked,
-                hasCategories: $viewModel.hasCategories,
-                coverPressed: $showingCoverView,
-                chapterSortOption: $viewModel.chapterSortOption,
-                chapterSortAscending: $viewModel.chapterSortAscending,
-                filters: $viewModel.chapterFilters,
-                langFilter: $viewModel.chapterLangFilter,
-                scanlatorFilter: $viewModel.chapterScanlatorFilter,
-                descriptionExpanded: $descriptionExpanded,
-                chapterTitleDisplayMode: $viewModel.chapterTitleDisplayMode,
-                hasOtherDownloads: !viewModel.otherDownloadedChapters.isEmpty,
-                transitionNamespace: transitionNamespace,
-                onTitlePressed: {
-                    guard let tabBarController = path.rootViewController?.tabBarController as? TabBarController else {
-                        return
-                    }
-                    tabBarController.search(for: viewModel.manga.title)
-                },
-                onTrackerButtonPressed: {
-                    let vc = TrackerModalViewController(manga: viewModel.manga)
-                    vc.modalPresentationStyle = .overFullScreen
-                    path.present(vc, animated: false)
-                },
-                onReadButtonPressed: {
-                    if let nextChapter = viewModel.nextChapter {
-                        openChapter = nextChapter
-                    }
-                }
-            )
-            .environmentObject(path)
-            .frame(minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
+    private func updateNavigationAppearance() {
+        guard let navigationController = path.navigationController as? NavigationController else { return }
+        if originalNavigationTint == nil {
+            originalNavigationTint = navigationController.navigationBar.tintColor
         }
+        navigationController.navigationBar.tintColor = editMode == .active
+            ? UIColor(Color.accentColor)
+            : (isOverHero ? .white : .label)
+        let style: UIStatusBarStyle = isOverHero || colorScheme == .dark ? .lightContent : .darkContent
+        navigationController.setStatusBarStyleOverride(
+            style,
+            owner: statusBarStyleOwner
+        )
+    }
+
+    private func updateHeroPosition(_ bottom: CGFloat) {
+        guard let navigationBar = path.navigationController?.navigationBar else { return }
+        if heroBottom == nil || abs((heroBottom ?? 0) - bottom) >= 0.5 {
+            heroBottom = bottom
+        }
+        let navigationBarBottom = navigationBar.convert(
+            CGPoint(x: 0, y: navigationBar.bounds.maxY), to: nil
+        ).y
+        let overHero = bottom > navigationBarBottom
+        if isOverHero != overHero {
+            isOverHero = overHero
+        }
+    }
+
+    func headerView(section: MangaDetailsHeaderView.Section) -> some View {
+        MangaDetailsHeaderView(
+            section: section,
+            source: $viewModel.source,
+            manga: $viewModel.manga,
+            chapters: $viewModel.chapters,
+            nextChapter: $viewModel.nextChapter,
+            readingInProgress: $viewModel.readingInProgress,
+            allChaptersLocked: $viewModel.allChaptersLocked,
+            allChaptersRead: $viewModel.allChaptersRead,
+            bookmarked: $viewModel.bookmarked,
+            chapterSortOption: $viewModel.chapterSortOption,
+            chapterSortAscending: $viewModel.chapterSortAscending,
+            filters: $viewModel.chapterFilters,
+            langFilter: $viewModel.chapterLangFilter,
+            scanlatorFilter: $viewModel.chapterScanlatorFilter,
+            chapterTitleDisplayMode: $viewModel.chapterTitleDisplayMode,
+            hasOtherDownloads: !viewModel.otherDownloadedChapters.isEmpty,
+            onHeroBottomChange: updateHeroPosition,
+            onTitlePressed: {
+                guard let tabBarController = path.rootViewController?.tabBarController as? TabBarController else {
+                    return
+                }
+                tabBarController.search(for: viewModel.manga.title)
+            },
+            onReadButtonPressed: {
+                if let nextChapter = viewModel.nextChapter {
+                    openChapter = nextChapter
+                }
+            }
+        )
+        .environmentObject(path)
         .listRowInsets(.zero)
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
@@ -405,6 +471,7 @@ extension MangaView {
         .id(chapter.key)
         .tag(chapter.key, selectable: !locked)
         .matchedTransitionSourcePlease(id: chapter, in: transitionNamespace)
+        .listRowSeparator(last ? .hidden : .visible)
     }
 
     @ViewBuilder
@@ -561,6 +628,14 @@ extension MangaView {
         RightNavbarButton(
             viewModel: viewModel,
             refreshController: refreshController,
+            usesLightLabel: usesLightToolbarIcons,
+            setEditing: { editing in
+                // Set the native bar tint before the selection button is created.
+                path.navigationController?.navigationBar.tintColor = editing
+                    ? UIColor(Color.accentColor)
+                    : (isOverHero ? .white : .label)
+                editMode = editing ? .active : .inactive
+            },
             markAllRead: {
                 let chapters = viewModel.listedChapters
                 // only show loading indicator for a larger number of chapters
@@ -600,6 +675,11 @@ extension MangaView {
                 path.present(viewController)
             },
             showShareSheet: showShareSheet(item:),
+            openTracker: {
+                let vc = TrackerModalViewController(manga: viewModel.manga)
+                vc.modalPresentationStyle = .overFullScreen
+                path.present(vc, animated: false)
+            },
             removeDownloads: {
                 showRemoveAllConfirm = true
             },
@@ -611,6 +691,25 @@ extension MangaView {
 extension MangaView {
     @ToolbarContentBuilder
     var toolbarContentBase: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            let chapters = viewModel.manga.chapters ?? viewModel.chapters
+            if !chapters.isEmpty {
+                ChapterListHeaderView(
+                    allChapters: chapters,
+                    sortOption: $viewModel.chapterSortOption,
+                    sortAscending: $viewModel.chapterSortAscending,
+                    filters: $viewModel.chapterFilters,
+                    langFilter: $viewModel.chapterLangFilter,
+                    scanlatorFilter: $viewModel.chapterScanlatorFilter,
+                    displayMode: $viewModel.chapterTitleDisplayMode,
+                    mangaId: viewModel.manga.identifier,
+                    usesLightMenuLabel: usesLightToolbarIcons
+                ).menu
+            }
+        }
+
+        ToolbarSpacer(placement: .topBarTrailing)
+
         ToolbarItem(placement: .topBarTrailing) {
             rightNavbarButton
         }
@@ -629,8 +728,10 @@ extension MangaView {
                 } label: {
                     if allSelected {
                         Text(NSLocalizedString("DESELECT_ALL"))
+                            .foregroundStyle(usesLightToolbarIcons ? Color.white : Color.primary)
                     } else {
                         Text(NSLocalizedString("SELECT_ALL"))
+                            .foregroundStyle(usesLightToolbarIcons ? Color.white : Color.primary)
                     }
                 }
                 .disabled(selectableCount == 0)
@@ -833,41 +934,54 @@ private struct ChapterCellView<T: View>: View, Equatable {
     }
 
     var body: some View {
-        let view = HStack {
-            ChapterTableCell(
-                source: source,
-                manga: manga,
-                sourceKey: sourceKey,
-                chapter: chapter,
-                read: read,
-                page: page,
-                downloadStatus: downloadStatus,
-                downloadProgress: downloadProgress,
-                displayMode: displayMode
-            )
-        }
+        let view = ChapterTableCell(
+            source: source,
+            manga: manga,
+            sourceKey: sourceKey,
+            chapter: chapter,
+            read: read,
+            page: page,
+            downloadStatus: downloadStatus,
+            downloadProgress: downloadProgress,
+            displayMode: displayMode
+        )
         if isEditing {
             view
         } else {
-            Button {
-                onPressed?()
-            } label: {
-                view
-            }
-            .tint(.primary)
-            .contextMenu {
-                if !locked {
-                    contextMenu?()
-                }
-            } preview: {
-                if AppSettings.library.contextMenuPagePreviews.get() {
-                    ChapterPageContextPreview(
-                        manga: manga,
-                        chapter: chapter,
-                        pageIndex: max((page ?? 1) - 1, 0)
-                    )
-                } else {
+            HStack(spacing: 0) {
+                Button {
+                    onPressed?()
+                } label: {
                     view
+                }
+                .tint(.primary)
+                .contextMenu {
+                    if !locked {
+                        contextMenu?()
+                    }
+                } preview: {
+                    if AppSettings.library.contextMenuPagePreviews.get() {
+                        ChapterPageContextPreview(
+                            manga: manga,
+                            chapter: chapter,
+                            pageIndex: max((page ?? 1) - 1, 0)
+                        )
+                    } else {
+                        view
+                    }
+                }
+
+                if !locked {
+                    Menu {
+                        contextMenu?()
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(Color(uiColor: .secondaryLabel))
+                            .frame(width: 36, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .padding(.trailing, 11)
                 }
             }
         }
@@ -886,44 +1000,57 @@ private struct ChapterCellView<T: View>: View, Equatable {
 }
 
 private struct RightNavbarButton: View, Equatable {
+    private let mangaId: MangaIdentifier
     private let bookmarked: Bool
     private let hasCategories: Bool
     private let url: URL?
     private let hasDownloads: Bool
     private let isEditing: Bool
+    private let usesLightLabel: Bool
     private let refresh: () async -> Void
 
+    let setEditing: (Bool) -> Void
     let markAllRead: () -> Void
     let markAllUnread: () -> Void
     let editCategories: () -> Void
     let migrate: () -> Void
     let showShareSheet: (URL) -> Void
+    let openTracker: () -> Void
     let removeDownloads: () -> Void
 
     @Binding var editMode: EditMode
+    @State private var isFavorite = false
+    @State private var hasAvailableTrackers = false
 
     init(
         viewModel: MangaView.ViewModel,
         refreshController: RefreshController,
+        usesLightLabel: Bool,
+        setEditing: @escaping (Bool) -> Void,
         markAllRead: @escaping () -> Void,
         markAllUnread: @escaping () -> Void,
         editCategories: @escaping () -> Void,
         migrate: @escaping () -> Void,
         showShareSheet: @escaping (URL) -> Void,
+        openTracker: @escaping () -> Void,
         removeDownloads: @escaping () -> Void,
         editMode: Binding<EditMode>
     ) {
+        self.mangaId = viewModel.manga.identifier
+        self.usesLightLabel = usesLightLabel
         self.bookmarked = viewModel.bookmarked
         self.hasCategories = viewModel.hasCategories
         self.url = viewModel.manga.url
         self.hasDownloads = viewModel.downloadStatus.contains(where: { $0.value == .finished || $0.value == .failed })
         self.refresh = refreshController.refresh
 
+        self.setEditing = setEditing
         self.markAllRead = markAllRead
         self.markAllUnread = markAllUnread
         self.editCategories = editCategories
         self.migrate = migrate
         self.showShareSheet = showShareSheet
+        self.openTracker = openTracker
         self.removeDownloads = removeDownloads
 
         self.isEditing = editMode.wrappedValue == .active
@@ -933,12 +1060,38 @@ private struct RightNavbarButton: View, Equatable {
     var body: some View {
         if editMode == .inactive {
             Menu {
-                if let url {
+                if bookmarked || hasAvailableTrackers || url != nil {
                     Section {
-                        Button {
-                            showShareSheet(url)
-                        } label: {
-                            Label(NSLocalizedString("SHARE"), systemImage: "square.and.arrow.up")
+                        if let url {
+                            Button {
+                                showShareSheet(url)
+                            } label: {
+                                Label(NSLocalizedString("SHARE"), systemImage: "square.and.arrow.up")
+                            }
+                        }
+                        if bookmarked {
+                            Button {
+                                let identifier = mangaId.description
+                                var favoriteIds = Set(UserDefaults.standard.stringArray(forKey: "library.favoriteMangaIdentifiers") ?? [])
+                                if !favoriteIds.insert(identifier).inserted {
+                                    favoriteIds.remove(identifier)
+                                }
+                                UserDefaults.standard.set(Array(favoriteIds), forKey: "library.favoriteMangaIdentifiers")
+                                isFavorite.toggle()
+                                NotificationCenter.default.post(name: .favoriteChanged, object: mangaId)
+                            } label: {
+                                Label(
+                                    NSLocalizedString(isFavorite ? "UNFAVORITE" : "FAVORITE"),
+                                    systemImage: isFavorite ? "star.slash" : "star"
+                                )
+                            }
+                        }
+                        if hasAvailableTrackers {
+                            Button {
+                                openTracker()
+                            } label: {
+                                Label(NSLocalizedString("TRACKING"), systemImage: "clock.arrow.2.circlepath")
+                            }
                         }
                     }
                 }
@@ -957,9 +1110,7 @@ private struct RightNavbarButton: View, Equatable {
                         }
                     }
                     Button {
-                        withAnimation {
-                            editMode = .active
-                        }
+                        setEditing(true)
                     } label: {
                         Label(NSLocalizedString("SELECT_CHAPTERS"), systemImage: "checkmark.circle")
                     }
@@ -1002,23 +1153,65 @@ private struct RightNavbarButton: View, Equatable {
                 }
             } label: {
                 MoreIcon()
+                    .foregroundStyle(usesLightLabel ? Color.white : Color.primary)
+            }
+            .task(id: mangaId) {
+                isFavorite = UserDefaults.standard.stringArray(forKey: "library.favoriteMangaIdentifiers")?
+                    .contains(mangaId.description) ?? false
+                hasAvailableTrackers = await TrackerManager.shared.hasAvailableTrackers(mangaId: mangaId)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .favoriteChanged)) { notification in
+                guard let changedId = notification.object as? MangaIdentifier, changedId == mangaId else { return }
+                isFavorite = UserDefaults.standard.stringArray(forKey: "library.favoriteMangaIdentifiers")?
+                    .contains(mangaId.description) ?? false
             }
         } else {
             DoneButton {
-                withAnimation {
-                    editMode = .inactive
-                }
+                setEditing(false)
             }
         }
 
     }
 
     static nonisolated func == (lhs: RightNavbarButton, rhs: RightNavbarButton) -> Bool {
-        lhs.bookmarked == rhs.bookmarked
+        lhs.mangaId == rhs.mangaId
+            && lhs.bookmarked == rhs.bookmarked
             && lhs.hasCategories == rhs.hasCategories
             && lhs.url == rhs.url
             && lhs.hasDownloads == rhs.hasDownloads
             && lhs.isEditing == rhs.isEditing
+            && lhs.usesLightLabel == rhs.usesLightLabel
+    }
+}
+
+struct MangaDetailsBackdrop: View {
+    let source: AidokuRunner.Source?
+    let coverImage: String
+    var privacyPlaceholder = false
+
+    var body: some View {
+        GeometryReader { geometry in
+            SourceImageView(
+                source: source,
+                imageUrl: coverImage,
+                width: geometry.size.width,
+                height: geometry.size.height,
+                downsampleWidth: 180,
+                privacyPlaceholder: privacyPlaceholder
+            )
+            .scaleEffect(1.15)
+            .blur(radius: 45, opaque: true)
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .clipped()
+            .overlay {
+                LinearGradient(
+                    colors: [.black.opacity(0.35), .black.opacity(0.58)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+        }
+        .allowsHitTesting(false)
     }
 }
 

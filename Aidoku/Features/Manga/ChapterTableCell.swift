@@ -9,6 +9,8 @@ import AidokuRunner
 import SwiftUI
 
 struct ChapterTableCell: View {
+    @Environment(\.displayScale) private var displayScale
+
     let source: AidokuRunner.Source?
     let manga: AidokuRunner.Manga
     let sourceKey: String
@@ -20,6 +22,7 @@ struct ChapterTableCell: View {
     let displayMode: ChapterTitleDisplayMode
 
     @StateObject private var showPageCounts = UserDefaultsBool(key: AppSettings.library.showChapterPageCounts.key)
+    @StateObject private var developerMode = UserDefaultsBool(key: AppSettings.general.developerMode.key)
     @State private var loadedPageCount: Int?
 
     var downloaded: Bool {
@@ -40,21 +43,26 @@ struct ChapterTableCell: View {
     }
 
     var body: some View {
-        let view = HStack {
-            if let thumbnail = chapter.thumbnail {
-                MangaCoverView(
-                    source: source,
-                    coverImage: thumbnail,
-                    width: 40,
-                    height: 40
-                )
-            }
+        let view = HStack(spacing: 10) {
+            MangaCoverView(
+                source: source,
+                coverImage: chapter.thumbnail ?? manga.cover ?? "",
+                width: 56,
+                height: 84,
+                coverDownsampleSide: 112 * displayScale,
+                cornerRadius: 5,
+                privacyPlaceholder: developerMode.value
+            )
 
-            VStack(alignment: .leading, spacing: 8 / 3) {
-                Text(chapter.sourceDisplayTitle)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(chapterNumberLabel)
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                Text(chapterTitle)
                     .foregroundStyle(locked || read ? .secondary : .primary)
                     .font(.system(size: 16))
-                    .lineLimit(1)
+                    .lineLimit(2)
                 if let subtitle = subtitle {
                     Text(subtitle)
                         .foregroundStyle(.secondary)
@@ -65,8 +73,8 @@ struct ChapterTableCell: View {
             Spacer(minLength: 0)
             if downloaded {
                 Image(systemName: "arrow.down.circle.fill")
-                    .imageScale(.small)
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color(uiColor: .secondaryLabel))
             } else if downloadFailed {
                 Image(systemName: "exclamationmark.circle.fill")
                     .imageScale(.small)
@@ -80,14 +88,15 @@ struct ChapterTableCell: View {
             }
         }
         .foregroundStyle(.primary)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 22 / 3)
+        .padding(.leading, 20)
+        .padding(.trailing, 5)
+        .padding(.vertical, 12)
         .frame(alignment: .leading)
         .contentShape(Rectangle())
         if #available(iOS 16.0, *) {
             view
-                .alignmentGuide(.listRowSeparatorTrailing) { d in
-                d[.trailing] // ensure separator goes all the way to the trailing edge
+                .alignmentGuide(.listRowSeparatorLeading) { d in
+                    d[.leading] + 20 + 56 + 10
                 }
                 .task(id: "\(chapter.key)-\(showPageCounts.value)") {
                     await loadPageCountIfNeeded()
@@ -100,12 +109,37 @@ struct ChapterTableCell: View {
     }
 
     private var subtitle: String? {
+        if developerMode.value {
+            let count = DeveloperMode.pageCount(for: chapter.key)
+            return page == nil || page == 0
+                ? "\(count) pages"
+                : "\(max(count - (page ?? 0), 0)) pages left"
+        }
         if showPageCounts.value, supportsPageCounts {
-            return loadedPageCount.map {
-                chapterPageCountSubtitle(pageCount: $0, progressPage: page)
+            if let loadedPageCount {
+                if let page, page > 0 {
+                    return String(format: NSLocalizedString("%i_PAGES_LEFT"), max(loadedPageCount - page, 0))
+                }
+                return String(format: NSLocalizedString("%i_PAGES"), loadedPageCount)
             }
         }
         return chapter.formattedSubtitle(page: page, sourceKey: sourceKey)
+    }
+
+    private var chapterTitle: String {
+        if developerMode.value { return DeveloperMode.chapterTitle(for: chapter.key) }
+        if let title = chapter.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            return title
+        }
+        return chapter.sourceDisplayTitle
+    }
+
+    private var chapterNumberLabel: String {
+        let label = NSLocalizedString("CHAPTER").uppercased()
+        guard let number = chapter.chapterNumber ?? chapter.volumeNumber, number.isFinite else {
+            return label
+        }
+        return "\(label) \(String(format: "%g", number))"
     }
 
     private var supportsPageCounts: Bool {

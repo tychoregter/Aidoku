@@ -667,6 +667,11 @@ class LibraryViewController: OldMangaCollectionViewController {
                 self.updateDataSource(reloadCells: true)
             }
         }
+        addObserver(forName: AppSettings.library.showCoverAuthors.key) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateDataSource(reloadCells: true)
+            }
+        }
         addObserver(forName: AppSettings.appearance.dedicatedContinueReadingSection.key) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
@@ -686,6 +691,11 @@ class LibraryViewController: OldMangaCollectionViewController {
                 var snapshot = self.dataSource.snapshot()
                 snapshot.reconfigureItems(snapshot.itemIdentifiers)
                 self.dataSource.apply(snapshot)
+            }
+        }
+        addObserver(forName: AppSettings.general.developerMode.key) { [weak self] _ in
+            Task { @MainActor in
+                self?.updateDataSource(reloadCells: true)
             }
         }
         addObserver(forName: AppSettings.appearance.grayscaleCaughtUpCovers.key) { [weak self] _ in
@@ -843,7 +853,7 @@ class LibraryViewController: OldMangaCollectionViewController {
             cell.showsCaption = false
             cell.identifier = nil
             cell.setPlaceholder(
-                info.title,
+                DeveloperMode.enabled ? "Collection" : info.title,
                 symbolName: pinTypeIconName(
                     for: dataSource.snapshot().sectionIdentifiers[safe: indexPath.section] == .continueReading
                         ? .started
@@ -855,9 +865,17 @@ class LibraryViewController: OldMangaCollectionViewController {
             return
         }
         cell.setPlaceholder(nil)
-        super.configure(cell: cell, info: info, indexPath: indexPath)
+        var displayInfo = info
+        if DeveloperMode.enabled {
+            displayInfo.title = DeveloperMode.title(for: String(describing: info.id))
+            displayInfo.author = DeveloperMode.author(for: String(describing: info.id))
+        }
+        super.configure(cell: cell, info: displayInfo, indexPath: indexPath)
+        cell.setNSFW(info.isNSFW, title: displayInfo.title, developerMode: DeveloperMode.enabled)
         cell.showsCaption = showsCaption
-        cell.subtitle = showsCaption ? coverSubtitle(for: info, indexPath: indexPath) : nil
+        cell.subtitle = showsCaption ? (DeveloperMode.enabled
+            ? developerSubtitle(for: info, indexPath: indexPath)
+            : coverSubtitle(for: info, indexPath: indexPath)) : nil
 
         cell.badgeNumber = viewModel.badgeType.contains(.unread) ? info.unread : 0
         cell.badgeNumber2 = viewModel.badgeType.contains(.downloaded) ? info.downloads : 0
@@ -867,9 +885,17 @@ class LibraryViewController: OldMangaCollectionViewController {
     }
 
     override func configure(cell: MangaListCell, info: MangaInfo, indexPath: IndexPath) {
-        super.configure(cell: cell, info: info, indexPath: indexPath)
+        var displayInfo = info
+        if DeveloperMode.enabled {
+            displayInfo.title = DeveloperMode.title(for: String(describing: info.id))
+            displayInfo.author = DeveloperMode.author(for: String(describing: info.id))
+        }
+        super.configure(cell: cell, info: displayInfo, indexPath: indexPath)
+        cell.setNSFW(info.isNSFW, title: displayInfo.title, developerMode: DeveloperMode.enabled)
         if !AppSettings.library.hideCoverTitles.get() {
-            cell.setSubtitle(coverSubtitle(for: info, indexPath: indexPath))
+            cell.setSubtitle(DeveloperMode.enabled
+                ? developerSubtitle(for: info, indexPath: indexPath)
+                : coverSubtitle(for: info, indexPath: indexPath))
         }
 
         cell.badgeNumber = viewModel.badgeType.contains(.unread) ? info.unread : 0
@@ -888,6 +914,9 @@ class LibraryViewController: OldMangaCollectionViewController {
         if section == .continueReading || isReadingPin {
             return info.readingSubtitle ?? NSLocalizedString("CAUGHT_UP")
         }
+        if AppSettings.library.showCoverAuthors.get() {
+            return info.author ?? ""
+        }
         if info.totalChapters == 1 {
             return NSLocalizedString("LIBRARY_COVER_ONE_CHAPTER", value: "1 chapter", comment: "One chapter beneath a library cover")
         }
@@ -895,6 +924,16 @@ class LibraryViewController: OldMangaCollectionViewController {
             format: NSLocalizedString("LIBRARY_COVER_CHAPTERS", value: "%d chapters", comment: "Chapter count beneath a library cover"),
             info.totalChapters
         )
+    }
+
+    private func developerSubtitle(for info: MangaInfo, indexPath: IndexPath) -> String {
+        let section = dataSource.snapshot().sectionIdentifiers[safe: indexPath.section]
+        if section == .continueReading { return "Continue Chapter 3" }
+        if info.isLibraryStack { return "Collection" }
+        if AppSettings.library.showCoverAuthors.get() {
+            return DeveloperMode.author(for: String(describing: info.id))
+        }
+        return info.totalChapters == 1 ? "1 chapter" : "\(info.totalChapters) chapters"
     }
 
     override func setEditing(_ editing: Bool, animated: Bool) {
@@ -2537,26 +2576,37 @@ extension LibraryViewController {
         // A title can be visible twice when it is pinned and kept in Library.
         // Capture the exact cover the user tapped before the asynchronous
         // reader setup begins, rather than later looking up the first match.
+        let tappedCell = collectionView.cellForItem(at: indexPath)
         let tappedTransitionSourceView: UIView? = {
-            guard let cell = collectionView.cellForItem(at: indexPath) else { return nil }
+            guard let cell = tappedCell else { return nil }
             if let cell = cell as? MangaGridCell {
                 return cell.imageView
             }
             if let cell = cell as? MangaListCell {
                 return cell.coverImageView
             }
-            if let cell = cell as? MangaGridCell {
-                return cell.coverView
-            }
             return cell.contentView
         }()
 
-        if AppSettings.library.opensReaderView.get() {
+        let isContinueReadingItem = dataSource.snapshot().sectionIdentifiers[safe: indexPath.section] == .continueReading
+        if AppSettings.library.opensReaderView.get() || isContinueReadingItem {
             Task {
                 // get next chapter to read
-                let (sourceOrderedChapters, nextChapter) = await MangaManager.shared.getNextChapter(mangaId: info.id)
+                let (sourceOrderedChapters, nextChapter) = await MangaManager.shared.getNextChapter(
+                    mangaId: info.id,
+                    fetchIfNeeded: isContinueReadingItem
+                )
+                let chapter: AidokuRunner.Chapter?
+                if nextChapter == nil && isContinueReadingItem {
+                    let history = await CoreDataManager.shared.getReadingHistory(mangaId: info.id)
+                    chapter = sourceOrderedChapters
+                        .filter { history[$0.id] != nil }
+                        .max { (history[$0.id]?.date ?? -1) < (history[$1.id]?.date ?? -1) }
+                } else {
+                    chapter = nextChapter
+                }
 
-                if let chapter = nextChapter {
+                if let chapter {
                     // open reader view
                     guard let source = await SourceManager.shared.source(for: info.id.sourceKey) else {
                         return
@@ -2589,12 +2639,11 @@ extension LibraryViewController {
                     present(navigationController, animated: true)
                 } else {
                     // no chapter to read, open manga page
-                    let indexPath = dataSource.indexPath(for: info) ?? indexPath // get new index path in case it changed
-                    super.collectionView(collectionView, didSelectItemAt: indexPath)
+                    openInfoView(info: info, sourceCell: tappedCell)
                 }
             }
         } else {
-            super.collectionView(collectionView, didSelectItemAt: indexPath)
+            openInfoView(info: info, sourceCell: tappedCell)
         }
 
         if !AppSettings.general.incognitoMode.get() {
@@ -2656,6 +2705,7 @@ extension LibraryViewController {
 
         let contextPreviewController: LibraryPageContextPreviewViewController? = if
             AppSettings.library.contextMenuPagePreviews.get(),
+            !DeveloperMode.enabled,
             mangaInfo.count == 1
         {
             // Start preparing the reader as soon as the menu is requested,
@@ -2694,7 +2744,7 @@ extension LibraryViewController {
                 ]))
             }
 
-            if AppSettings.library.opensReaderView.get(), mangaInfo.count == 1 {
+            if (AppSettings.library.opensReaderView.get() || section == .continueReading), mangaInfo.count == 1 {
                 actions.append(UIAction(
                     title: NSLocalizedString("MANGA_INFO"),
                     image: UIImage(systemName: "info.circle"),

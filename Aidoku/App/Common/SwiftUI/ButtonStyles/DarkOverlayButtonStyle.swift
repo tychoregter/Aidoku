@@ -10,12 +10,13 @@ import SwiftUI
 // shows a dark overlay when pressed
 struct DarkOverlayButtonStyle: ButtonStyle {
     @Environment(\.colorScheme) private var colorScheme
+    var cornerRadius: CGFloat = 12
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .overlay {
                 if configuration.isPressed {
-                    Rectangle()
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .fill(Color.black)
                         .opacity(colorScheme == .dark ? 0.5 : 0.3)
                 }

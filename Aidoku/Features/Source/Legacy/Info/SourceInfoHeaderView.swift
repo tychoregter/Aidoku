@@ -47,7 +47,7 @@ class SourceInfoHeaderView: UIView {
         }
         iconView.image = UIImage(contentsOfFile: path)
         iconView.layer.borderColor = UIColor.quaternarySystemFill.cgColor
-        iconView.layer.borderWidth = 1
+        iconView.layer.borderWidth = MangaCoverBorderStyle.width(for: traitCollection)
         iconView.layer.cornerRadius = iconSize * 0.225
         iconView.layer.cornerCurve = .continuous
         iconView.clipsToBounds = true

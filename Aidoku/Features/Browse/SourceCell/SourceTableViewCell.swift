@@ -85,7 +85,7 @@ class SourceTableViewCell: UITableViewCell {
         iconView.clipsToBounds = true
         iconView.layer.cornerRadius = 12 * iconSize / 48
         iconView.layer.cornerCurve = .continuous
-        iconView.layer.borderWidth = 0.5
+        iconView.layer.borderWidth = MangaCoverBorderStyle.width(for: traitCollection)
         updateIconBorderAppearance()
         iconView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(iconView)

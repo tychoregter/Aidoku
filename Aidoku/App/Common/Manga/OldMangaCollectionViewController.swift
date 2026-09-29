@@ -410,16 +410,31 @@ extension OldMangaCollectionViewController {
         openInfoView(info: info)
     }
 
-    func openInfoView(info: MangaInfo, zoom: Bool = true) {
+    func openInfoView(info: MangaInfo, zoom: Bool = true, sourceCell: UICollectionViewCell? = nil) {
         let viewController = MangaViewController(manga: info, parent: self)
         if zoom, #available(iOS 18.0, *) {
-            viewController.preferredTransition = .zoom { context in
+            viewController.preferredTransition = .zoom { [weak self, weak sourceCell] context in
                 guard
+                    let self,
                     let detailViewController = context.zoomedViewController as? MangaViewController,
-                    let info = detailViewController.mangaInfo,
-                    let indexPath = self.dataSource.indexPath(for: info),
-                    let cell = self.collectionView.cellForItem(at: indexPath)
+                    let info = detailViewController.mangaInfo
                 else {
+                    return nil
+                }
+                let cell: UICollectionViewCell
+                if let sourceCell,
+                   let indexPath = self.collectionView.indexPath(for: sourceCell),
+                   let currentInfo = self.dataSource.itemIdentifier(for: indexPath),
+                   currentInfo.id == info.id,
+                   currentInfo.displayVariant == info.displayVariant {
+                    cell = sourceCell
+                } else if let currentInfo = self.dataSource.snapshot().itemIdentifiers.first(where: {
+                    $0.id == info.id && $0.displayVariant == info.displayVariant
+                }),
+                          let indexPath = self.dataSource.indexPath(for: currentInfo),
+                          let visibleCell = self.collectionView.cellForItem(at: indexPath) {
+                    cell = visibleCell
+                } else {
                     return nil
                 }
                 if let cell = cell as? MangaListCell {

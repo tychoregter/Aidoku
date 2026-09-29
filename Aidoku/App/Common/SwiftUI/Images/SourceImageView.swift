@@ -20,6 +20,7 @@ struct SourceImageView: View {
     var coverDownsampleSide: CGFloat? = nil
     var contentMode: ContentMode = .fill
     var placeholder = "MangaPlaceholder"
+    var privacyPlaceholder = false
 
     @State private var imageRequest: ImageRequest?
 
@@ -41,7 +42,12 @@ struct SourceImageView: View {
             request: imageRequest,
             transaction: .init(animation: .default)
         ) { state in
-            if state.imageContainer?.type == .gif, let data = state.imageContainer?.data {
+            if privacyPlaceholder {
+                Rectangle()
+                    .fill(Color(uiColor: state.imageContainer?.image.dominantColor()
+                        ?? DeveloperMode.color(for: imageUrl)))
+                    .frame(width: width, height: height)
+            } else if state.imageContainer?.type == .gif, let data = state.imageContainer?.data {
                 GIFImage(
                     data: data,
                     contentMode: contentMode

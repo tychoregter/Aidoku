@@ -111,7 +111,7 @@ class MangaGridCell: UICollectionViewCell {
         coverView.clipsToBounds = true
         coverView.layer.cornerRadius = 12
         coverView.layer.cornerCurve = .continuous
-        coverView.layer.borderWidth = MangaCoverBorderStyle.width
+        coverView.layer.borderWidth = MangaCoverBorderStyle.width(for: traitCollection)
         updatePosterBorderAppearance()
         contentView.addSubview(coverView)
 
@@ -321,11 +321,15 @@ class MangaGridCell: UICollectionViewCell {
         setPlaceholder(nil)
     }
 
-    func setNSFW(_ isNSFW: Bool, title: String?) {
-        hidesNSFWCover = isNSFW && AppSettings.appearance.blurNSFWCovers.get()
+    func setNSFW(_ isNSFW: Bool, title: String?, developerMode: Bool = false) {
+        let hidesNSFW = isNSFW && AppSettings.appearance.blurNSFWCovers.get()
+        hidesNSFWCover = hidesNSFW || developerMode
         nsfwCoverView.isHidden = !hidesNSFWCover
         updatePosterBorderAppearance()
         guard hidesNSFWCover else { return }
+        nsfwCoverView.presentation = hidesNSFW
+            ? (AppSettings.library.hideCoverTitles.get() ? .title : .iconOnly)
+            : .blank
         nsfwCoverView.layer.cornerRadius = coverView.layer.cornerRadius
         nsfwCoverView.layer.cornerCurve = .continuous
         nsfwCoverView.configure(title: title, image: imageView.image)
@@ -578,10 +582,21 @@ enum MangaCoverImageAppearance {
 }
 
 final class NSFWCoverView: UIView {
+    enum Presentation {
+        case title
+        case iconOnly
+        case blank
+    }
+
+    var presentation: Presentation = .title {
+        didSet { updatePresentation() }
+    }
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
     private let stackView = UIStackView()
     private var coverColor = UIColor.secondarySystemBackground
+    private var iconWidth: NSLayoutConstraint!
+    private var iconHeight: NSLayoutConstraint!
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -610,13 +625,15 @@ final class NSFWCoverView: UIView {
         stackView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stackView)
 
+        iconWidth = iconView.widthAnchor.constraint(equalToConstant: 22)
+        iconHeight = iconView.heightAnchor.constraint(equalToConstant: 22)
         NSLayoutConstraint.activate([
             stackView.centerYAnchor.constraint(equalTo: centerYAnchor),
             stackView.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 12),
             stackView.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -12),
             stackView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 22),
-            iconView.heightAnchor.constraint(equalToConstant: 22)
+            iconWidth,
+            iconHeight
         ])
     }
 
@@ -627,7 +644,20 @@ final class NSFWCoverView: UIView {
     func configure(title: String?, image: UIImage?) {
         titleLabel.text = title ?? NSLocalizedString("UNTITLED")
         coverColor = image?.dominantColor() ?? UIColor.secondarySystemBackground
+        updatePresentation()
         updateAppearance()
+    }
+
+    private func updatePresentation() {
+        iconView.isHidden = presentation == .blank
+        titleLabel.isHidden = presentation != .title
+        let size: CGFloat = presentation == .iconOnly ? 32 : 22
+        iconWidth?.constant = size
+        iconHeight?.constant = size
+        iconView.image = UIImage(
+            systemName: "eye.slash",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: size, weight: .semibold)
+        )
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -651,7 +681,7 @@ final class NSFWCoverView: UIView {
         iconView.tintColor = foreground
         titleLabel.textColor = foreground
 
-        layer.borderWidth = MangaCoverBorderStyle.width
+        layer.borderWidth = MangaCoverBorderStyle.width(for: traitCollection)
         layer.borderColor = Self.blend(
             background,
             toward: isDark ? .white : .black,

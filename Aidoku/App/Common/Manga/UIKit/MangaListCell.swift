@@ -54,7 +54,7 @@ class MangaListCell: UICollectionViewCell {
         imageView.clipsToBounds = true
         imageView.contentMode = .scaleAspectFill
         imageView.layer.cornerRadius = 5
-        imageView.layer.borderWidth = MangaCoverBorderStyle.width
+        imageView.layer.borderWidth = MangaCoverBorderStyle.width(for: traitCollection)
         imageView.layer.borderColor = MangaCoverBorderStyle.color(for: traitCollection).cgColor
         imageView.addSubview(nsfwCoverView)
         return imageView
@@ -306,11 +306,15 @@ extension MangaListCell {
         subtitleLabel.isHidden = subtitle.isEmpty
     }
 
-    func setNSFW(_ isNSFW: Bool, title: String?) {
-        hidesNSFWCover = isNSFW && AppSettings.appearance.blurNSFWCovers.get()
+    func setNSFW(_ isNSFW: Bool, title: String?, developerMode: Bool = false) {
+        let hidesNSFW = isNSFW && AppSettings.appearance.blurNSFWCovers.get()
+        hidesNSFWCover = hidesNSFW || developerMode
         nsfwCoverView.isHidden = !hidesNSFWCover
         updateCoverBorderAppearance()
         guard hidesNSFWCover else { return }
+        nsfwCoverView.presentation = hidesNSFW
+            ? (AppSettings.library.hideCoverTitles.get() ? .title : .iconOnly)
+            : .blank
         nsfwCoverView.layer.cornerRadius = coverImageView.layer.cornerRadius
         nsfwCoverView.layer.cornerCurve = .continuous
         nsfwCoverView.configure(title: title, image: coverImageView.image)
