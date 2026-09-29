@@ -420,6 +420,7 @@ extension LibraryViewModel {
         let stackedMemberIDs = LibraryBundleFeature.isEnabled && scope == .library
             ? Set(LibraryStackStore.shared.stacks.flatMap(\.members))
             : Set<MangaIdentifier>()
+        let showsCoverTitles = !AppSettings.library.hideCoverTitles.get()
         let (
             success,
             actuallyEmpty,
@@ -431,7 +432,7 @@ extension LibraryViewModel {
             unappliedFilters,
             availableGenres,
             allLibraryManga
-        ) = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [sortMethod, sortAscending, pinType, favoriteIds, pinTitlesIgnoreFilters, ignoredPinFilterMethods, nonLibraryHistoryDates, isFavoritesOnly, stackMembers, stackedMemberIDs] context in
+        ) = await CoreDataManager.shared.container.performBackgroundTask { @Sendable [sortMethod, sortAscending, pinType, favoriteIds, pinTitlesIgnoreFilters, ignoredPinFilterMethods, nonLibraryHistoryDates, isFavoritesOnly, stackMembers, stackedMemberIDs, showsCoverTitles] context in
             var pinnedManga: [MangaInfo] = []
             var libraryPinnedManga: [MangaInfo] = []
             var manga: [MangaInfo] = []
@@ -554,6 +555,10 @@ extension LibraryViewModel {
                 info.libraryLastChapter = libraryObject.lastChapter
                 info.totalChapters = mangaObject.chapters?.count ?? 0
                 info.librarySortIndex = librarySortIndex
+                if showsCoverTitles, pinType == .started,
+                   CoreDataManager.shared.hasHistory(mangaId: info.id, context: context) {
+                    info.readingSubtitle = libraryReadingSubtitle(for: mangaObject, context: context)
+                }
 
                 if pinType == .started {
                     let chapters = ((mangaObject.chapters?.allObjects as? [ChapterObject]) ?? [])
@@ -765,6 +770,10 @@ extension LibraryViewModel {
                 info.lastRead = lastRead
                 info.pinSortDate = lastRead
                 info.librarySortIndex = libraryObjects.count + pinnedManga.count
+                info.totalChapters = mangaObject.chapters?.count ?? 0
+                if showsCoverTitles, pinType == .started {
+                    info.readingSubtitle = libraryReadingSubtitle(for: mangaObject, context: context)
+                }
 
                 sourceKeys.insert(mangaObject.sourceId)
 
@@ -1670,4 +1679,51 @@ extension LibraryViewModel {
             categories: [currentCategory]
         )
     }
+}
+
+private func libraryReadingSubtitle(for manga: MangaObject, context: NSManagedObjectContext) -> String {
+    let manager = CoreDataManager.shared
+    let chapterObjects = manager.getChapters(mangaId: manga.identifier, context: context)
+    let chapters = chapterObjects.reversed().map { $0.toNewChapter() }
+    var history: [String: (page: Int, date: Int)] = [:]
+    for item in manager.getHistoryForManga(mangaId: manga.identifier, context: context) {
+        let date = Int(item.dateRead?.timeIntervalSince1970 ?? -1)
+        if date >= (history[item.chapterId]?.date ?? -1) {
+            history[item.chapterId] = (item.completed ? -1 : Int(item.progress), date)
+        }
+    }
+
+    let caughtUpSubtitle = manga.status == AidokuRunner.PublishingStatus.completed.rawValue
+        ? NSLocalizedString("FINISHED")
+        : NSLocalizedString("CAUGHT_UP")
+    // A completed last-opened chapter can still be selected by the reader's
+    // resume preference. The cover should describe the actual caught-up state.
+    if !chapters.isEmpty, chapters.allSatisfy({ history[$0.id]?.page == -1 }) {
+        return caughtUpSubtitle
+    }
+
+    let runnerManga = AidokuRunner.Manga(sourceKey: manga.sourceId, key: manga.id, title: manga.title ?? "")
+    guard let next = MangaManager.shared.getNextChapter(
+        manga: runnerManga,
+        chapters: chapters,
+        readingHistory: history,
+        sortAscending: true
+    ) else {
+        return caughtUpSubtitle
+    }
+
+    let chapterTitle: String
+    if let number = next.chapterNumber, number >= 0 {
+        chapterTitle = String(
+            format: NSLocalizedString("LIBRARY_COVER_CHAPTER_NUMBER", value: "Chapter %@", comment: "Chapter number beneath a library cover"),
+            String(format: "%g", Double(number))
+        )
+    } else {
+        chapterTitle = next.sourceDisplayTitle
+    }
+    let isInProgress = (history[next.id]?.date ?? -1) > 0
+    let format = isInProgress
+        ? NSLocalizedString("LIBRARY_COVER_CONTINUE_CHAPTER", value: "Continue %@", comment: "Reading progress beneath a library cover")
+        : NSLocalizedString("LIBRARY_COVER_START_CHAPTER", value: "Start %@", comment: "Reading progress beneath a library cover")
+    return String(format: format, chapterTitle)
 }

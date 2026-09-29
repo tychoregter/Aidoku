@@ -484,6 +484,12 @@
 "OPEN_READER_VIEW" = "Open Reader View";
 "RESUME_LAST_OPENED_CHAPTER" = "Resume Last Opened Chapter";
 "CONTINUE_READING_ON_RESELECT" = "History Tab Double Tap Resumes";
+"HIDE_COVER_TITLES" = "Hide Cover Titles";
+"LIBRARY_COVER_ONE_CHAPTER" = "1 chapter";
+"LIBRARY_COVER_CHAPTERS" = "%d chapters";
+"LIBRARY_COVER_CHAPTER_NUMBER" = "Chapter %@";
+"LIBRARY_COVER_START_CHAPTER" = "Start %@";
+"LIBRARY_COVER_CONTINUE_CHAPTER" = "Continue %@";
 "UNREAD_CHAPTER_BADGES" = "Unread Chapter Badges";
 "DOWNLOADED_CHAPTER_BADGES" = "Downloaded Chapter Badges";
 "PIN_TITLES" = "Pin Titles";

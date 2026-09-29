@@ -10,9 +10,7 @@ import Nuke
 import UIKit
 
 class OldMangaCollectionViewController: BaseCollectionViewController {
-    // Slightly wider gutters keep the poster grid airy while the compositional
-    // layout automatically reduces each poster's width to fit the row.
-    static let itemSpacing: CGFloat = 16
+    static let itemSpacing: CGFloat = 12
     static let sectionSpacing: CGFloat = 6 // extra spacing betweeen sections
 
     var usesListLayout = false
@@ -298,19 +296,26 @@ extension OldMangaCollectionViewController {
         return section
     }
 
-    static func makeGridLayoutSection(environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection {
+    static func makeGridLayoutSection(
+        environment: NSCollectionLayoutEnvironment,
+        showsCaptions: Bool = false
+    ) -> NSCollectionLayoutSection {
         let containerWidth = environment.container.contentSize.width
         let itemsPerRow = gridItemsPerRow(environment: environment)
+        let coverWidth = (containerWidth - 40 - CGFloat(itemsPerRow - 1) * itemSpacing) / CGFloat(itemsPerRow)
+        let rowHeight = coverWidth * 1.5 + (showsCaptions ? 48 : 0)
 
         let item = NSCollectionLayoutItem(layoutSize: NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1 / CGFloat(itemsPerRow)),
-            heightDimension: .fractionalWidth(3 / (2 * CGFloat(itemsPerRow)))
+            heightDimension: showsCaptions ? .fractionalHeight(1) : .fractionalWidth(3 / (2 * CGFloat(itemsPerRow)))
         ))
 
         let group = NSCollectionLayoutGroup.horizontal(
             layoutSize: NSCollectionLayoutSize(
                 widthDimension: .fractionalWidth(1),
-                heightDimension: .estimated(containerWidth * 3 / (2 * CGFloat(itemsPerRow)))
+                heightDimension: showsCaptions
+                    ? .absolute(rowHeight)
+                    : .estimated(containerWidth * 3 / (2 * CGFloat(itemsPerRow)))
             ),
             subitem: item,
             count: itemsPerRow
@@ -324,9 +329,13 @@ extension OldMangaCollectionViewController {
         return section
     }
 
-    static func makeHorizontalGridLayoutSection(environment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection {
+    static func makeHorizontalGridLayoutSection(
+        environment: NSCollectionLayoutEnvironment,
+        showsCaptions: Bool = false
+    ) -> NSCollectionLayoutSection {
         let itemsPerRow = gridItemsPerRow(environment: environment)
         let scale: CGFloat = 1.0
+        let coverWidth = (environment.container.contentSize.width - 40) * scale / CGFloat(itemsPerRow)
 
         let item = NSCollectionLayoutItem(layoutSize: NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1),
@@ -335,13 +344,20 @@ extension OldMangaCollectionViewController {
         let group = NSCollectionLayoutGroup.horizontal(
             layoutSize: NSCollectionLayoutSize(
                 widthDimension: .fractionalWidth(scale / CGFloat(itemsPerRow)),
-                heightDimension: .fractionalWidth(scale * 3 / (2 * CGFloat(itemsPerRow)))
+                heightDimension: showsCaptions
+                    ? .absolute(coverWidth * 1.5 + 48)
+                    : .fractionalWidth(scale * 3 / (2 * CGFloat(itemsPerRow)))
             ),
             subitems: [item]
         )
 
         let section = NSCollectionLayoutSection(group: group)
-        section.contentInsets = NSDirectionalEdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20)
+        section.contentInsets = NSDirectionalEdgeInsets(
+            top: 0,
+            leading: 20,
+            bottom: showsCaptions ? 23 : 0,
+            trailing: 20
+        )
         section.interGroupSpacing = itemSpacing
         section.orthogonalScrollingBehavior = .continuous
         return section
@@ -408,6 +424,8 @@ extension OldMangaCollectionViewController {
                 }
                 if let cell = cell as? MangaListCell {
                     return cell.coverImageView
+                } else if let cell = cell as? MangaGridCell {
+                    return cell.coverView
                 } else {
                     return cell.contentView
                 }
@@ -431,14 +449,14 @@ extension OldMangaCollectionViewController {
             parameters.visiblePath = UIBezierPath(roundedRect: rect, cornerRadius: 12)
 
             return UITargetedPreview(view: cell.contentView, parameters: parameters)
-        } else if cell is MangaGridCell {
+        } else if let cell = cell as? MangaGridCell {
             // round the grid cell corners correctly
             let parameters = UIPreviewParameters()
             parameters.visiblePath = UIBezierPath(
-                roundedRect: cell.bounds,
-                cornerRadius: cell.contentView.layer.cornerRadius
+                roundedRect: cell.coverView.bounds,
+                cornerRadius: cell.coverView.layer.cornerRadius
             )
-            return UITargetedPreview(view: cell.contentView, parameters: parameters)
+            return UITargetedPreview(view: cell.coverView, parameters: parameters)
         } else {
             return nil
         }

@@ -29,6 +29,7 @@ struct MangaInfo: Hashable, Sendable {
     var libraryDateAdded: Date?
     var libraryLastChapter: Date?
     var totalChapters: Int = 0
+    var readingSubtitle: String?
 
     // Pin-specific event date. Reading combines eligible updates with reads;
     // Recently Updated uses the chapter-update date.

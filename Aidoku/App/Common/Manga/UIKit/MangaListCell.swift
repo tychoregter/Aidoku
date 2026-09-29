@@ -301,6 +301,11 @@ extension MangaListCell {
         }
     }
 
+    func setSubtitle(_ subtitle: String) {
+        subtitleLabel.text = subtitle
+        subtitleLabel.isHidden = subtitle.isEmpty
+    }
+
     func setNSFW(_ isNSFW: Bool, title: String?) {
         hidesNSFWCover = isNSFW && AppSettings.appearance.blurNSFWCovers.get()
         nsfwCoverView.isHidden = !hidesNSFWCover

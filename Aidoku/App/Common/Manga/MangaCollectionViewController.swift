@@ -238,6 +238,8 @@ extension MangaCollectionViewController {
                 }
                 if let cell = cell as? MangaListCell {
                     return cell.coverImageView
+                } else if let cell = cell as? MangaGridCell {
+                    return cell.coverView
                 } else {
                     return cell.contentView
                 }

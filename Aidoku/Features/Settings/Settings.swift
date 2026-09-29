@@ -221,6 +221,11 @@ extension Settings {
                 value: .toggle(.init())
             ),
             .init(
+                key: AppSettings.library.hideCoverTitles.key,
+                title: NSLocalizedString("HIDE_COVER_TITLES", value: "Hide Cover Titles", comment: "Library cover caption visibility setting"),
+                value: .toggle(.init())
+            ),
+            .init(
                 key: AppSettings.appearance.blurNSFWCovers.key,
                 title: Bundle.main.localizedString(
                     forKey: "BLUR_NSFW_COVERS",

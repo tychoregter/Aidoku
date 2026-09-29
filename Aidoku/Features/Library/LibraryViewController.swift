@@ -659,6 +659,14 @@ class LibraryViewController: OldMangaCollectionViewController {
                 self.updateMoreMenu()
             }
         }
+        addObserver(forName: AppSettings.library.hideCoverTitles.key) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                await self.viewModel.loadLibrary()
+                self.collectionView.setCollectionViewLayout(self.makeCollectionViewLayout(), animated: false)
+                self.updateDataSource(reloadCells: true)
+            }
+        }
         addObserver(forName: AppSettings.appearance.dedicatedContinueReadingSection.key) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
@@ -780,6 +788,7 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     // collection view layout with header
     override func makeCollectionViewLayout() -> UICollectionViewLayout {
+        let showsCaptions = !AppSettings.library.hideCoverTitles.get()
         let layout = UICollectionViewCompositionalLayout { [weak self] sectionIndex, environment in
             guard let self else { return nil }
             let sectionIdentifier = self.dataSource.snapshot().sectionIdentifiers[safe: sectionIndex]
@@ -788,17 +797,18 @@ class LibraryViewController: OldMangaCollectionViewController {
                 case .pinned: self.shouldShowPinnedPlaceholder
                 default: false
             }
+            let sectionShowsCaptions = showsCaptions && !isPinnedPlaceholderSection
             let usesHorizontalPinnedRow = sectionIdentifier == .continueReading
                 || (sectionIdentifier == .pinned
                     && self.usesSeparatedPinnedSections
                     && !self.usesListLayout
                     && AppSettings.appearance.horizontalPinnedTitles.get())
             let section = if usesHorizontalPinnedRow {
-                Self.makeHorizontalGridLayoutSection(environment: environment)
+                Self.makeHorizontalGridLayoutSection(environment: environment, showsCaptions: sectionShowsCaptions)
             } else if self.usesListLayout && !isPinnedPlaceholderSection {
                 Self.makeListLayoutSection(environment: environment)
             } else {
-                Self.makeGridLayoutSection(environment: environment)
+                Self.makeGridLayoutSection(environment: environment, showsCaptions: sectionShowsCaptions)
             }
             if self.showsHeader(for: sectionIdentifier) {
                 let header = NSCollectionLayoutBoundarySupplementaryItem(
@@ -828,7 +838,9 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     // cells with badges
     override func configure(cell: MangaGridCell, info: MangaInfo, indexPath: IndexPath) {
+        let showsCaption = !AppSettings.library.hideCoverTitles.get()
         if info.isEmptyPinnedPlaceholder {
+            cell.showsCaption = false
             cell.identifier = nil
             cell.setPlaceholder(
                 info.title,
@@ -844,6 +856,8 @@ class LibraryViewController: OldMangaCollectionViewController {
         }
         cell.setPlaceholder(nil)
         super.configure(cell: cell, info: info, indexPath: indexPath)
+        cell.showsCaption = showsCaption
+        cell.subtitle = showsCaption ? coverSubtitle(for: info, indexPath: indexPath) : nil
 
         cell.badgeNumber = viewModel.badgeType.contains(.unread) ? info.unread : 0
         cell.badgeNumber2 = viewModel.badgeType.contains(.downloaded) ? info.downloads : 0
@@ -854,12 +868,33 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     override func configure(cell: MangaListCell, info: MangaInfo, indexPath: IndexPath) {
         super.configure(cell: cell, info: info, indexPath: indexPath)
+        if !AppSettings.library.hideCoverTitles.get() {
+            cell.setSubtitle(coverSubtitle(for: info, indexPath: indexPath))
+        }
 
         cell.badgeNumber = viewModel.badgeType.contains(.unread) ? info.unread : 0
         cell.badgeNumber2 = viewModel.badgeType.contains(.downloaded) ? info.downloads : 0
         cell.setCaughtUp(info.unread == 0)
 
         cell.setEditing(isEditing, animated: false)
+    }
+
+    private func coverSubtitle(for info: MangaInfo, indexPath: IndexPath) -> String {
+        if info.isLibraryStack { return info.author ?? "" }
+        let section = dataSource.snapshot().sectionIdentifiers[safe: indexPath.section]
+        let isReadingPin = viewModel.pinType == .started
+            && (section == .pinned || !usesSeparatedPinnedSections)
+            && viewModel.pinnedManga.contains(where: { $0.id == info.id })
+        if section == .continueReading || isReadingPin {
+            return info.readingSubtitle ?? NSLocalizedString("CAUGHT_UP")
+        }
+        if info.totalChapters == 1 {
+            return NSLocalizedString("LIBRARY_COVER_ONE_CHAPTER", value: "1 chapter", comment: "One chapter beneath a library cover")
+        }
+        return String(
+            format: NSLocalizedString("LIBRARY_COVER_CHAPTERS", value: "%d chapters", comment: "Chapter count beneath a library cover"),
+            info.totalChapters
+        )
     }
 
     override func setEditing(_ editing: Bool, animated: Bool) {
@@ -1339,7 +1374,7 @@ extension LibraryViewController {
         dataSource.apply(snapshot)
     }
 
-    func updateDataSource() {
+    func updateDataSource(reloadCells: Bool = false) {
         if isFavoritesTab || isStackView {
             usesSeparatedPinnedSections = false
             var snapshot = NSDiffableDataSourceSnapshot<Section, MangaInfo>()
@@ -1347,7 +1382,9 @@ extension LibraryViewController {
                 snapshot.appendSections([.regular])
                 snapshot.appendItems(viewModel.manga, toSection: .regular)
             }
-            dataSource.apply(snapshot)
+            dataSource.apply(snapshot) { [weak self] in
+                if reloadCells { self?.collectionView.reloadData() }
+            }
             emptyStackView.isHidden = !snapshot.itemIdentifiers.isEmpty
             collectionView.isScrollEnabled = emptyStackView.isHidden && lockedStackView.isHidden
             collectionView.refreshControl = nil
@@ -1412,6 +1449,7 @@ extension LibraryViewController {
         }
 
         dataSource.apply(snapshot) { [weak self] in
+            if reloadCells { self?.collectionView.reloadData() }
             self?.updateVisibleSectionHeaders()
             // A diffable update can recreate UIKit's orthogonal scroll view
             // after the layout pass that configured the previous one. Apply
@@ -2507,6 +2545,9 @@ extension LibraryViewController {
             if let cell = cell as? MangaListCell {
                 return cell.coverImageView
             }
+            if let cell = cell as? MangaGridCell {
+                return cell.coverView
+            }
             return cell.contentView
         }()
 
@@ -2949,6 +2990,9 @@ extension LibraryViewController {
             guard let cell = collectionView.cellForItem(at: indexPath) else { continue }
             if let cell = cell as? MangaListCell {
                 return cell.coverImageView
+            }
+            if let cell = cell as? MangaGridCell {
+                return cell.coverView
             }
             return cell.contentView
         }

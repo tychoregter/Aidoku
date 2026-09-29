@@ -80,6 +80,7 @@ struct LibrarySettings: Sendable {
             opensReaderView,
             resumeLastOpenedChapter,
             continueReadingOnReselect,
+            hideCoverTitles,
             contextMenuPagePreviews,
             showChapterPageCounts,
             chapterListOrder,
@@ -124,6 +125,7 @@ struct LibrarySettings: Sendable {
     let opensReaderView = SettingsKey<Bool>("Library.opensReaderView", default: false)
     let resumeLastOpenedChapter = SettingsKey<Bool>("Library.resumeLastOpenedChapter", default: false)
     let continueReadingOnReselect = SettingsKey<Bool>("Library.continueReadingOnReselect", default: true)
+    let hideCoverTitles = SettingsKey<Bool>("Library.hideCoverTitles", default: false)
     let contextMenuPagePreviews = SettingsKey<Bool>("Library.contextMenuPagePreviews", default: true)
     // Keep the existing key so moving the setting does not reset the user's choice.
     let showChapterPageCounts = SettingsKey<Bool>("Reader.showChapterPageCounts", default: false)

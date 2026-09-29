@@ -22,6 +22,21 @@ class MangaGridCell: UICollectionViewCell {
         }
     }
 
+    var subtitle: String? {
+        get { subtitleLabel.text }
+        set { subtitleLabel.text = newValue }
+    }
+
+    var showsCaption = false {
+        didSet {
+            guard showsCaption != oldValue else { return }
+            coverBottomConstraint?.isActive = !showsCaption
+            coverAspectConstraint?.isActive = showsCaption
+            titleLabel.isHidden = !showsCaption || isPlaceholder
+            subtitleLabel.isHidden = !showsCaption || isPlaceholder
+        }
+    }
+
     var showsBookmark: Bool {
         get {
             !bookmarkView.isHidden
@@ -40,8 +55,10 @@ class MangaGridCell: UICollectionViewCell {
         set { badgeView.badgeNumber2 = newValue }
     }
 
+    let coverView = UIView()
     let imageView = GIFImageView()
     private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
     private let placeholderIconView = UIImageView()
     private let placeholderLabel = UILabel()
     private let placeholderStackView = UIStackView()
@@ -67,7 +84,7 @@ class MangaGridCell: UICollectionViewCell {
         let shadowOverlayView = UIView()
         shadowOverlayView.alpha = 0
         shadowOverlayView.backgroundColor = UIColor(white: 0, alpha: 0.5)
-        shadowOverlayView.layer.cornerRadius = layer.cornerRadius
+        shadowOverlayView.layer.cornerRadius = 12
         shadowOverlayView.translatesAutoresizingMaskIntoConstraints = false
         return shadowOverlayView
     }()
@@ -77,6 +94,8 @@ class MangaGridCell: UICollectionViewCell {
     private var badgeConstraints: [NSLayoutConstraint] = []
     private var placeholderLeadingConstraint: NSLayoutConstraint?
     private var placeholderTrailingConstraint: NSLayoutConstraint?
+    private var coverBottomConstraint: NSLayoutConstraint?
+    private var coverAspectConstraint: NSLayoutConstraint?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -89,17 +108,18 @@ class MangaGridCell: UICollectionViewCell {
     }
 
     func configure() {
-        contentView.clipsToBounds = true
-        contentView.layer.cornerRadius = 12
-        contentView.layer.cornerCurve = .continuous
-        contentView.layer.borderWidth = 1
+        coverView.clipsToBounds = true
+        coverView.layer.cornerRadius = 12
+        coverView.layer.cornerCurve = .continuous
+        coverView.layer.borderWidth = 1
         updatePosterBorderAppearance()
+        contentView.addSubview(coverView)
 
         imageView.image = UIImage(named: "MangaPlaceholder")
         imageView.backgroundColor = Self.coverBackgroundColor
         imageView.contentMode = .scaleAspectFill
-        contentView.addSubview(imageView)
-        contentView.addSubview(nsfwCoverView)
+        coverView.addSubview(imageView)
+        coverView.addSubview(nsfwCoverView)
 
         placeholderIconView.tintColor = .tertiaryLabel
         placeholderIconView.contentMode = .scaleAspectFit
@@ -118,7 +138,7 @@ class MangaGridCell: UICollectionViewCell {
         placeholderStackView.addArrangedSubview(placeholderIconView)
         placeholderStackView.addArrangedSubview(placeholderLabel)
         placeholderStackView.isHidden = true
-        contentView.addSubview(placeholderStackView)
+        coverView.addSubview(placeholderStackView)
 
         gradient.frame = bounds
         gradient.locations = [0.6, 1]
@@ -126,37 +146,44 @@ class MangaGridCell: UICollectionViewCell {
             UIColor(white: 0, alpha: 0).cgColor,
             UIColor(white: 0, alpha: 0.7).cgColor
         ]
-        gradient.cornerRadius = layer.cornerRadius
+        gradient.cornerRadius = 12
         gradient.needsDisplayOnBoundsChange = true
 
-        // Keep the poster image clean; titles are shown below cards by the
-        // surrounding library/list layout rather than over the artwork.
-        overlayView.layer.cornerRadius = layer.cornerRadius
-        contentView.addSubview(overlayView)
+        // Keep artwork unobstructed; the optional caption sits below the cover.
+        overlayView.layer.cornerRadius = 12
+        coverView.addSubview(overlayView)
 
-        titleLabel.textColor = .white
-        titleLabel.numberOfLines = 2
-        titleLabel.font = .systemFont(ofSize: 15, weight: .medium)
+        titleLabel.textColor = .label
+        titleLabel.numberOfLines = 1
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.font = .systemFont(ofSize: 13.25, weight: .medium)
         contentView.addSubview(titleLabel)
         titleLabel.isHidden = true
         overlayView.isHidden = true
 
-        contentView.addSubview(badgeView)
+        subtitleLabel.textColor = .secondaryLabel
+        subtitleLabel.numberOfLines = 1
+        subtitleLabel.lineBreakMode = .byTruncatingTail
+        subtitleLabel.font = .systemFont(ofSize: 14)
+        contentView.addSubview(subtitleLabel)
+        subtitleLabel.isHidden = true
+
+        coverView.addSubview(badgeView)
 
         bookmarkView.isHidden = true
         bookmarkView.image = UIImage(named: "bookmark")
         bookmarkView.contentMode = .scaleAspectFit
-        contentView.addSubview(bookmarkView)
+        coverView.addSubview(bookmarkView)
 
         highlightView.alpha = 0
         highlightView.backgroundColor = UIColor(white: 0, alpha: 0.5)
-        highlightView.layer.cornerRadius = layer.cornerRadius
-        contentView.addSubview(highlightView)
+        highlightView.layer.cornerRadius = 12
+        coverView.addSubview(highlightView)
 
         selectionView.isHidden = true
 
-        contentView.addSubview(shadowOverlayView)
-        contentView.addSubview(selectionView)
+        coverView.addSubview(shadowOverlayView)
+        coverView.addSubview(selectionView)
     }
 
     private static let coverBackgroundColor = UIColor { traits in
@@ -175,82 +202,99 @@ class MangaGridCell: UICollectionViewCell {
 
     private func updatePosterBorderAppearance() {
         guard !hidesNSFWCover else {
-            contentView.layer.borderColor = UIColor.clear.cgColor
+            coverView.layer.borderColor = UIColor.clear.cgColor
             return
         }
-        contentView.layer.borderColor = MangaCoverBorderStyle.color(for: traitCollection).cgColor
+        coverView.layer.borderColor = MangaCoverBorderStyle.color(for: traitCollection).cgColor
     }
 
     private func updatePlaceholderAppearance() {
         guard isPlaceholder else { return }
         let background = Self.coverBackgroundColor.resolvedColor(with: traitCollection)
         let foreground = NSFWCoverView.foregroundColor(for: background)
-        contentView.backgroundColor = background
+        coverView.backgroundColor = background
         placeholderIconView.tintColor = foreground
         placeholderLabel.textColor = foreground
     }
 
     func constrain() {
+        coverView.translatesAutoresizingMaskIntoConstraints = false
         imageView.translatesAutoresizingMaskIntoConstraints = false
         nsfwCoverView.translatesAutoresizingMaskIntoConstraints = false
         overlayView.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
         placeholderStackView.translatesAutoresizingMaskIntoConstraints = false
         badgeView.translatesAutoresizingMaskIntoConstraints = false
         bookmarkView.translatesAutoresizingMaskIntoConstraints = false
         highlightView.translatesAutoresizingMaskIntoConstraints = false
         selectionView.translatesAutoresizingMaskIntoConstraints = false
 
+        coverBottomConstraint = coverView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+        coverAspectConstraint = coverView.heightAnchor.constraint(equalTo: coverView.widthAnchor, multiplier: 1.5)
+        coverBottomConstraint?.isActive = true
+
         NSLayoutConstraint.activate([
-            imageView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            imageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            coverView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            coverView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            coverView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
 
-            nsfwCoverView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            nsfwCoverView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            nsfwCoverView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            nsfwCoverView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            imageView.topAnchor.constraint(equalTo: coverView.topAnchor),
+            imageView.leadingAnchor.constraint(equalTo: coverView.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: coverView.trailingAnchor),
+            imageView.bottomAnchor.constraint(equalTo: coverView.bottomAnchor),
 
-            placeholderStackView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            nsfwCoverView.topAnchor.constraint(equalTo: coverView.topAnchor),
+            nsfwCoverView.leadingAnchor.constraint(equalTo: coverView.leadingAnchor),
+            nsfwCoverView.trailingAnchor.constraint(equalTo: coverView.trailingAnchor),
+            nsfwCoverView.bottomAnchor.constraint(equalTo: coverView.bottomAnchor),
+
+            placeholderStackView.centerYAnchor.constraint(equalTo: coverView.centerYAnchor),
             placeholderIconView.widthAnchor.constraint(equalToConstant: 22),
             placeholderIconView.heightAnchor.constraint(equalToConstant: 22),
 
-            overlayView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            overlayView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            overlayView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            overlayView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            overlayView.topAnchor.constraint(equalTo: coverView.topAnchor),
+            overlayView.leadingAnchor.constraint(equalTo: coverView.leadingAnchor),
+            overlayView.trailingAnchor.constraint(equalTo: coverView.trailingAnchor),
+            overlayView.bottomAnchor.constraint(equalTo: coverView.bottomAnchor),
+
+            titleLabel.topAnchor.constraint(equalTo: coverView.bottomAnchor, constant: 6),
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor),
+            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 1),
+            subtitleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor),
 
             badgeView.heightAnchor.constraint(equalToConstant: 24),
-            badgeView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
-            badgeView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 6),
+            badgeView.topAnchor.constraint(equalTo: coverView.topAnchor, constant: 6),
+            badgeView.leadingAnchor.constraint(equalTo: coverView.leadingAnchor, constant: 6),
 
-            bookmarkView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
-            bookmarkView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            bookmarkView.trailingAnchor.constraint(equalTo: coverView.trailingAnchor, constant: -8),
+            bookmarkView.topAnchor.constraint(equalTo: coverView.topAnchor),
             bookmarkView.widthAnchor.constraint(equalToConstant: 17),
             bookmarkView.heightAnchor.constraint(equalToConstant: 27),
 
-            highlightView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            highlightView.leftAnchor.constraint(equalTo: contentView.leftAnchor),
-            highlightView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            highlightView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            highlightView.topAnchor.constraint(equalTo: coverView.topAnchor),
+            highlightView.leftAnchor.constraint(equalTo: coverView.leftAnchor),
+            highlightView.trailingAnchor.constraint(equalTo: coverView.trailingAnchor),
+            highlightView.bottomAnchor.constraint(equalTo: coverView.bottomAnchor),
 
-            shadowOverlayView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            shadowOverlayView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            shadowOverlayView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            shadowOverlayView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            shadowOverlayView.topAnchor.constraint(equalTo: coverView.topAnchor),
+            shadowOverlayView.leadingAnchor.constraint(equalTo: coverView.leadingAnchor),
+            shadowOverlayView.trailingAnchor.constraint(equalTo: coverView.trailingAnchor),
+            shadowOverlayView.bottomAnchor.constraint(equalTo: coverView.bottomAnchor),
 
-            selectionView.rightAnchor.constraint(equalTo: contentView.rightAnchor, constant: -10),
-            selectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10),
+            selectionView.rightAnchor.constraint(equalTo: coverView.rightAnchor, constant: -10),
+            selectionView.bottomAnchor.constraint(equalTo: coverView.bottomAnchor, constant: -10),
             selectionView.widthAnchor.constraint(equalToConstant: 24),
             selectionView.heightAnchor.constraint(equalToConstant: 24)
         ])
         placeholderLeadingConstraint = placeholderStackView.leadingAnchor.constraint(
-            equalTo: contentView.leadingAnchor,
+            equalTo: coverView.leadingAnchor,
             constant: 12
         )
         placeholderTrailingConstraint = placeholderStackView.trailingAnchor.constraint(
-            equalTo: contentView.trailingAnchor,
+            equalTo: coverView.trailingAnchor,
             constant: -12
         )
         placeholderLeadingConstraint?.isActive = true
@@ -259,7 +303,7 @@ class MangaGridCell: UICollectionViewCell {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        gradient.frame = contentView.bounds
+        gradient.frame = coverView.bounds
     }
 
     override func prepareForReuse() {
@@ -268,6 +312,8 @@ class MangaGridCell: UICollectionViewCell {
         imageView.image = UIImage(named: "MangaPlaceholder")
         originalCoverImage = nil
         grayscalesCaughtUpCover = false
+        showsCaption = false
+        subtitle = nil
         imageTask?.cancel()
         imageTask = nil
         highlightView.alpha = 0
@@ -280,13 +326,13 @@ class MangaGridCell: UICollectionViewCell {
         nsfwCoverView.isHidden = !hidesNSFWCover
         updatePosterBorderAppearance()
         guard hidesNSFWCover else { return }
-        nsfwCoverView.layer.cornerRadius = contentView.layer.cornerRadius
+        nsfwCoverView.layer.cornerRadius = coverView.layer.cornerRadius
         nsfwCoverView.layer.cornerCurve = .continuous
         nsfwCoverView.configure(title: title, image: imageView.image)
-        contentView.bringSubviewToFront(nsfwCoverView)
-        contentView.bringSubviewToFront(highlightView)
-        contentView.bringSubviewToFront(shadowOverlayView)
-        contentView.bringSubviewToFront(selectionView)
+        coverView.bringSubviewToFront(nsfwCoverView)
+        coverView.bringSubviewToFront(highlightView)
+        coverView.bringSubviewToFront(shadowOverlayView)
+        coverView.bringSubviewToFront(selectionView)
     }
 
     func setCaughtUp(_ isCaughtUp: Bool) {
@@ -310,6 +356,8 @@ class MangaGridCell: UICollectionViewCell {
         horizontalPadding: CGFloat = 12
     ) {
         isPlaceholder = text != nil
+        titleLabel.isHidden = !showsCaption || isPlaceholder
+        subtitleLabel.isHidden = !showsCaption || isPlaceholder
         placeholderLabel.text = text
         placeholderIconView.image = symbolName.flatMap {
             UIImage(
@@ -325,10 +373,10 @@ class MangaGridCell: UICollectionViewCell {
         bookmarkView.isHidden = true
         selectionView.isHidden = isPlaceholder || !isEditing
         shadowOverlayView.isHidden = isPlaceholder
-        contentView.backgroundColor = isPlaceholder ? Self.coverBackgroundColor : .clear
+        coverView.backgroundColor = isPlaceholder ? Self.coverBackgroundColor : .clear
         if isPlaceholder {
             updatePlaceholderAppearance()
-            contentView.bringSubviewToFront(placeholderStackView)
+            coverView.bringSubviewToFront(placeholderStackView)
         }
     }
 }
