@@ -55,7 +55,7 @@ class MangaListCell: UICollectionViewCell {
         imageView.contentMode = .scaleAspectFill
         imageView.layer.cornerRadius = 5
         imageView.layer.borderWidth = 1
-        imageView.layer.borderColor = UIColor.quaternarySystemFill.cgColor
+        imageView.layer.borderColor = MangaCoverBorderStyle.color(for: traitCollection).cgColor
         imageView.addSubview(nsfwCoverView)
         return imageView
     }()
@@ -189,6 +189,19 @@ class MangaListCell: UICollectionViewCell {
         alpha = 1
     }
 
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if traitCollection.hasDifferentColorAppearance(comparedTo: previousTraitCollection) {
+            updateCoverBorderAppearance()
+        }
+    }
+
+    private func updateCoverBorderAppearance() {
+        coverImageView.layer.borderColor = hidesNSFWCover
+            ? UIColor.clear.cgColor
+            : MangaCoverBorderStyle.color(for: traitCollection).cgColor
+    }
+
     private func setBadgeVisible(_ visible: Bool) {
         badgeView.isHidden = !visible
         if visible {
@@ -291,9 +304,7 @@ extension MangaListCell {
     func setNSFW(_ isNSFW: Bool, title: String?) {
         hidesNSFWCover = isNSFW && AppSettings.appearance.blurNSFWCovers.get()
         nsfwCoverView.isHidden = !hidesNSFWCover
-        coverImageView.layer.borderColor = hidesNSFWCover
-            ? UIColor.clear.cgColor
-            : UIColor.quaternarySystemFill.cgColor
+        updateCoverBorderAppearance()
         guard hidesNSFWCover else { return }
         nsfwCoverView.layer.cornerRadius = coverImageView.layer.cornerRadius
         nsfwCoverView.layer.cornerCurve = .continuous

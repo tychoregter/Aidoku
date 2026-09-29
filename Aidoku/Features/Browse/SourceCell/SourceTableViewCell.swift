@@ -14,13 +14,15 @@ protocol SourceCellDelegate: AnyObject {
 }
 
 class SourceTableViewCell: UITableViewCell {
+    private static let outerInset: CGFloat = 20
+
     var info: SourceInfo?
     var section: BrowseViewController.Section?
     weak var delegate: SourceCellDelegate?
 
     private var iconSize: CGFloat = 48 {
         didSet {
-            iconView.layer.cornerRadius = iconSize * 0.225
+            iconView.layer.cornerRadius = 12 * iconSize / 48
         }
     }
 
@@ -63,6 +65,17 @@ class SourceTableViewCell: UITableViewCell {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle {
+            updateIconBorderAppearance()
+        }
+    }
+
+    private func updateIconBorderAppearance() {
+        iconView.layer.borderColor = MangaCoverBorderStyle.color(for: traitCollection).cgColor
+    }
+
     func configure() {
         // TODO: use contentConfiguration
         backgroundColor = .systemBackground
@@ -70,10 +83,10 @@ class SourceTableViewCell: UITableViewCell {
 
         iconView.image = UIImage(named: "MangaPlaceholder")
         iconView.clipsToBounds = true
-        iconView.layer.cornerRadius = iconSize * 0.225
+        iconView.layer.cornerRadius = 12 * iconSize / 48
         iconView.layer.cornerCurve = .continuous
-        iconView.layer.borderColor = UIColor.quaternarySystemFill.cgColor
-        iconView.layer.borderWidth = 1
+        iconView.layer.borderWidth = 0.5
+        updateIconBorderAppearance()
         iconView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(iconView)
 
@@ -131,7 +144,7 @@ class SourceTableViewCell: UITableViewCell {
 
     func constrain() {
         NSLayoutConstraint.activate([
-            iconView.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor, constant: 0),
+            iconView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Self.outerInset),
             iconView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             iconView.widthAnchor.constraint(equalToConstant: iconSize),
             iconView.heightAnchor.constraint(equalToConstant: iconSize),
@@ -144,16 +157,16 @@ class SourceTableViewCell: UITableViewCell {
             badgeView.widthAnchor.constraint(equalTo: badgeLabel.widthAnchor, constant: 10),
             badgeView.heightAnchor.constraint(equalTo: badgeLabel.heightAnchor, constant: 4),
 
-            warningButton.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor, constant: -6),
+            warningButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Self.outerInset - 6),
             warningButton.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
 
-            getButton.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
+            getButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -Self.outerInset),
             getButton.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             getButton.widthAnchor.constraint(equalTo: getButton.backgroundView.widthAnchor),
             getButton.heightAnchor.constraint(equalToConstant: 28),
 
-            separator.leadingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.leadingAnchor),
-            separator.trailingAnchor.constraint(equalTo: trailingAnchor),
+            separator.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: Self.outerInset),
+            separator.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.outerInset),
             separator.bottomAnchor.constraint(equalTo: bottomAnchor),
             separator.heightAnchor.constraint(equalToConstant: 0.5),
 

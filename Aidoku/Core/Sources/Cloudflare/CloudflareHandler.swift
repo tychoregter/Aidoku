@@ -7,15 +7,12 @@
 
 import AidokuRunner
 import Foundation
-import SwiftSoup
 import WebKit
 
 // handles requests blocked by cloudflare, retrieving new cookies from a webview
 // and showing a popup to complete a captcha if necessary
 actor CloudflareHandler: NSObject {
     static let shared = CloudflareHandler()
-
-    private let blockedStatusCodes: Set<Int> = [403, 503]
 
     private struct ChallengeKey: Hashable {
         let host: String
@@ -82,30 +79,25 @@ actor CloudflareHandler: NSObject {
     }
 
     nonisolated func shouldHandle(response: HTTPURLResponse, data: Data) -> Bool {
-        let server = response.value(forHTTPHeaderField: "Server")
-        if !["cloudflare", "cloudflare-nginx"].contains(server) {
+        if response.value(forHTTPHeaderField: "cf-mitigated")?.lowercased() == "challenge" {
+            return true
+        }
+        guard response.value(forHTTPHeaderField: "Server")?.lowercased().hasPrefix("cloudflare") == true else {
             return false
         }
-        if !blockedStatusCodes.contains(response.statusCode) {
-            return false
-        }
-
         guard let html = String(data: data, encoding: .utf8) else { return false }
-        do {
-            let doc = try SwiftSoup.parse(html)
-            if try doc.getElementById("challenge-error-title") != nil {
-                return true
-            }
-            if try doc.getElementById("challenge-error-text") != nil {
-                return true
-            }
-        } catch {}
-        return false
+        // Older challenge responses may omit cf-mitigated or use HTTP 200.
+        return html.contains("cdn-cgi/challenge-platform")
+            || html.contains("_cf_chl_opt")
+            || html.contains("challenge-error-title")
+            || html.contains("challenge-error-text")
+            || html.range(of: "<title>Just a moment", options: .caseInsensitive) != nil
     }
 
     func handle(request: URLRequest) async throws -> (Data, URLResponse) {
         do {
-            return try await solveWithFlareSolverr(request: request)
+            try await solveWithFlareSolverr(request: request)
+            return try await retry(request: request)
         } catch {
             guard AppSettings.general.flareSolverrFallback.get() else {
                 throw error
@@ -114,8 +106,10 @@ actor CloudflareHandler: NSObject {
 
         // handle challenges one at a time, waiting for a solution for the request url host
         try await awaitChallenge(for: request)
+        return try await retry(request: request)
+    }
 
-        // retry request
+    private func retry(request: URLRequest) async throws -> (Data, URLResponse) {
         let newRequest = if let url = request.url {
             await AidokuRunner.Source.modify(url: url, request: request)
         } else {
@@ -160,7 +154,7 @@ actor CloudflareHandler: NSObject {
         return nil
     }
 
-    private func solveWithFlareSolverr(request: URLRequest) async throws -> (Data, URLResponse) {
+    private func solveWithFlareSolverr(request: URLRequest) async throws {
         let configuredURL = AppSettings.general.flareSolverrURL.get().trimmingCharacters(in: .whitespacesAndNewlines)
         guard
             !configuredURL.isEmpty,
@@ -170,29 +164,23 @@ actor CloudflareHandler: NSObject {
             throw HandleError.solveFailed
         }
 
-        let isPost = request.httpMethod?.uppercased() == "POST"
         var body: [String: Any] = [
-            "cmd": isPost ? "request.post" : "request.get",
+            // FlareSolverr only supports form-encoded POST bodies. Use its
+            // browser to acquire clearance, then replay the original request.
+            "cmd": "request.get",
             "url": targetURL.absoluteString,
             "maxTimeout": 120_000
         ]
         if let host = targetURL.host?.lowercased(), let userAgent = flareSolverrUserAgents[host] {
             body["userAgent"] = userAgent
         }
-        if isPost, let httpBody = request.httpBody {
-            guard let postData = String(data: httpBody, encoding: .utf8) else {
-                throw HandleError.solveFailed
-            }
-            body["postData"] = postData
-        }
-
         var solverRequest = URLRequest(url: apiURL)
         solverRequest.httpMethod = "POST"
         solverRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         solverRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: solverRequest)
-        guard let httpResponse = response as? HTTPURLResponse else {
+        guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {
             throw HandleError.solveFailed
         }
 
@@ -205,20 +193,6 @@ actor CloudflareHandler: NSObject {
             storeFlareSolverrUserAgent(userAgent, for: targetURL, cookies: solution.cookies)
         }
         storeFlareSolverrCookies(solution.cookies, for: targetURL)
-
-        guard let responseData = solution.response.data(using: .utf8) else {
-            throw HandleError.solveFailed
-        }
-        var headers = solution.headers ?? [:]
-        headers.removeValue(forKey: "content-encoding")
-        headers.removeValue(forKey: "content-length")
-        let solvedResponse = HTTPURLResponse(
-            url: URL(string: solution.url) ?? targetURL,
-            statusCode: solution.status,
-            httpVersion: "HTTP/1.1",
-            headerFields: headers
-        ) ?? httpResponse
-        return (responseData, solvedResponse)
     }
 
     private func storeFlareSolverrCookies(_ cookies: [FlareSolverrCookie], for url: URL) {
@@ -279,10 +253,7 @@ private struct FlareSolverrResponse: Decodable {
 }
 
 private struct FlareSolverrSolution: Decodable {
-    let url: String
     let status: Int
-    let headers: [String: String]?
-    let response: String
     let cookies: [FlareSolverrCookie]
     let userAgent: String?
 }

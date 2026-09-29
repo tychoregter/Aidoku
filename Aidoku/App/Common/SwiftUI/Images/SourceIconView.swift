@@ -30,10 +30,10 @@ struct SourceIconView: View {
             Image(imageName)
                 .resizable()
                 .frame(width: iconSize, height: iconSize)
-                .clipShape(RoundedRectangle(cornerRadius: iconSize * 0.225))
+                .clipShape(RoundedRectangle(cornerRadius: 12 * iconSize / 48, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: iconSize * 0.225)
-                        .strokeBorder(Color(uiColor: UIColor.quaternarySystemFill), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 12 * iconSize / 48, style: .continuous)
+                        .strokeBorder(MangaCoverBorderStyle.swiftUIColor, lineWidth: 1)
                 )
         }
     }
@@ -49,10 +49,10 @@ private struct IconView: View {
             width: iconSize,
             height: iconSize
         )
-        .clipShape(RoundedRectangle(cornerRadius: iconSize * 0.225))
+        .clipShape(RoundedRectangle(cornerRadius: 12 * iconSize / 48, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: iconSize * 0.225)
-                .strokeBorder(Color(uiColor: UIColor.quaternarySystemFill), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12 * iconSize / 48, style: .continuous)
+                .strokeBorder(MangaCoverBorderStyle.swiftUIColor, lineWidth: 1)
         )
     }
 }

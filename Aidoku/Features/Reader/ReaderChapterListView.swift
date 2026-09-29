@@ -14,6 +14,8 @@ struct ReaderChapterListView: View {
     var chapterList: [AidokuRunner.Chapter]
     @State var chapter: AidokuRunner.Chapter
     @State private var pageCounts: [String: Int]
+    @State private var progressPages: [String: Int]
+    private let liveCurrentPage: Int?
     @StateObject private var showPageCounts = UserDefaultsBool(key: AppSettings.library.showChapterPageCounts.key)
     @StateObject private var chapterListOrderObserver = UserDefaultsObserver(
         key: AppSettings.library.chapterListOrder.key
@@ -28,6 +30,7 @@ struct ReaderChapterListView: View {
         chapterList: [AidokuRunner.Chapter],
         chapter: AidokuRunner.Chapter,
         pageCounts: [String: Int] = [:],
+        currentPage: Int? = nil,
         chapterSet: ((AidokuRunner.Chapter) -> Void)? = nil
     ) {
         self.source = source
@@ -35,6 +38,8 @@ struct ReaderChapterListView: View {
         self.chapterList = chapterList
         self._chapter = State(initialValue: chapter)
         self._pageCounts = State(initialValue: pageCounts)
+        self._progressPages = State(initialValue: currentPage.map { $0 > 0 ? [chapter.key: $0] : [:] } ?? [:])
+        self.liveCurrentPage = currentPage
         self.chapterSet = chapterSet
     }
 
@@ -52,12 +57,10 @@ struct ReaderChapterListView: View {
                                     .foregroundColor(.primary)
                                     .font(.subheadline)
                                 if showPageCounts.value, supportsPageCounts {
-                                    Text(
-                                        String(
-                                            format: NSLocalizedString("%i_PAGES"),
-                                            pageCounts[chapter.key] ?? 0
-                                        )
-                                    )
+                                    Text(chapterPageCountSubtitle(
+                                        pageCount: pageCounts[chapter.key] ?? 0,
+                                        progressPage: progressPages[chapter.key]
+                                    ))
                                         .foregroundColor(.secondary)
                                         .font(.subheadline)
                                         // Reserve the subtitle's final height while its
@@ -93,6 +96,9 @@ struct ReaderChapterListView: View {
                         proxy.scrollTo(chapter.id, anchor: .center)
                     }
                 }
+                .task(id: "\(manga.identifier)-\(showPageCounts.value)") {
+                    await loadReadingProgressIfNeeded()
+                }
             }
             .navigationTitle(NSLocalizedString("CHAPTERS"))
             .navigationBarTitleDisplayMode(.inline)
@@ -124,5 +130,17 @@ struct ReaderChapterListView: View {
         guard let pages = try? await source.getPageList(manga: manga, chapter: chapter) else { return }
         guard !Task.isCancelled else { return }
         pageCounts[chapter.key] = pages.count
+    }
+
+    private func loadReadingProgressIfNeeded() async {
+        guard showPageCounts.value, supportsPageCounts else { return }
+        let history = await CoreDataManager.shared.getReadingHistory(mangaId: manga.identifier)
+        guard !Task.isCancelled else { return }
+
+        progressPages = history.compactMapValues { $0.page > 0 ? $0.page : nil }
+        // The reader's live position may be newer than the most recent persisted update.
+        if let liveCurrentPage, liveCurrentPage > 0 {
+            progressPages[chapter.key] = liveCurrentPage
+        }
     }
 }

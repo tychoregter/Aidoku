@@ -878,7 +878,8 @@ extension ReaderViewController {
             manga: manga,
             chapterList: chapterList,
             chapter: chapter,
-            pageCounts: [chapter.key: pages.count]
+            pageCounts: [chapter.key: pages.count],
+            currentPage: currentPage
         )
         view.chapterSet = { [weak self] chapter in
             guard let self else { return }

@@ -41,7 +41,7 @@ struct MangaGridItem: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.24), lineWidth: 1)
+                    .strokeBorder(MangaCoverBorderStyle.swiftUIColor, lineWidth: 1)
             )
         if coverImage.hasSuffix("gif") {
             // if the image is a gif, we can't use drawingGroup (static image)
@@ -72,7 +72,7 @@ struct MangaGridItem: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.24), lineWidth: 1)
+                    .strokeBorder(MangaCoverBorderStyle.swiftUIColor, lineWidth: 1)
             )
     }
 }

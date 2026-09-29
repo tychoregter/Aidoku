@@ -101,7 +101,9 @@ struct ChapterTableCell: View {
 
     private var subtitle: String? {
         if showPageCounts.value, supportsPageCounts {
-            return loadedPageCount.map { String(format: NSLocalizedString("%i_PAGES"), $0) }
+            return loadedPageCount.map {
+                chapterPageCountSubtitle(pageCount: $0, progressPage: page)
+            }
         }
         return chapter.formattedSubtitle(page: page, sourceKey: sourceKey)
     }
@@ -116,6 +118,14 @@ struct ChapterTableCell: View {
         guard !Task.isCancelled else { return }
         loadedPageCount = pages.count
     }
+}
+
+func chapterPageCountSubtitle(pageCount: Int, progressPage: Int?) -> String {
+    let pageCountText = String(format: NSLocalizedString("%i_PAGES"), pageCount)
+    guard let progressPage, progressPage > 0 else { return pageCountText }
+    let pagesLeft = max(pageCount - progressPage, 0)
+    let pagesLeftText = String(format: NSLocalizedString("%i_PAGES_LEFT"), pagesLeft)
+    return "\(pageCountText) · \(pagesLeftText)"
 }
 
 private struct DownloadProgressView: UIViewRepresentable {

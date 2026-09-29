@@ -178,10 +178,7 @@ class MangaGridCell: UICollectionViewCell {
             contentView.layer.borderColor = UIColor.clear.cgColor
             return
         }
-        let borderColor = traitCollection.userInterfaceStyle == .dark
-            ? UIColor.white.withAlphaComponent(0.24)
-            : UIColor.black.withAlphaComponent(0.18)
-        contentView.layer.borderColor = borderColor.cgColor
+        contentView.layer.borderColor = MangaCoverBorderStyle.color(for: traitCollection).cgColor
     }
 
     private func updatePlaceholderAppearance() {

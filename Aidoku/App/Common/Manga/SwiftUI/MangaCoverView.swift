@@ -7,8 +7,21 @@
 
 import AidokuRunner
 import SwiftUI
+import UIKit
 import Nuke
 import NukeUI
+
+enum MangaCoverBorderStyle {
+    static func color(for traits: UITraitCollection) -> UIColor {
+        traits.userInterfaceStyle == .dark
+            ? UIColor.white.withAlphaComponent(0.24)
+            : UIColor.black.withAlphaComponent(0.18)
+    }
+
+    static var swiftUIColor: Color {
+        Color(uiColor: UIColor { traits in color(for: traits) })
+    }
+}
 
 struct MangaCoverView: View {
     var source: AidokuRunner.Source?
@@ -38,7 +51,7 @@ struct MangaCoverView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.24), lineWidth: 1)
+                .strokeBorder(MangaCoverBorderStyle.swiftUIColor, lineWidth: 1)
         )
     }
 
