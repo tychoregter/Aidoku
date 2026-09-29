@@ -12,6 +12,8 @@ import Nuke
 import NukeUI
 
 enum MangaCoverBorderStyle {
+    static let width: CGFloat = 0.5
+
     static func color(for traits: UITraitCollection) -> UIColor {
         traits.userInterfaceStyle == .dark
             ? UIColor.white.withAlphaComponent(0.24)
@@ -51,7 +53,7 @@ struct MangaCoverView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(MangaCoverBorderStyle.swiftUIColor, lineWidth: 1)
+                .strokeBorder(MangaCoverBorderStyle.swiftUIColor, lineWidth: MangaCoverBorderStyle.width)
         )
     }
 

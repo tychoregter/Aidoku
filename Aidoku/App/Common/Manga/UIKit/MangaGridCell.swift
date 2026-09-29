@@ -111,7 +111,7 @@ class MangaGridCell: UICollectionViewCell {
         coverView.clipsToBounds = true
         coverView.layer.cornerRadius = 12
         coverView.layer.cornerCurve = .continuous
-        coverView.layer.borderWidth = 1
+        coverView.layer.borderWidth = MangaCoverBorderStyle.width
         updatePosterBorderAppearance()
         contentView.addSubview(coverView)
 
@@ -651,7 +651,7 @@ final class NSFWCoverView: UIView {
         iconView.tintColor = foreground
         titleLabel.textColor = foreground
 
-        layer.borderWidth = 1
+        layer.borderWidth = MangaCoverBorderStyle.width
         layer.borderColor = Self.blend(
             background,
             toward: isDark ? .white : .black,

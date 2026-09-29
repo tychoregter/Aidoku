@@ -54,7 +54,7 @@ class MangaListCell: UICollectionViewCell {
         imageView.clipsToBounds = true
         imageView.contentMode = .scaleAspectFill
         imageView.layer.cornerRadius = 5
-        imageView.layer.borderWidth = 1
+        imageView.layer.borderWidth = MangaCoverBorderStyle.width
         imageView.layer.borderColor = MangaCoverBorderStyle.color(for: traitCollection).cgColor
         imageView.addSubview(nsfwCoverView)
         return imageView
