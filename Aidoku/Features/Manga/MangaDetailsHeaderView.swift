@@ -35,11 +35,16 @@ struct MangaDetailsHeaderView: View {
     @Binding var chapterTitleDisplayMode: ChapterTitleDisplayMode
 
     var hasOtherDownloads: Bool
+    var chapterHeaderShadowColor: Color = .black
+    var usesDarkHeaderText = false
+    var headerControlBackgroundColor: Color = .white.opacity(0.14)
+    var nsfwBaseColor: UIColor?
     var onHeroBottomChange: ((CGFloat) -> Void)?
     var onTitlePressed: (() -> Void)?
     var onReadButtonPressed: (() -> Void)?
 
     @EnvironmentObject private var path: NavigationCoordinator
+    @Environment(\.openURL) private var openURL
 
     @State private var readButtonTitle = NSLocalizedString("LOADING_ELLIPSIS")
     @State private var readButtonSubtitle: String?
@@ -52,8 +57,14 @@ struct MangaDetailsHeaderView: View {
     @State private var uploadedCover: UIImage?
     @State private var showAlternateCoverPicker = false
     @StateObject private var developerMode = UserDefaultsBool(key: AppSettings.general.developerMode.key)
+    @StateObject private var hideNSFWCovers = UserDefaultsBool(key: AppSettings.appearance.blurNSFWCovers.key)
 
-    static let coverWidth: CGFloat = 150
+    static let coverWidth: CGFloat = 200
+
+    private var headerTextColor: Color { usesDarkHeaderText ? .black : .white }
+    private var readButtonColor: Color { usesDarkHeaderText ? .black : .white }
+    private var readButtonTextColor: Color { usesDarkHeaderText ? .white : .black }
+    private var hidesNSFWCover: Bool { hideNSFWCovers.value && manga.contentRating == .nsfw }
 
     init(
         section: Section = .details,
@@ -72,6 +83,10 @@ struct MangaDetailsHeaderView: View {
         scanlatorFilter: Binding<[String]>,
         chapterTitleDisplayMode: Binding<ChapterTitleDisplayMode>,
         hasOtherDownloads: Bool,
+        chapterHeaderShadowColor: Color = .black,
+        usesDarkHeaderText: Bool = false,
+        headerControlBackgroundColor: Color = .white.opacity(0.14),
+        nsfwBaseColor: UIColor? = nil,
         onHeroBottomChange: ((CGFloat) -> Void)? = nil,
         onTitlePressed: (() -> Void)? = nil,
         onReadButtonPressed: (() -> Void)? = nil
@@ -92,6 +107,10 @@ struct MangaDetailsHeaderView: View {
         self._scanlatorFilter = scanlatorFilter
         self._chapterTitleDisplayMode = chapterTitleDisplayMode
         self.hasOtherDownloads = hasOtherDownloads
+        self.chapterHeaderShadowColor = chapterHeaderShadowColor
+        self.usesDarkHeaderText = usesDarkHeaderText
+        self.headerControlBackgroundColor = headerControlBackgroundColor
+        self.nsfwBaseColor = nsfwBaseColor
         self.onHeroBottomChange = onHeroBottomChange
         self.onTitlePressed = onTitlePressed
         self.onReadButtonPressed = onReadButtonPressed
@@ -125,7 +144,10 @@ struct MangaDetailsHeaderView: View {
                         .padding(.top, 18)
                         .padding(.bottom, 18)
                         .frame(maxWidth: .infinity)
-                        .background(Color(uiColor: .systemBackground))
+                        .background {
+                            Color(uiColor: .systemBackground)
+                                .shadow(color: chapterHeaderShadowColor.opacity(0.42), radius: 80, x: 0, y: -16)
+                        }
                     }
                 }
             }
@@ -200,7 +222,9 @@ struct MangaDetailsHeaderView: View {
             width: Self.coverWidth,
             height: Self.coverWidth * 3 / 2,
             borderColor: Color.white.opacity(0.24),
-            privacyPlaceholder: developerMode.value
+            privacyPlaceholder: developerMode.value,
+            hideNSFW: hidesNSFWCover,
+            nsfwBaseColor: nsfwBaseColor
         )
         .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contextMenu {
@@ -212,7 +236,9 @@ struct MangaDetailsHeaderView: View {
                 width: Self.coverWidth,
                 height: Self.coverWidth * 3 / 2,
                 borderColor: Color.white.opacity(0.24),
-                privacyPlaceholder: developerMode.value
+                privacyPlaceholder: developerMode.value,
+                hideNSFW: hidesNSFWCover,
+                nsfwBaseColor: nsfwBaseColor
             )
         }
         .id(manga.cover ?? "")
@@ -242,7 +268,7 @@ struct MangaDetailsHeaderView: View {
                     ? DeveloperMode.author(for: String(describing: manga.identifier))
                     : authors.joined(separator: ", "))
                     .font(.callout.weight(.medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(headerTextColor)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
 
@@ -263,7 +289,7 @@ struct MangaDetailsHeaderView: View {
                                 authorText
                                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(.white.opacity(0.55))
+                                    .foregroundStyle(headerTextColor.opacity(0.55))
                                 Spacer(minLength: 0)
                             }
                             .frame(maxWidth: .infinity)
@@ -280,7 +306,7 @@ struct MangaDetailsHeaderView: View {
             if !metadataText.isEmpty {
                 Text(metadataText)
                     .font(.callout.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(headerTextColor.opacity(0.7))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .padding(.top, 7)
@@ -288,6 +314,21 @@ struct MangaDetailsHeaderView: View {
             }
 
             HStack(spacing: 12) {
+                if let sourcePageURL = manga.url {
+                    Button {
+                        openURL(sourcePageURL)
+                    } label: {
+                        Image(systemName: "safari")
+                            .font(.system(size: 18, weight: .medium))
+                            .frame(width: 48, height: 48)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(headerTextColor)
+                    .background(headerControlBackgroundColor, in: Circle())
+                    .accessibilityLabel(NSLocalizedString("OPEN_SOURCE_PAGE"))
+                }
+
                 Button {
                     onReadButtonPressed?()
                 } label: {
@@ -300,18 +341,18 @@ struct MangaDetailsHeaderView: View {
                                 ? DeveloperMode.chapterTitle(for: String(describing: manga.identifier))
                                 : readButtonSubtitle)
                                 .font(.system(size: 13))
-                                .foregroundStyle(.white.opacity(0.72))
+                                .foregroundStyle(readButtonTextColor.opacity(0.62))
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                         }
                     }
                     .padding(.horizontal, 22)
-                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .frame(maxWidth: 200, minHeight: 48)
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.white)
-                .background(.white.opacity(0.22), in: Capsule())
+                .foregroundStyle(readButtonTextColor)
+                .background(readButtonColor, in: Capsule())
                 .disabled(readButtonDisabled)
 
                 Button {
@@ -329,8 +370,8 @@ struct MangaDetailsHeaderView: View {
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.white)
-                .background(.white.opacity(0.22), in: Circle())
+                .foregroundStyle(headerTextColor)
+                .background(headerControlBackgroundColor, in: Circle())
                 .accessibilityLabel(bookmarked ? NSLocalizedString("REMOVE_FROM_LIBRARY") : NSLocalizedString("ADD_TO_LIBRARY"))
                 .alert(NSLocalizedString("REMOVE_FROM_LIBRARY_CONFIRM"), isPresented: $showLibraryRemoveConfirm) {
                     Button(NSLocalizedString("CANCEL"), role: .cancel) {}
@@ -353,7 +394,8 @@ struct MangaDetailsHeaderView: View {
                     text: developerMode.value
                         ? DeveloperMode.description(for: String(describing: manga.identifier))
                         : description,
-                    textColor: .white.opacity(0.72)
+                    textColor: headerTextColor.opacity(0.72),
+                    moreTextColor: headerTextColor
                 )
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 18)
@@ -363,7 +405,7 @@ struct MangaDetailsHeaderView: View {
             tagsView
                 .padding(.top, 12)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(headerTextColor)
         .frame(maxWidth: .infinity)
         .padding(.bottom, 18)
         .onGeometryChange(for: CGFloat.self) { geometry in
@@ -444,7 +486,11 @@ struct MangaDetailsHeaderView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(manga.tags ?? [], id: \.self) { tag in
-                        let label = TagView(text: developerMode.value ? DeveloperMode.tag(for: tag) : tag)
+                        let label = TagView(
+                            text: developerMode.value ? DeveloperMode.tag(for: tag) : tag,
+                            foregroundColor: headerTextColor,
+                            backgroundColor: headerControlBackgroundColor
+                        )
                         if let source, let filter = source.matchingGenreFilter(for: tag) {
                             Button {
                                 let viewController = MangaListViewController(source: source, title: tag)
@@ -564,16 +610,18 @@ struct LabelView: View {
 
 private struct TagView: View {
     let text: String
+    let foregroundColor: Color
+    let backgroundColor: Color
 
     var body: some View {
         Text(text)
             .lineLimit(1)
-            .foregroundStyle(.white.opacity(0.82))
+            .foregroundStyle(foregroundColor.opacity(0.82))
             .font(.footnote)
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
             .textSelection(.enabled)
-            .background(.white.opacity(0.14))
+            .background(backgroundColor)
             .clipShape(RoundedRectangle(cornerRadius: 100))
     }
 }

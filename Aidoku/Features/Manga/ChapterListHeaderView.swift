@@ -164,7 +164,7 @@ struct ChapterListHeaderView: View {
             .menuActionDismissDisabled()
         } label: {
             Image(systemName: "line.3.horizontal.decrease")
-                .foregroundStyle(usesLightMenuLabel ? Color.white : Color.primary)
+                .foregroundStyle(usesLightMenuLabel ? Color.white : Color.black)
         }
     }
 }

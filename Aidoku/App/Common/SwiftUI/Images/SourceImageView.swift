@@ -9,6 +9,7 @@ import AidokuRunner
 import Nuke
 import NukeUI
 import SwiftUI
+import UIKit
 
 struct SourceImageView: View {
     var source: AidokuRunner.Source?
@@ -21,6 +22,7 @@ struct SourceImageView: View {
     var contentMode: ContentMode = .fill
     var placeholder = "MangaPlaceholder"
     var privacyPlaceholder = false
+    var onDominantColorChange: ((UIColor) -> Void)?
 
     @State private var imageRequest: ImageRequest?
 
@@ -43,10 +45,14 @@ struct SourceImageView: View {
             transaction: .init(animation: .default)
         ) { state in
             if privacyPlaceholder {
+                let dominantColor = state.imageContainer?.image.dominantColor()
+                    ?? DeveloperMode.color(for: imageUrl)
                 Rectangle()
-                    .fill(Color(uiColor: state.imageContainer?.image.dominantColor()
-                        ?? DeveloperMode.color(for: imageUrl)))
+                    .fill(Color(uiColor: dominantColor))
                     .frame(width: width, height: height)
+                    .task(id: dominantColor.description) {
+                        onDominantColorChange?(dominantColor)
+                    }
             } else if state.imageContainer?.type == .gif, let data = state.imageContainer?.data {
                 GIFImage(
                     data: data,

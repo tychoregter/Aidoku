@@ -490,7 +490,7 @@
 "LIBRARY_COVER_CHAPTERS" = "%d chapters";
 "LIBRARY_COVER_CHAPTER_NUMBER" = "Chapter %@";
 "LIBRARY_COVER_START_CHAPTER" = "Start %@";
-"LIBRARY_COVER_CONTINUE_CHAPTER" = "Continue %@";
+"LIBRARY_COVER_CONTINUE_CHAPTER" = "%@";
 "UNREAD_CHAPTER_BADGES" = "Unread Chapter Badges";
 "DOWNLOADED_CHAPTER_BADGES" = "Downloaded Chapter Badges";
 "PIN_TITLES" = "Pin Titles";

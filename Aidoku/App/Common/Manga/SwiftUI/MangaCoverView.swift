@@ -33,6 +33,8 @@ enum MangaCoverBorderStyle {
 
 struct MangaCoverView: View {
     @Environment(\.displayScale) private var displayScale
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var sampledNSFWColor: UIColor?
 
     var source: AidokuRunner.Source?
 
@@ -46,7 +48,16 @@ struct MangaCoverView: View {
     var borderColor: Color? = nil
     var placeholder = "MangaPlaceholder"
     var privacyPlaceholder = false
+    var hideNSFW = false
+    var nsfwBaseColor: UIColor?
     var bookmarked: Bool = false
+
+    private var hiddenCoverColor: UIColor {
+        NSFWCoverView.backgroundColor(
+            for: nsfwBaseColor ?? sampledNSFWColor ?? DeveloperMode.color(for: coverImage),
+            isDark: colorScheme == .dark
+        )
+    }
 
     var body: some View {
         SourceImageView(
@@ -58,8 +69,21 @@ struct MangaCoverView: View {
             coverDownsampleSide: coverDownsampleSide,
             contentMode: contentMode,
             placeholder: placeholder,
-            privacyPlaceholder: privacyPlaceholder
+            privacyPlaceholder: privacyPlaceholder || hideNSFW,
+            onDominantColorChange: hideNSFW ? { sampledNSFWColor = $0 } : nil
         )
+        .overlay {
+            if hideNSFW {
+                Color(uiColor: hiddenCoverColor)
+            }
+        }
+        .overlay {
+            if hideNSFW {
+                Image(systemName: "eye.slash")
+                    .font(.system(size: (width ?? 150) < 80 ? 19 : 32, weight: .semibold))
+                    .foregroundStyle(Color(uiColor: NSFWCoverView.foregroundColor(for: hiddenCoverColor)))
+            }
+        }
         .overlay(
             bookmarkView,
             alignment: .topTrailing
@@ -72,6 +96,7 @@ struct MangaCoverView: View {
                     lineWidth: MangaCoverBorderStyle.width(displayScale: displayScale)
                 )
         )
+        .onChange(of: coverImage) { _ in sampledNSFWColor = nil }
     }
 
     @ViewBuilder

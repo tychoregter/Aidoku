@@ -60,7 +60,8 @@ extension UIImage {
             let maximum = max(red, green, blue)
             let minimum = min(red, green, blue)
             let saturation = maximum == 0 ? 0 : Double(maximum - minimum) / Double(maximum)
-            if saturation >= 0.12 {
+            // Treat low-chroma (near-gray) pixels as neutral, including JPEG noise.
+            if saturation >= 0.18 && maximum - minimum >= 12 {
                 chromaticPixelCount += 1
                 var chromaticBucket = chromaticBuckets[key, default: Bucket()]
                 chromaticBucket.count += 1
@@ -71,11 +72,22 @@ extension UIImage {
             }
         }
 
-        // Prefer an actual hue when color makes up most of the artwork. Fully
-        // monochrome and genuinely grayscale covers still use their dominant gray.
-        let imageIsPredominantlyChromatic = chromaticPixelCount * 5 >= sampledPixelCount * 2
-        let candidateBuckets = imageIsPredominantlyChromatic ? chromaticBuckets : buckets
-        guard let dominant = candidateBuckets.values.max(by: { $0.count < $1.count }), dominant.count > 0 else {
+        // A small but meaningful colored area should win over a large gray background.
+        // Fall back to gray only when the sampled cover is almost entirely neutral.
+        let hasMeaningfulColor = chromaticPixelCount * 50 >= sampledPixelCount
+        let candidateBuckets = hasMeaningfulColor ? chromaticBuckets : buckets
+        func score(_ bucket: Bucket) -> Double {
+            guard hasMeaningfulColor else { return Double(bucket.count) }
+            let maximum = max(bucket.red, bucket.green, bucket.blue)
+            let minimum = min(bucket.red, bucket.green, bucket.blue)
+            let saturation = maximum == 0 ? 0 : Double(maximum - minimum) / Double(maximum)
+            return Double(bucket.count) * (1 + saturation * 0.75)
+        }
+        guard let dominant = candidateBuckets.max(by: { lhs, rhs in
+            let leftScore = score(lhs.value)
+            let rightScore = score(rhs.value)
+            return leftScore == rightScore ? lhs.key < rhs.key : leftScore < rightScore
+        })?.value, dominant.count > 0 else {
             return nil
         }
         return UIColor(

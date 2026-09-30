@@ -23,6 +23,7 @@ struct ChapterTableCell: View {
 
     @StateObject private var showPageCounts = UserDefaultsBool(key: AppSettings.library.showChapterPageCounts.key)
     @StateObject private var developerMode = UserDefaultsBool(key: AppSettings.general.developerMode.key)
+    @StateObject private var hideNSFWCovers = UserDefaultsBool(key: AppSettings.appearance.blurNSFWCovers.key)
     @State private var loadedPageCount: Int?
 
     var downloaded: Bool {
@@ -51,7 +52,8 @@ struct ChapterTableCell: View {
                 height: 84,
                 coverDownsampleSide: 112 * displayScale,
                 cornerRadius: 5,
-                privacyPlaceholder: developerMode.value
+                privacyPlaceholder: developerMode.value,
+                hideNSFW: hideNSFWCovers.value && manga.contentRating == .nsfw
             )
 
             VStack(alignment: .leading, spacing: 3) {

@@ -64,7 +64,11 @@ class MangaGridCell: UICollectionViewCell {
     private let placeholderStackView = UIStackView()
     private let overlayView = UIView()
     private let gradient = CAGradientLayer()
-    private let nsfwCoverView = NSFWCoverView()
+    private let nsfwCoverView: NSFWCoverView = {
+        let view = NSFWCoverView()
+        view.iconOnlySize = 40
+        return view
+    }()
 
     private lazy var badgeView = DoubleBadgeView()
 
@@ -591,6 +595,9 @@ final class NSFWCoverView: UIView {
     var presentation: Presentation = .title {
         didSet { updatePresentation() }
     }
+    var iconOnlySize: CGFloat = 32 {
+        didSet { updatePresentation() }
+    }
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
     private let stackView = UIStackView()
@@ -651,7 +658,7 @@ final class NSFWCoverView: UIView {
     private func updatePresentation() {
         iconView.isHidden = presentation == .blank
         titleLabel.isHidden = presentation != .title
-        let size: CGFloat = presentation == .iconOnly ? 32 : 22
+        let size: CGFloat = presentation == .iconOnly ? iconOnlySize : 22
         iconWidth?.constant = size
         iconHeight?.constant = size
         iconView.image = UIImage(
@@ -670,11 +677,7 @@ final class NSFWCoverView: UIView {
     private func updateAppearance() {
         let baseColor = coverColor.resolvedColor(with: traitCollection)
         let isDark = traitCollection.userInterfaceStyle == .dark
-        let background = Self.blend(
-            baseColor,
-            toward: isDark ? .black : .white,
-            amount: isDark ? 0.18 : 0.20
-        )
+        let background = Self.backgroundColor(for: baseColor, isDark: isDark)
         backgroundColor = background
 
         let foreground = Self.foregroundColor(for: background)
@@ -687,6 +690,14 @@ final class NSFWCoverView: UIView {
             toward: isDark ? .white : .black,
             amount: isDark ? 0.24 : 0.18
         ).withAlphaComponent(0.72).cgColor
+    }
+
+    static func backgroundColor(for baseColor: UIColor, isDark: Bool) -> UIColor {
+        blend(
+            baseColor,
+            toward: isDark ? .black : .white,
+            amount: isDark ? 0.18 : 0.20
+        )
     }
 
     static func foregroundColor(for color: UIColor) -> UIColor {

@@ -26,6 +26,9 @@ struct MangaView: View {
     @State private var detailsLoaded = false
     @State private var isOverHero = true
     @State private var heroBottom: CGFloat?
+    @State private var backdropShadowTint: UIColor = .black
+    @State private var backdropDominantColor: UIColor = .black
+    @State private var backdropIsDark = true
     @State private var originalNavigationTint: UIColor?
     @State private var statusBarStyleOwner = UUID()
 
@@ -49,7 +52,22 @@ struct MangaView: View {
     }
 
     private var usesLightToolbarIcons: Bool {
-        isOverHero && !toolbarTransitionState.isLeaving
+        if isOverHero && !toolbarTransitionState.isLeaving {
+            return backdropIsDark
+        }
+        return colorScheme == .dark
+    }
+
+    private var usesDarkHeaderText: Bool {
+        MangaDetailsBackdrop.shouldUseDarkHeaderText(backdropDominantColor, colorScheme: colorScheme)
+    }
+
+    private var headerControlBackgroundColor: Color {
+        Color(uiColor: MangaDetailsBackdrop.controlBackgroundColor(
+            from: backdropDominantColor,
+            colorScheme: colorScheme,
+            usesDarkText: usesDarkHeaderText
+        ))
     }
 
     init(
@@ -189,30 +207,44 @@ struct MangaView: View {
             .scrollBackgroundHiddenPlease()
             .background {
                 GeometryReader { geometry in
-                    ZStack {
+                    let headerHeight = max(
+                        0,
+                        (heroBottom ?? geometry.frame(in: .global).maxY)
+                            - geometry.frame(in: .global).minY
+                    )
+
+                    ZStack(alignment: .top) {
                         Color(uiColor: .systemBackground)
+
                         MangaDetailsBackdrop(
                             source: viewModel.source,
                             coverImage: viewModel.manga.cover ?? "",
-                            privacyPlaceholder: developerMode.value
+                            privacyPlaceholder: developerMode.value,
+                            onDominantColorChange: { color in
+                                backdropDominantColor = color
+                                backdropShadowTint = MangaDetailsBackdrop.darkenedColor(from: color, colorScheme: colorScheme)
+                                updateBackdropAppearance()
+                            }
                         )
-                        .mask(alignment: .top) {
-                            Rectangle()
-                                .frame(height: max(
-                                    0,
-                                    (heroBottom ?? geometry.frame(in: .global).maxY)
-                                        - geometry.frame(in: .global).minY
-                                ))
-                        }
+                        .frame(height: headerHeight)
+                        .frame(maxHeight: .infinity, alignment: .top)
                     }
                 }
                 .ignoresSafeArea()
             }
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarBackground(.hidden, for: .tabBar)
-            .toolbarColorScheme(isOverHero ? .dark : colorScheme, for: .navigationBar)
+            .toolbarColorScheme(usesLightToolbarIcons ? .dark : .light, for: .navigationBar)
             .onChange(of: isOverHero) { _ in updateNavigationAppearance() }
-            .onChange(of: colorScheme) { _ in updateNavigationAppearance() }
+            .onChange(of: backdropIsDark) { _ in updateNavigationAppearance() }
+            .onChange(of: colorScheme) { _ in
+                backdropShadowTint = MangaDetailsBackdrop.darkenedColor(
+                    from: backdropDominantColor,
+                    colorScheme: colorScheme
+                )
+                updateBackdropAppearance()
+                updateNavigationAppearance()
+            }
             .navigationBarBackButtonHidden(editMode == .active)
             .task {
                 guard !detailsLoaded else { return }
@@ -348,11 +380,18 @@ extension MangaView {
         }
         navigationController.navigationBar.tintColor = editMode == .active
             ? UIColor(Color.accentColor)
-            : (isOverHero ? .white : .label)
-        let style: UIStatusBarStyle = isOverHero || colorScheme == .dark ? .lightContent : .darkContent
+            : (usesLightToolbarIcons ? .white : .black)
+        let style: UIStatusBarStyle = usesLightToolbarIcons ? .lightContent : .darkContent
         navigationController.setStatusBarStyleOverride(
             style,
             owner: statusBarStyleOwner
+        )
+    }
+
+    private func updateBackdropAppearance() {
+        backdropIsDark = MangaDetailsBackdrop.isDarkenedBackground(
+            backdropDominantColor,
+            colorScheme: colorScheme
         )
     }
 
@@ -388,6 +427,10 @@ extension MangaView {
             scanlatorFilter: $viewModel.chapterScanlatorFilter,
             chapterTitleDisplayMode: $viewModel.chapterTitleDisplayMode,
             hasOtherDownloads: !viewModel.otherDownloadedChapters.isEmpty,
+            chapterHeaderShadowColor: Color(uiColor: backdropShadowTint),
+            usesDarkHeaderText: usesDarkHeaderText,
+            headerControlBackgroundColor: headerControlBackgroundColor,
+            nsfwBaseColor: backdropDominantColor,
             onHeroBottomChange: updateHeroPosition,
             onTitlePressed: {
                 guard let tabBarController = path.rootViewController?.tabBarController as? TabBarController else {
@@ -633,7 +676,7 @@ extension MangaView {
                 // Set the native bar tint before the selection button is created.
                 path.navigationController?.navigationBar.tintColor = editing
                     ? UIColor(Color.accentColor)
-                    : (isOverHero ? .white : .label)
+                    : (usesLightToolbarIcons ? .white : .black)
                 editMode = editing ? .active : .inactive
             },
             markAllRead: {
@@ -728,10 +771,10 @@ extension MangaView {
                 } label: {
                     if allSelected {
                         Text(NSLocalizedString("DESELECT_ALL"))
-                            .foregroundStyle(usesLightToolbarIcons ? Color.white : Color.primary)
+                            .foregroundStyle(usesLightToolbarIcons ? Color.white : Color.black)
                     } else {
                         Text(NSLocalizedString("SELECT_ALL"))
-                            .foregroundStyle(usesLightToolbarIcons ? Color.white : Color.primary)
+                            .foregroundStyle(usesLightToolbarIcons ? Color.white : Color.black)
                     }
                 }
                 .disabled(selectableCount == 0)
@@ -1153,7 +1196,7 @@ private struct RightNavbarButton: View, Equatable {
                 }
             } label: {
                 MoreIcon()
-                    .foregroundStyle(usesLightLabel ? Color.white : Color.primary)
+                    .foregroundStyle(usesLightLabel ? Color.white : Color.black)
             }
             .task(id: mangaId) {
                 isFavorite = UserDefaults.standard.stringArray(forKey: "library.favoriteMangaIdentifiers")?
@@ -1185,31 +1228,143 @@ private struct RightNavbarButton: View, Equatable {
 }
 
 struct MangaDetailsBackdrop: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    enum Style: Equatable {
+        case coverColor
+        case blurredCover
+    }
+
     let source: AidokuRunner.Source?
     let coverImage: String
     var privacyPlaceholder = false
+    var onDominantColorChange: ((UIColor) -> Void)?
+    // Switch to `.blurredCover` to restore the previous info-header backdrop.
+    var style: Style = .coverColor
+
+    private static func darkening(for colorScheme: ColorScheme) -> CGFloat {
+        colorScheme == .dark ? 0.50 : 0.15
+    }
+
+    private static func darkenedBackgroundColor(from color: UIColor, colorScheme: ColorScheme) -> UIColor {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return .black
+        }
+        let multiplier = 1 - darkening(for: colorScheme)
+        return UIColor(red: red * multiplier, green: green * multiplier, blue: blue * multiplier, alpha: 1)
+    }
+
+    static func darkenedColor(from color: UIColor, colorScheme: ColorScheme) -> UIColor {
+        let background = darkenedBackgroundColor(from: color, colorScheme: colorScheme)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard background.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return .black
+        }
+        return UIColor(red: red * 0.35, green: green * 0.35, blue: blue * 0.35, alpha: 1)
+    }
+
+    private static func backgroundLuminance(_ color: UIColor, colorScheme: ColorScheme) -> Double {
+        let background = darkenedBackgroundColor(from: color, colorScheme: colorScheme)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard background.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return 0
+        }
+
+        func linearComponent(_ value: CGFloat) -> Double {
+            let component = Double(max(0, min(1, value)))
+            return component <= 0.04045
+                ? component / 12.92
+                : pow((component + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linearComponent(red)
+            + 0.7152 * linearComponent(green)
+            + 0.0722 * linearComponent(blue)
+        return luminance
+    }
+
+    static func isDarkenedBackground(_ color: UIColor, colorScheme: ColorScheme) -> Bool {
+        backgroundLuminance(color, colorScheme: colorScheme) <= 0.45
+    }
+
+    static func shouldUseDarkHeaderText(_ color: UIColor, colorScheme: ColorScheme) -> Bool {
+        // Keep text, controls, and navigation in the same cover-derived contrast mode.
+        !isDarkenedBackground(color, colorScheme: colorScheme)
+    }
+
+    static func controlBackgroundColor(
+        from color: UIColor,
+        colorScheme: ColorScheme,
+        usesDarkText: Bool
+    ) -> UIColor {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        let background = darkenedBackgroundColor(from: color, colorScheme: colorScheme)
+        guard background.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return usesDarkText ? .lightGray : .darkGray
+        }
+
+        let adjustment: CGFloat = usesDarkText ? 0.18 : 0.20
+        func adjusted(_ component: CGFloat) -> CGFloat {
+            return usesDarkText
+                ? component * (1 - adjustment)
+                : component * (1 - adjustment) + adjustment
+        }
+        return UIColor(
+            red: adjusted(red),
+            green: adjusted(green),
+            blue: adjusted(blue),
+            alpha: 1
+        )
+    }
 
     var body: some View {
         GeometryReader { geometry in
-            SourceImageView(
-                source: source,
-                imageUrl: coverImage,
-                width: geometry.size.width,
-                height: geometry.size.height,
-                downsampleWidth: 180,
-                privacyPlaceholder: privacyPlaceholder
-            )
-            .scaleEffect(1.15)
-            .blur(radius: 45, opaque: true)
+            Group {
+                if style == .coverColor {
+                    SourceImageView(
+                        source: source,
+                        imageUrl: coverImage,
+                        width: geometry.size.width,
+                        height: geometry.size.height,
+                        downsampleWidth: 180,
+                        privacyPlaceholder: true,
+                        onDominantColorChange: onDominantColorChange
+                    )
+                    .overlay(Color.black.opacity(Self.darkening(for: colorScheme)))
+                } else {
+                    SourceImageView(
+                        source: source,
+                        imageUrl: coverImage,
+                        width: geometry.size.width,
+                        height: geometry.size.height,
+                        downsampleWidth: 180,
+                        privacyPlaceholder: privacyPlaceholder
+                    )
+                    .scaleEffect(1.15)
+                    .blur(radius: 45, opaque: true)
+                    .overlay {
+                        LinearGradient(
+                            colors: [.black.opacity(0.35), .black.opacity(0.58)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    }
+                }
+            }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipped()
-            .overlay {
-                LinearGradient(
-                    colors: [.black.opacity(0.35), .black.opacity(0.58)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
         }
         .allowsHitTesting(false)
     }
