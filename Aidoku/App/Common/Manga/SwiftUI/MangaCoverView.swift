@@ -55,7 +55,8 @@ struct MangaCoverView: View {
 
     private var hiddenCoverColor: UIColor {
         NSFWCoverView.backgroundColor(
-            for: nsfwBaseColor ?? sampledNSFWColor ?? DeveloperMode.color(for: coverImage),
+            for: nsfwBaseColor ?? sampledNSFWColor ?? CoverPalette.color(for: coverImage)
+                ?? DeveloperMode.color(for: coverImage),
             isDark: colorScheme == .dark
         )
     }
@@ -71,13 +72,13 @@ struct MangaCoverView: View {
             contentMode: contentMode,
             placeholder: placeholder,
             privacyPlaceholder: privacyPlaceholder || hideNSFW,
-            onDominantColorChange: hideNSFW || onDominantColorChange != nil ? { color in
-                if hideNSFW { sampledNSFWColor = color }
+            onDominantColorChange: hideNSFW || privacyPlaceholder || onDominantColorChange != nil ? { color in
+                if hideNSFW || privacyPlaceholder { sampledNSFWColor = color }
                 onDominantColorChange?(color)
             } : nil
         )
         .overlay {
-            if hideNSFW {
+            if hideNSFW || privacyPlaceholder {
                 Color(uiColor: hiddenCoverColor)
             }
         }

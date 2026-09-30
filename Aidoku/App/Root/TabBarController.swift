@@ -304,7 +304,11 @@ class TabBarController: UITabBarController {
     }
 
     @MainActor
-    func openLibraryShortcut(sourceKey: String, mangaKey: String) async -> Bool {
+    func openLibraryShortcut(
+        sourceKey: String,
+        mangaKey: String,
+        isContinueReadingShortcut: Bool = false
+    ) async -> Bool {
         guard let libraryNavigationController else { return false }
 
         if #available(iOS 26.0, *) {
@@ -332,7 +336,8 @@ class TabBarController: UITabBarController {
             url: infoManga.url
         )
 
-        if !AppSettings.library.opensReaderView.get() {
+        let shouldOpenReader = AppSettings.library.opensReaderView.get() || isContinueReadingShortcut
+        if !shouldOpenReader {
             let parent = libraryNavigationController.topViewController
             libraryNavigationController.pushViewController(
                 MangaViewController(source: source, manga: infoManga, parent: parent),
@@ -341,9 +346,22 @@ class TabBarController: UITabBarController {
             return true
         }
 
-        let (sourceOrderedChapters, nextChapter) = await MangaManager.shared.getNextChapter(mangaId: mangaInfo.id)
+        let (sourceOrderedChapters, nextChapter) = await MangaManager.shared.getNextChapter(
+            mangaId: mangaInfo.id,
+            fetchIfNeeded: isContinueReadingShortcut
+        )
 
-        if let nextChapter {
+        let chapterToOpen: AidokuRunner.Chapter?
+        if nextChapter == nil && isContinueReadingShortcut {
+            let history = await CoreDataManager.shared.getReadingHistory(mangaId: mangaInfo.id)
+            chapterToOpen = sourceOrderedChapters
+                .filter { history[$0.id] != nil }
+                .max { (history[$0.id]?.date ?? -1) < (history[$1.id]?.date ?? -1) }
+        } else {
+            chapterToOpen = nextChapter
+        }
+
+        if let chapter = chapterToOpen {
             let manga = AidokuRunner.Manga(
                 sourceKey: sourceKey,
                 key: mangaKey,
@@ -353,7 +371,7 @@ class TabBarController: UITabBarController {
             let readerController = ReaderViewController(
                 source: source,
                 manga: manga,
-                chapter: nextChapter
+                chapter: chapter
             )
             let readerNavigationController = ReaderNavigationController(
                 readerViewController: readerController,

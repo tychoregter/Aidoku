@@ -8,6 +8,19 @@
 import Photos
 import UIKit
 
+/// Shares the sampled cover color between UIKit library cells and SwiftUI details.
+enum CoverPalette {
+    private static let colors = NSCache<NSString, UIColor>()
+
+    static func color(for url: String) -> UIColor? {
+        colors.object(forKey: url as NSString)
+    }
+
+    static func remember(_ color: UIColor, for url: String) {
+        colors.setObject(color, forKey: url as NSString)
+    }
+}
+
 extension UIImage {
     /// Returns the most common quantized color in a small sample of the image.
     /// This preserves a cover's overall identity without exposing its artwork.

@@ -44,8 +44,11 @@ struct SourceImageView: View {
             request: imageRequest,
             transaction: .init(animation: .default)
         ) { state in
+            let sampledColor = privacyPlaceholder || onDominantColorChange != nil
+                ? state.imageContainer?.image.dominantColor()
+                : nil
             let dominantColor = privacyPlaceholder || onDominantColorChange != nil
-                ? state.imageContainer?.image.dominantColor() ?? DeveloperMode.color(for: imageUrl)
+                ? CoverPalette.color(for: imageUrl) ?? sampledColor ?? DeveloperMode.color(for: imageUrl)
                 : nil
             Group {
                 if privacyPlaceholder {
@@ -74,6 +77,9 @@ struct SourceImageView: View {
             }
             .task(id: dominantColor?.description) {
                 if let dominantColor {
+                    if sampledColor != nil {
+                        CoverPalette.remember(dominantColor, for: imageUrl)
+                    }
                     onDominantColorChange?(dominantColor)
                 }
             }

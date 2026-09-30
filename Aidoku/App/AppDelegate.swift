@@ -342,7 +342,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                     icon: UIApplicationShortcutIcon(systemImageName: isFavoritesPin ? "star" : "book"),
                     userInfo: [
                         "sourceKey": manga.id.sourceKey as NSSecureCoding,
-                        "mangaKey": manga.id.mangaKey as NSSecureCoding
+                        "mangaKey": manga.id.mangaKey as NSSecureCoding,
+                        "isReadingPin": isReadingPin as NSNumber
                     ]
                 )
             }
@@ -367,7 +368,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         Task { @MainActor in
             let success = await tabBarController.openLibraryShortcut(
                 sourceKey: sourceKey,
-                mangaKey: mangaKey
+                mangaKey: mangaKey,
+                isContinueReadingShortcut: shortcutItem.userInfo?["isReadingPin"] as? Bool ?? false
             )
             completion(success)
         }

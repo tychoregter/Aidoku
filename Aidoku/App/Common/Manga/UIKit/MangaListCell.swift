@@ -349,6 +349,9 @@ extension MangaListCell {
         guard let image = ImagePipeline.shared.cache.cachedImage(for: request, caches: [.memory])?.image else {
             return
         }
+        if let color = image.dominantColor() {
+            CoverPalette.remember(color, for: url.absoluteString)
+        }
         originalCoverImage = image
         updateCoverImage()
     }
@@ -413,6 +416,9 @@ extension MangaListCell {
                         }
                     }
                     Task { @MainActor in
+                        if self.hidesNSFWCover, let color = response.image.dominantColor() {
+                            CoverPalette.remember(color, for: url.absoluteString)
+                        }
                         self.originalCoverImage = response.image
                         let coverImage = self.grayscalesCaughtUpCover
                             ? MangaCoverImageAppearance.grayscale(response.image)

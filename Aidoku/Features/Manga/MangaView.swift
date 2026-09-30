@@ -80,7 +80,8 @@ struct MangaView: View {
     ) {
         let source = source ?? SourceManager.shared.store.source(for: manga.sourceKey)
         self._viewModel = StateObject(wrappedValue: ViewModel(source: source, manga: manga))
-        self._backdropDominantColor = State(initialValue: DeveloperMode.color(for: manga.cover ?? ""))
+        self._backdropDominantColor = State(initialValue: CoverPalette.color(for: manga.cover ?? "")
+            ?? DeveloperMode.color(for: manga.cover ?? ""))
         self.path = path
         self.toolbarTransitionState = toolbarTransitionState
         self._targetChapterKey = State(initialValue: chapterKey)
