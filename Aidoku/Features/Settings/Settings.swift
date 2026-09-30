@@ -1224,13 +1224,21 @@ extension Settings {
                             value: .button(.init())
                         )
                     ]))
-                ),
-                .init(
-                    key: AppSettings.general.developerMode.key,
-                    title: NSLocalizedString("DEVELOPER_MODE", value: "Screenshot Mode", comment: "Screenshot Mode"),
-                    value: .toggle(.init())
                 )
             ]))
+        ),
+        .init(
+            title: "",
+            value: .group(.init(
+                footer: NSLocalizedString("SCREENSHOT_MODE_TEXT"),
+                items: [
+                    .init(
+                        key: AppSettings.general.developerMode.key,
+                        title: NSLocalizedString("DEVELOPER_MODE", value: "Screenshot Mode", comment: "Screenshot Mode"),
+                        value: .toggle(.init())
+                    )
+                ]
+            ))
         )
     ]
 }

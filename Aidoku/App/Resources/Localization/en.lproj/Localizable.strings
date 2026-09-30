@@ -721,6 +721,7 @@
 "LOG_SERVER" = "Log Server";
 "EXPORT_LOGS" = "Export Logs";
 "DISPLAY_LOGS" = "Display Logs";
+"SCREENSHOT_MODE_TEXT" = "Replaces manga covers, titles, authors, descriptions, and chapter details with generic placeholders.";
 "ADVANCED" = "Advanced";
 "RESET_TEXT" = "This action is irreversible. All data, settings, and caches will be cleared and reset.";
 "CLEAR_NETWORK_CACHE" = "Clear Network Cache";
