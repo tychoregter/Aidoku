@@ -334,7 +334,7 @@ extension OldMangaCollectionViewController {
         showsCaptions: Bool = false
     ) -> NSCollectionLayoutSection {
         let itemsPerRow = gridItemsPerRow(environment: environment)
-        let scale: CGFloat = 1.0
+        let scale: CGFloat = 1.03
         let coverWidth = (environment.container.contentSize.width - 40) * scale / CGFloat(itemsPerRow)
 
         let item = NSCollectionLayoutItem(layoutSize: NSCollectionLayoutSize(
