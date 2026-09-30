@@ -7,8 +7,8 @@ Even though this fork was primarily meant as a private project for private use, 
 
 Some changes I made are currently non-configurable as I never planned for this to be much of a public project, changes I made later in the project are mostly configurable. Commits are unfortunately also quite a mess because I didn't really care about them much because of it being, again, a private project I started mostly for fun, which is why most commits were made and summarized by AI, often after multiple unrelated changes had been made.
 
-<img width="25%" alt="Library" src="https://github.com/user-attachments/assets/c0acebbe-a9db-4ad1-a3a0-dc15c5c0263f" />
-<img width="25%" alt="Manga Info" src="https://github.com/user-attachments/assets/c8f255b0-0506-4701-abeb-7e85e4795ada" />
+<img width="25%" alt="Library" src="https://github.com/user-attachments/assets/7356f770-5756-4a04-8e44-0745e58ef187" />
+<img width="25%" alt="Manga Info" src="https://github.com/user-attachments/assets/e215aa75-dec3-483d-a583-df9238fe6990" />
 <img width="25%" alt="Reader" src="https://github.com/user-attachments/assets/f4cbd8b7-efa9-4c12-83a8-733c885f241e" />
 
 ## List of changes:
