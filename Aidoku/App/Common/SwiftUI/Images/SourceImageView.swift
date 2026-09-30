@@ -23,6 +23,7 @@ struct SourceImageView: View {
     var placeholder = "MangaPlaceholder"
     var privacyPlaceholder = false
     var onDominantColorChange: ((UIColor) -> Void)?
+    var onImageSizeChange: ((CGSize) -> Void)?
 
     @State private var imageRequest: ImageRequest?
 
@@ -81,6 +82,11 @@ struct SourceImageView: View {
                         CoverPalette.remember(dominantColor, for: imageUrl)
                     }
                     onDominantColorChange?(dominantColor)
+                }
+            }
+            .task(id: state.imageContainer?.image.size) {
+                if let size = state.imageContainer?.image.size {
+                    onImageSizeChange?(size)
                 }
             }
         }

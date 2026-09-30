@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 import AidokuRunner
 
 struct ChapterListHeaderView: View {
@@ -22,6 +23,7 @@ struct ChapterListHeaderView: View {
     private var scanlators: [String] = []
     private var mangaId: MangaIdentifier
     private var usesLightMenuLabel: Bool
+    private var onReset: () -> Void
 
     init(
         allChapters: [AidokuRunner.Chapter]? = nil,
@@ -32,7 +34,8 @@ struct ChapterListHeaderView: View {
         scanlatorFilter: Binding<[String]>,
         displayMode: Binding<ChapterTitleDisplayMode>,
         mangaId: MangaIdentifier,
-        usesLightMenuLabel: Bool = false
+        usesLightMenuLabel: Bool = false,
+        onReset: @escaping () -> Void = {}
     ) {
         self._sortOption = sortOption
         self._sortAscending = sortAscending
@@ -42,12 +45,13 @@ struct ChapterListHeaderView: View {
         self._displayMode = displayMode
         self.mangaId = mangaId
         self.usesLightMenuLabel = usesLightMenuLabel
+        self.onReset = onReset
 
         if let allChapters, !allChapters.isEmpty {
             var languages: Set<String> = []
             var scanlators: Set<String> = []
             for chapter in allChapters {
-                if let chapterScanlators = chapter.scanlators, !scanlators.isEmpty {
+                if let chapterScanlators = chapter.scanlators, !chapterScanlators.isEmpty {
                     for scanlator in chapterScanlators {
                         scanlators.insert(scanlator)
                     }
@@ -75,96 +79,257 @@ struct ChapterListHeaderView: View {
     }
 
     var menu: some View {
-        Menu {
-            Section(NSLocalizedString("SORT_BY")) {
-                ForEach(ChapterSortOption.allCases, id: \.self) { option in
-                    Button {
-                        if sortOption == option {
-                            sortAscending.toggle()
+        ChapterListMenuButton(
+            sortOption: $sortOption,
+            sortAscending: $sortAscending,
+            filters: $filters,
+            langFilter: $langFilter,
+            scanlatorFilter: $scanlatorFilter,
+            languages: languages,
+            scanlators: scanlators,
+            usesLightMenuLabel: usesLightMenuLabel,
+            onReset: onReset
+        )
+        .frame(width: 24, height: 24)
+    }
+}
+
+private struct ChapterListMenuButton: UIViewRepresentable {
+    @Binding var sortOption: ChapterSortOption
+    @Binding var sortAscending: Bool
+    @Binding var filters: [ChapterFilterOption]
+    @Binding var langFilter: String?
+    @Binding var scanlatorFilter: [String]
+
+    let languages: [String]
+    let scanlators: [String]
+    let usesLightMenuLabel: Bool
+    let onReset: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .system)
+        button.configuration = .plain()
+        button.accessibilityLabel = NSLocalizedString("SORT_BY")
+        button.showsMenuAsPrimaryAction = true
+        context.coordinator.button = button
+        button.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak coordinator = context.coordinator] completion in
+            completion(coordinator?.makeMenu().children ?? [])
+        }])
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        context.coordinator.parent = self
+        let appearance: UIUserInterfaceStyle = usesLightMenuLabel ? .dark : .light
+        if button.overrideUserInterfaceStyle != appearance {
+            button.overrideUserInterfaceStyle = appearance
+        }
+        let color: UIColor = usesLightMenuLabel ? .white : .black
+        if context.coordinator.iconColor != color {
+            var configuration = button.configuration ?? .plain()
+            configuration.image = UIImage(
+                systemName: "line.3.horizontal.decrease",
+                withConfiguration: UIImage.SymbolConfiguration(pointSize: 17)
+            )?.withTintColor(color, renderingMode: .alwaysOriginal)
+            configuration.baseForegroundColor = color
+            button.configuration = configuration
+            button.tintColor = color
+            context.coordinator.iconColor = color
+        }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
+        CGSize(width: 24, height: 24)
+    }
+
+    final class Coordinator {
+        var parent: ChapterListMenuButton
+        weak var button: UIButton?
+        var iconColor: UIColor?
+
+        init(_ parent: ChapterListMenuButton) {
+            self.parent = parent
+        }
+
+        func makeMenu() -> UIMenu {
+            let defaultOrder = ChapterListOrder.current
+            let visibleOption = parent.sortOption == .default ? defaultOrder.sortOption : parent.sortOption
+            let visibleAscending = parent.sortOption == .default
+                ? defaultOrder.sortAscending
+                : parent.sortAscending
+            let sortMenu = UIMenu(
+                title: NSLocalizedString("SORT_BY"),
+                subtitle: visibleOption.stringValue,
+                image: UIImage(systemName: "arrow.up.arrow.down"),
+                children: [UIMenu(options: .displayInline, children: ChapterSortOption.allCases.map { option in
+                    let selected = visibleOption == option
+                    return UIAction(
+                        title: option.stringValue,
+                        subtitle: selected && option != .automatic
+                            ? NSLocalizedString(visibleAscending ? "ASCENDING" : "DESCENDING")
+                            : nil,
+                        attributes: .keepsMenuPresented,
+                        state: selected ? .on : .off
+                    ) { [weak self] _ in
+                        guard let self else { return }
+                        if option == .automatic {
+                            self.parent.sortOption = .automatic
+                        } else if visibleOption == option {
+                            self.parent.sortAscending = !visibleAscending
+                            self.parent.sortOption = option
                         } else {
-                            sortOption = option
-                            sortAscending = false
+                            self.parent.sortAscending = true
+                            self.parent.sortOption = option
                         }
-                    } label: {
-                        Label {
-                            Text(option.stringValue)
-                        } icon: {
-                            if sortOption == option {
-                                Image(systemName: sortAscending ? "chevron.up" : "chevron.down")
-                            }
-                        }
+                        self.refreshMenu()
                     }
+                })]
+            )
+
+            var filterChildren: [UIMenuElement] = ChapterFilterMethod.allCases.map { method in
+                let filter = parent.filters.first { $0.type == method }
+                let state: UIMenuElement.State = filter.map { $0.exclude ? .mixed : .on } ?? .off
+                return UIAction(
+                    title: filterTitle(for: method),
+                    image: UIImage(systemName: imageName(for: method)),
+                    attributes: .keepsMenuPresented,
+                    state: state
+                ) { [weak self] _ in
+                    guard let self else { return }
+                    if let index = self.parent.filters.firstIndex(where: { $0.type == method }) {
+                        if self.parent.filters[index].exclude {
+                            self.parent.filters.remove(at: index)
+                        } else {
+                            self.parent.filters[index].exclude = true
+                        }
+                    } else {
+                        self.parent.filters.append(.init(type: method, exclude: false))
+                    }
+                    self.refreshMenu()
                 }
             }
-            Section(NSLocalizedString("FILTER_BY")) {
-                ForEach(ChapterFilterMethod.allCases, id: \.self) { option in
-                    let filterIdx = filters.firstIndex(where: { $0.type == option })
-                    Button {
-                        if let filterIdx {
-                            if filters[filterIdx].exclude {
-                                filters.remove(at: filterIdx)
+
+            if parent.languages.count > 1 {
+                filterChildren.append(UIMenu(
+                    title: NSLocalizedString("LANGUAGE"),
+                    subtitle: parent.langFilter.map { SourceLanguage.displayName(for: $0) },
+                    image: UIImage(systemName: "globe"),
+                    children: parent.languages.map { language in
+                        UIAction(
+                            title: SourceLanguage.displayName(for: language),
+                            attributes: .keepsMenuPresented,
+                            state: parent.langFilter == language ? .on : .off
+                        ) { [weak self] _ in
+                            guard let self else { return }
+                            self.parent.langFilter = self.parent.langFilter == language ? nil : language
+                            self.refreshMenu()
+                        }
+                    }
+                ))
+            }
+
+            if parent.scanlators.count > 1 {
+                filterChildren.append(UIMenu(
+                    title: NSLocalizedString("SCANLATOR"),
+                    subtitle: subtitle(for: parent.scanlatorFilter.map { scanlatorTitle($0) }),
+                    image: UIImage(systemName: "person.2"),
+                    children: parent.scanlators.map { scanlator in
+                        UIAction(
+                            title: scanlatorTitle(scanlator),
+                            attributes: .keepsMenuPresented,
+                            state: parent.scanlatorFilter.contains(scanlator) ? .on : .off
+                        ) { [weak self] _ in
+                            guard let self else { return }
+                            if let index = self.parent.scanlatorFilter.firstIndex(of: scanlator) {
+                                self.parent.scanlatorFilter.remove(at: index)
                             } else {
-                                filters[filterIdx].exclude = true
+                                self.parent.scanlatorFilter.append(scanlator)
                             }
-                        } else {
-                            filters.append(ChapterFilterOption(type: option, exclude: false))
-                        }
-                    } label: {
-                        Label {
-                            Text(option.stringValue)
-                        } icon: {
-                            if let filterIdx, filters[filterIdx].exclude {
-                                Image(systemName: "xmark")
-                            } else if filterIdx != nil {
-                                Image(systemName: "checkmark")
-                            }
+                            self.refreshMenu()
                         }
                     }
+                ))
+            }
+
+            let filterMenu = UIMenu(
+                title: NSLocalizedString("BUTTON_FILTER"),
+                subtitle: filtersSubtitle(),
+                image: UIImage(systemName: "line.3.horizontal.decrease"),
+                children: filterChildren
+            )
+            var sections = [UIMenu(options: .displayInline, children: [sortMenu, filterMenu])]
+            if parent.sortOption != .default
+                || !parent.filters.isEmpty
+                || parent.langFilter != nil
+                || !parent.scanlatorFilter.isEmpty {
+                let resetAction = UIAction(
+                    title: NSLocalizedString("RESET"),
+                    image: UIImage(systemName: "arrow.counterclockwise")
+                ) { [weak self] _ in
+                    self?.parent.onReset()
+                    self?.refreshMenu()
                 }
-                if languages.count > 1 {
-                    Menu(NSLocalizedString("LANGUAGE")) {
-                        ForEach(languages, id: \.self) { lang in
-                            Button {
-                                let langValue = langFilter == lang ? nil : lang
-                                langFilter = langValue
-                            } label: {
-                                Label {
-                                    Text(SourceLanguage.displayName(for: lang))
-                                } icon: {
-                                    if langFilter == lang {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                if scanlators.count > 1 {
-                    Menu(NSLocalizedString("SCANLATOR")) {
-                        ForEach(scanlators, id: \.self) { scanlator in
-                            Button {
-                                if let filterIndex = scanlatorFilter.firstIndex(of: scanlator) {
-                                    scanlatorFilter.remove(at: filterIndex)
-                                } else {
-                                    scanlatorFilter.append(scanlator)
-                                }
-                            } label: {
-                                Label {
-                                    Text(scanlator.isEmpty ? NSLocalizedString("NO_SCANLATOR") : scanlator)
-                                } icon: {
-                                    if scanlatorFilter.contains(scanlator) {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    }
+                sections.append(UIMenu(options: .displayInline, children: [resetAction]))
+            }
+            return UIMenu(children: sections)
+        }
+
+        private func refreshMenu() {
+            let updatedMenu = makeMenu()
+            if let interaction = button?.interactions.compactMap({ $0 as? UIContextMenuInteraction }).first {
+                interaction.updateVisibleMenu { visibleMenu in
+                    self.menu(titled: visibleMenu.title, in: updatedMenu) ?? updatedMenu
                 }
             }
-            .menuActionDismissDisabled()
-        } label: {
-            Image(systemName: "line.3.horizontal.decrease")
-                .foregroundStyle(usesLightMenuLabel ? Color.white : Color.black)
+        }
+
+        private func menu(titled title: String, in menu: UIMenu) -> UIMenu? {
+            if menu.title == title { return menu }
+            for child in menu.children {
+                if let child = child as? UIMenu, let match = self.menu(titled: title, in: child) {
+                    return match
+                }
+            }
+            return nil
+        }
+
+        private func imageName(for method: ChapterFilterMethod) -> String {
+            switch method {
+                case .downloaded: "arrow.down.circle"
+                case .unread: "eye.slash"
+                case .locked: "lock"
+            }
+        }
+
+        private func filterTitle(for method: ChapterFilterMethod) -> String {
+            method == .unread ? NSLocalizedString("FILTER_HAS_UNREAD") : method.stringValue
+        }
+
+        private func scanlatorTitle(_ scanlator: String) -> String {
+            scanlator.isEmpty ? NSLocalizedString("NO_SCANLATOR") : scanlator
+        }
+
+        private func subtitle(for values: [String]) -> String? {
+            guard !values.isEmpty else { return nil }
+            let displayed = values.count > 3
+                ? Array(values.prefix(2)) + [NSLocalizedString("AND_MORE")]
+                : values
+            return displayed.joined(separator: NSLocalizedString("FILTER_SEPARATOR"))
+        }
+
+        private func filtersSubtitle() -> String? {
+            var values = parent.filters.map { filter in
+                filter.exclude
+                    ? String(format: NSLocalizedString("NOT_%@"), filterTitle(for: filter.type))
+                    : filterTitle(for: filter.type)
+            }
+            if let language = parent.langFilter {
+                values.append(SourceLanguage.displayName(for: language))
+            }
+            values.append(contentsOf: parent.scanlatorFilter.map { scanlatorTitle($0) })
+            return subtitle(for: values)
         }
     }
 }

@@ -26,7 +26,6 @@ struct MangaView: View {
     @State private var detailsLoaded = false
     @State private var isOverHero = true
     @State private var heroBottom: CGFloat?
-    @State private var backdropShadowTint: UIColor = .black
     @State private var backdropDominantColor: UIColor = .black
     @State private var backdropIsDark = true
     @State private var originalNavigationTint: UIColor?
@@ -236,10 +235,6 @@ struct MangaView: View {
             .onChange(of: isOverHero) { _ in updateNavigationAppearance() }
             .onChange(of: backdropIsDark) { _ in updateNavigationAppearance() }
             .onChange(of: colorScheme) { _ in
-                backdropShadowTint = MangaDetailsBackdrop.darkenedColor(
-                    from: backdropDominantColor,
-                    colorScheme: colorScheme
-                )
                 updateBackdropAppearance()
                 updateNavigationAppearance()
             }
@@ -425,13 +420,11 @@ extension MangaView {
             scanlatorFilter: $viewModel.chapterScanlatorFilter,
             chapterTitleDisplayMode: $viewModel.chapterTitleDisplayMode,
             hasOtherDownloads: !viewModel.otherDownloadedChapters.isEmpty,
-            chapterHeaderShadowColor: Color(uiColor: backdropShadowTint),
             usesDarkHeaderText: usesDarkHeaderText,
             headerControlBackgroundColor: headerControlBackgroundColor,
             nsfwBaseColor: backdropDominantColor,
             onCoverDominantColorChange: { color in
                 backdropDominantColor = color
-                backdropShadowTint = MangaDetailsBackdrop.darkenedColor(from: color, colorScheme: colorScheme)
                 updateBackdropAppearance()
             },
             onHeroBottomChange: updateHeroPosition,
@@ -739,19 +732,18 @@ extension MangaView {
     var toolbarContentBase: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
             let chapters = viewModel.manga.chapters ?? viewModel.chapters
-            if !chapters.isEmpty {
-                ChapterListHeaderView(
-                    allChapters: chapters,
-                    sortOption: $viewModel.chapterSortOption,
-                    sortAscending: $viewModel.chapterSortAscending,
-                    filters: $viewModel.chapterFilters,
-                    langFilter: $viewModel.chapterLangFilter,
-                    scanlatorFilter: $viewModel.chapterScanlatorFilter,
-                    displayMode: $viewModel.chapterTitleDisplayMode,
-                    mangaId: viewModel.manga.identifier,
-                    usesLightMenuLabel: usesLightToolbarIcons
-                ).menu
-            }
+            ChapterListHeaderView(
+                allChapters: chapters,
+                sortOption: $viewModel.chapterSortOption,
+                sortAscending: $viewModel.chapterSortAscending,
+                filters: $viewModel.chapterFilters,
+                langFilter: $viewModel.chapterLangFilter,
+                scanlatorFilter: $viewModel.chapterScanlatorFilter,
+                displayMode: $viewModel.chapterTitleDisplayMode,
+                mangaId: viewModel.manga.identifier,
+                usesLightMenuLabel: usesLightToolbarIcons,
+                onReset: { viewModel.resetChapterListPreferences() }
+            ).menu
         }
 
         ToolbarSpacer(placement: .topBarTrailing)
@@ -1258,11 +1250,35 @@ struct MangaDetailsBackdrop: View {
             return .black
         }
         let multiplier = 1 - darkening(for: colorScheme)
-        return UIColor(red: red * multiplier, green: green * multiplier, blue: blue * multiplier, alpha: 1)
+        let darkModeBackground = UIColor(red: red * 0.50, green: green * 0.50, blue: blue * 0.50, alpha: 1)
+        let background = UIColor(red: red * multiplier, green: green * multiplier, blue: blue * multiplier, alpha: 1)
+        guard luminance(darkModeBackground) < 0.02 || luminance(color) < 0.02 else {
+            return background
+        }
+        // Raise both appearances together, so the light appearance stays lighter.
+        let minimumLuminance = colorScheme == .dark ? 0.045 : 0.10
+        guard luminance(background) < minimumLuminance else { return background }
+        var lower: CGFloat = 0
+        var upper: CGFloat = 1
+        for _ in 0..<12 {
+            let mix = (lower + upper) / 2
+            let candidate = UIColor(
+                red: red * multiplier * (1 - mix) + mix,
+                green: green * multiplier * (1 - mix) + mix,
+                blue: blue * multiplier * (1 - mix) + mix,
+                alpha: 1
+            )
+            if luminance(candidate) < minimumLuminance { lower = mix } else { upper = mix }
+        }
+        return UIColor(
+            red: red * multiplier * (1 - upper) + upper,
+            green: green * multiplier * (1 - upper) + upper,
+            blue: blue * multiplier * (1 - upper) + upper,
+            alpha: 1
+        )
     }
 
-    static func darkenedColor(from color: UIColor, colorScheme: ColorScheme) -> UIColor {
-        let background = darkenedBackgroundColor(from: color, colorScheme: colorScheme)
+    private static func bottomGradientColor(from background: UIColor) -> UIColor {
         var red: CGFloat = 0
         var green: CGFloat = 0
         var blue: CGFloat = 0
@@ -1270,11 +1286,10 @@ struct MangaDetailsBackdrop: View {
         guard background.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
             return .black
         }
-        return UIColor(red: red * 0.35, green: green * 0.35, blue: blue * 0.35, alpha: 1)
+        return UIColor(red: red * 0.82, green: green * 0.82, blue: blue * 0.82, alpha: 1)
     }
 
-    private static func backgroundLuminance(_ color: UIColor, colorScheme: ColorScheme) -> Double {
-        let background = darkenedBackgroundColor(from: color, colorScheme: colorScheme)
+    private static func luminance(_ background: UIColor) -> Double {
         var red: CGFloat = 0
         var green: CGFloat = 0
         var blue: CGFloat = 0
@@ -1293,6 +1308,10 @@ struct MangaDetailsBackdrop: View {
             + 0.7152 * linearComponent(green)
             + 0.0722 * linearComponent(blue)
         return luminance
+    }
+
+    private static func backgroundLuminance(_ color: UIColor, colorScheme: ColorScheme) -> Double {
+        luminance(darkenedBackgroundColor(from: color, colorScheme: colorScheme))
     }
 
     static func isDarkenedBackground(_ color: UIColor, colorScheme: ColorScheme) -> Bool {
@@ -1318,7 +1337,9 @@ struct MangaDetailsBackdrop: View {
             return usesDarkText ? .lightGray : .darkGray
         }
 
-        let adjustment: CGFloat = usesDarkText ? 0.18 : 0.20
+        // Light headers need a stronger, more opaque shade for their controls;
+        // preserve the softer treatment on dark headers.
+        let adjustment: CGFloat = usesDarkText ? 0.225 : 0.17
         func adjusted(_ component: CGFloat) -> CGFloat {
             return usesDarkText
                 ? component * (1 - adjustment)
@@ -1328,7 +1349,7 @@ struct MangaDetailsBackdrop: View {
             red: adjusted(red),
             green: adjusted(green),
             blue: adjusted(blue),
-            alpha: 1
+            alpha: usesDarkText ? 0.76 : 0.68
         )
     }
 
@@ -1336,8 +1357,16 @@ struct MangaDetailsBackdrop: View {
         GeometryReader { geometry in
             Group {
                 if style == .coverColor {
-                    Color(uiColor: baseColor)
-                    .overlay(Color.black.opacity(Self.darkening(for: colorScheme)))
+                    let background = Self.darkenedBackgroundColor(from: baseColor, colorScheme: colorScheme)
+                    LinearGradient(
+                        stops: [
+                            .init(color: Color(uiColor: background), location: 0),
+                            .init(color: Color(uiColor: background), location: 0.56),
+                            .init(color: Color(uiColor: Self.bottomGradientColor(from: background)), location: 1)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
                 } else {
                     SourceImageView(
                         source: source,

@@ -10,14 +10,43 @@ import AidokuRunner
 
 enum ChapterListOrder: String, CaseIterable {
     case automatic
+    case sourceOrder
+    case chapter
+    case uploadDate
+    // Previously these were the only explicit values. Keep reading them so
+    // existing preferences retain their direction after the settings change.
     case descending
     case ascending
+
+    static var allCases: [Self] { [.automatic, .sourceOrder, .chapter, .uploadDate] }
+
+    static var current: Self {
+        Self(rawValue: AppSettings.library.chapterListOrder.get()) ?? .automatic
+    }
+
+    var sortOption: ChapterSortOption {
+        switch self {
+            case .automatic: .automatic
+            case .sourceOrder, .descending, .ascending: .sourceOrder
+            case .chapter: .chapter
+            case .uploadDate: .uploadDate
+        }
+    }
+
+    var sortAscending: Bool {
+        switch self {
+            case .ascending: true
+            case .descending: false
+            default: AppSettings.library.chapterListSortAscending.get()
+        }
+    }
 
     var localizedTitle: String {
         switch self {
             case .automatic: NSLocalizedString("AUTOMATIC")
-            case .descending: NSLocalizedString("DESCENDING")
-            case .ascending: NSLocalizedString("ASCENDING")
+            case .sourceOrder, .descending, .ascending: NSLocalizedString("SOURCE_ORDER")
+            case .chapter: NSLocalizedString("CHAPTER")
+            case .uploadDate: NSLocalizedString("UPLOAD_DATE")
         }
     }
 
@@ -26,16 +55,21 @@ enum ChapterListOrder: String, CaseIterable {
         _ chapters: [AidokuRunner.Chapter],
         for manga: AidokuRunner.Manga
     ) -> [AidokuRunner.Chapter] {
-        let resolvedOrder = switch self {
-            case .automatic:
-                Self.effectiveReadingMode(for: manga) == .rtl ? Self.descending : Self.ascending
-            case .descending, .ascending:
-                self
+        if self == .chapter || self == .uploadDate {
+            return ChapterListPresentation.orderedChapters(
+                chapters,
+                for: manga,
+                option: sortOption,
+                ascending: sortAscending
+            )
         }
 
         // Sources provide chapters in descending source order. Reversing preserves the
         // source's own ordering while presenting the lowest source order first.
-        return resolvedOrder == .ascending ? Array(chapters.reversed()) : chapters
+        let ascending = self == .automatic
+            ? Self.effectiveReadingMode(for: manga) != .rtl
+            : sortAscending
+        return ascending ? Array(chapters.reversed()) : chapters
     }
 
     @MainActor
@@ -85,6 +119,7 @@ struct LibrarySettings: Sendable {
             contextMenuPagePreviews,
             showChapterPageCounts,
             chapterListOrder,
+            chapterListSortAscending,
             threeStateFilterMethods,
             visibleFilterMethods,
             unreadChapterBadges,
@@ -132,6 +167,7 @@ struct LibrarySettings: Sendable {
     // Keep the existing key so moving the setting does not reset the user's choice.
     let showChapterPageCounts = SettingsKey<Bool>("Reader.showChapterPageCounts", default: false)
     let chapterListOrder = SettingsKey<String>("Library.chapterListOrder", default: ChapterListOrder.automatic.rawValue)
+    let chapterListSortAscending = SettingsKey<Bool>("Library.chapterListSortAscending", default: true)
     let threeStateFilterMethods = SettingsKey<[String]>(
         "Library.threeStateFilterMethods",
         default: []

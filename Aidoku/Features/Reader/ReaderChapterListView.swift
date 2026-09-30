@@ -15,6 +15,8 @@ struct ReaderChapterListView: View {
     @State var chapter: AidokuRunner.Chapter
     @State private var pageCounts: [String: Int]
     @State private var progressPages: [String: Int]
+    @State private var readingHistory: [String: (page: Int, date: Int)] = [:]
+    @State private var listPreferences: ChapterListPreferences
     private let liveCurrentPage: Int?
     @StateObject private var showPageCounts = UserDefaultsBool(key: AppSettings.library.showChapterPageCounts.key)
     @StateObject private var chapterListOrderObserver = UserDefaultsObserver(
@@ -31,6 +33,7 @@ struct ReaderChapterListView: View {
         chapter: AidokuRunner.Chapter,
         pageCounts: [String: Int] = [:],
         currentPage: Int? = nil,
+        listPreferences: ChapterListPreferences,
         chapterSet: ((AidokuRunner.Chapter) -> Void)? = nil
     ) {
         self.source = source
@@ -39,6 +42,7 @@ struct ReaderChapterListView: View {
         self._chapter = State(initialValue: chapter)
         self._pageCounts = State(initialValue: pageCounts)
         self._progressPages = State(initialValue: currentPage.map { $0 > 0 ? [chapter.key: $0] : [:] } ?? [:])
+        self._listPreferences = State(initialValue: listPreferences)
         self.liveCurrentPage = currentPage
         self.chapterSet = chapterSet
     }
@@ -99,6 +103,11 @@ struct ReaderChapterListView: View {
                 .task(id: "\(manga.identifier)-\(showPageCounts.value)") {
                     await loadReadingProgressIfNeeded()
                 }
+                .onReceive(NotificationCenter.default.publisher(for: .filteredChapters)) { notification in
+                    guard let id = notification.object as? MangaIdentifier, id == manga.identifier else { return }
+                    listPreferences = ChapterListPreferences.load(for: manga.identifier)
+                    Task { await loadReadingProgressIfNeeded() }
+                }
             }
             .navigationTitle(NSLocalizedString("CHAPTERS"))
             .navigationBarTitleDisplayMode(.inline)
@@ -115,10 +124,20 @@ struct ReaderChapterListView: View {
     private var orderedChapterList: [AidokuRunner.Chapter] {
         // Read the observer so this list updates immediately when the setting changes.
         _ = chapterListOrderObserver.observedValues[AppSettings.library.chapterListOrder.key]
-        let order = ChapterListOrder(
-            rawValue: AppSettings.library.chapterListOrder.get()
-        ) ?? .automatic
-        return order.orderedChapters(chapterList, for: manga)
+        let ordered = ChapterListPresentation.orderedChapters(
+            chapterList,
+            for: manga,
+            option: ChapterSortOption(flags: listPreferences.flags),
+            ascending: listPreferences.flags & ChapterFlagMask.sortAscending != 0
+        )
+        return ChapterListPresentation.filteredChapters(
+            ordered,
+            for: manga,
+            filters: ChapterFilterOption.parseOptions(flags: listPreferences.flags),
+            language: listPreferences.language,
+            scanlators: listPreferences.scanlators,
+            readingHistory: readingHistory
+        )
     }
 
     private var supportsPageCounts: Bool {
@@ -133,10 +152,11 @@ struct ReaderChapterListView: View {
     }
 
     private func loadReadingProgressIfNeeded() async {
-        guard showPageCounts.value, supportsPageCounts else { return }
         let history = await CoreDataManager.shared.getReadingHistory(mangaId: manga.identifier)
         guard !Task.isCancelled else { return }
 
+        readingHistory = history
+        guard showPageCounts.value, supportsPageCounts else { return }
         progressPages = history.compactMapValues { $0.page > 0 ? $0.page : nil }
         // The reader's live position may be newer than the most recent persisted update.
         if let liveCurrentPage, liveCurrentPage > 0 {

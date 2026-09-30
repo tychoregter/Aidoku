@@ -51,6 +51,7 @@ struct MangaCoverView: View {
     var hideNSFW = false
     var nsfwBaseColor: UIColor?
     var onDominantColorChange: ((UIColor) -> Void)?
+    var onImageSizeChange: ((CGSize) -> Void)?
     var bookmarked: Bool = false
 
     private var hiddenCoverColor: UIColor {
@@ -75,7 +76,8 @@ struct MangaCoverView: View {
             onDominantColorChange: hideNSFW || privacyPlaceholder || onDominantColorChange != nil ? { color in
                 if hideNSFW || privacyPlaceholder { sampledNSFWColor = color }
                 onDominantColorChange?(color)
-            } : nil
+            } : nil,
+            onImageSizeChange: onImageSizeChange
         )
         .overlay {
             if hideNSFW || privacyPlaceholder {

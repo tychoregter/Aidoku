@@ -345,6 +345,8 @@ extension SettingsView {
     func pageContentHandler(_ key: String) -> (some View)? {
         if key == "Library.categories" {
             CategoriesView(categories: $categoriesOnly)
+        } else if key == AppSettings.library.chapterListOrder.key {
+            DefaultChapterListOrderView()
         } else if key == "Library.filterGroups" {
             FilterGroupsView()
         } else if key == "Library.genreFilter" {
@@ -391,6 +393,71 @@ extension SettingsView {
         } else if setting.key == AppSettings.library.excludedUpdateCategories.key {
             CategoryMultiSelectSettingView(setting: setting, categories: $categoriesOnly, authToOpen: false)
         }
+    }
+}
+
+private struct DefaultChapterListOrderView: View {
+    @State private var order = ChapterListOrder.current
+    @State private var ascending = ChapterListOrder.current.sortAscending
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(ChapterListOrder.allCases, id: \.self) { option in
+                    Button {
+                        if order == .ascending || order == .descending {
+                            AppSettings.library.chapterListSortAscending.set(ascending)
+                        }
+                        if option != .automatic && order.sortOption != option.sortOption {
+                            ascending = true
+                            AppSettings.library.chapterListSortAscending.set(true)
+                        }
+                        order = option
+                        AppSettings.library.chapterListOrder.set(option.rawValue)
+                        notifyOrderChanged()
+                    } label: {
+                        HStack {
+                            Text(option.localizedTitle)
+                            Spacer()
+                            if order.sortOption == option.sortOption {
+                                Image(systemName: "checkmark").foregroundStyle(.tint)
+                            }
+                        }
+                    }
+                    .foregroundStyle(.primary)
+                }
+            }
+
+            if order != .automatic {
+                Section {
+                    ForEach([true, false], id: \.self) { direction in
+                        Button {
+                            ascending = direction
+                            if order == .ascending || order == .descending {
+                                order = .sourceOrder
+                                AppSettings.library.chapterListOrder.set(order.rawValue)
+                            }
+                            AppSettings.library.chapterListSortAscending.set(direction)
+                            notifyOrderChanged()
+                        } label: {
+                            HStack {
+                                Text(NSLocalizedString(direction ? "ASCENDING" : "DESCENDING"))
+                                Spacer()
+                                if ascending == direction {
+                                    Image(systemName: "checkmark").foregroundStyle(.tint)
+                                }
+                            }
+                        }
+                        .foregroundStyle(.primary)
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+    }
+
+    private func notifyOrderChanged() {
+        NotificationCenter.default.post(name: .init(AppSettings.library.chapterListOrder.key), object: nil)
     }
 }
 

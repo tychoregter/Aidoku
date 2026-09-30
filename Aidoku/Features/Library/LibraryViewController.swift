@@ -12,6 +12,9 @@ import AidokuRunner
 import PhotosUI
 
 class LibraryViewController: OldMangaCollectionViewController {
+    // Restore the Library selection menu and two-finger swipe by setting this to true.
+    private static let selectionEnabled = false
+
     private var horizontalRowScrollViewObservations: [NSKeyValueObservation] = []
 
 
@@ -1119,11 +1122,13 @@ extension LibraryViewController {
                     titleKey: "SELECT_ALL"
                 )
             }
-            navigationItem.rightBarButtonItems = [UIBarButtonItem(
+            let doneButton = UIBarButtonItem(
                 barButtonSystemItem: .done,
                 target: self,
                 action: #selector(stopEditing)
-            )]
+            )
+            doneButton.tintColor = .systemPink
+            navigationItem.rightBarButtonItems = [doneButton]
         } else {
             updateCategoryMenu()
             var items: [UIBarButtonItem] = if isStackView {
@@ -1977,7 +1982,7 @@ extension LibraryViewController {
     func removeFilterAction() -> UIAction {
         UIAction(
             title: NSLocalizedString("REMOVE_FILTER"),
-            image: UIImage(systemName: "minus.circle")
+            image: UIImage(systemName: "arrow.counterclockwise")
         ) { [weak self] _ in
             Task {
                 guard let self else { return }
@@ -1990,6 +1995,10 @@ extension LibraryViewController {
                 }
             }
         }
+    }
+
+    func resetFilterSection() -> UIMenu {
+        UIMenu(options: .displayInline, children: [removeFilterAction()])
     }
 
     func filtersSubtitle() -> String? {
@@ -2156,12 +2165,12 @@ extension LibraryViewController {
                 }
                 return !isFilterVisible(method)
             }
-            if !self.viewModel.filters.isEmpty,
-               !children.contains(where: { $0.title == NSLocalizedString("REMOVE_FILTER") }) {
-                children.append(self.removeFilterAction())
-            } else if self.viewModel.filters.isEmpty,
-                      children.last?.title == NSLocalizedString("REMOVE_FILTER") {
-                children.removeLast()
+            children.removeAll { element in
+                guard let section = element as? UIMenu else { return false }
+                return section.children.contains { $0.title == NSLocalizedString("REMOVE_FILTER") }
+            }
+            if !self.viewModel.filters.isEmpty {
+                children.append(self.resetFilterSection())
             }
             return menu.replacingChildren(children)
         }
@@ -2287,14 +2296,6 @@ extension LibraryViewController {
     }
 
     func updateMoreMenu() {
-        let selectAction = UIAction(
-            title: NSLocalizedString("SELECT"),
-            image: UIImage(systemName: "checkmark.circle")
-        ) { [weak self] _ in
-            guard let self else { return }
-            self.setEditing(true, animated: true)
-        }
-
         let layoutActions = [
             UIAction(
                 title: NSLocalizedString("LAYOUT_GRID"),
@@ -2338,7 +2339,7 @@ extension LibraryViewController {
                         guard let self else { return }
                         let ascending = self.viewModel.sortMethod == method
                             ? !self.viewModel.sortAscending
-                            : false
+                            : method != .alphabetical
                         self.setSort(method: method, ascending: ascending)
                     }
                 })
@@ -2461,26 +2462,33 @@ extension LibraryViewController {
                 return !self.isFilterVisible(method)
             }
 
-            var filterMenu = UIMenu(
+            if !self.viewModel.filters.isEmpty {
+                filterChildren.append(self.resetFilterSection())
+            }
+
+            let filterMenu = UIMenu(
                 title: NSLocalizedString("BUTTON_FILTER"),
                 subtitle: self.filtersSubtitle(),
                 image: UIImage(systemName: "line.3.horizontal.decrease"),
                 children: filterChildren
             )
-            if !self.viewModel.filters.isEmpty {
-                filterMenu = filterMenu.replacingChildren(filterMenu.children + [self.removeFilterAction()])
-            }
 
             completion(self.isFavoritesTab || self.isStackView ? [filterMenu] : [filterMenu, self.makePinTitlesMenu()])
         }
 
-        moreBarButton.menu = UIMenu(
-            children: [
-                UIMenu(options: .displayInline, children: [selectAction]),
-                UIMenu(options: .displayInline, children: layoutActions),
-                UIMenu(options: .displayInline, children: [sortMenu, filterMenu])
-            ]
-        )
+        var menuSections: [UIMenu] = []
+        if Self.selectionEnabled {
+            let selectAction = UIAction(
+                title: NSLocalizedString("SELECT"),
+                image: UIImage(systemName: "checkmark.circle")
+            ) { [weak self] _ in
+                self?.setEditing(true, animated: true)
+            }
+            menuSections.append(UIMenu(options: .displayInline, children: [selectAction]))
+        }
+        menuSections.append(UIMenu(options: .displayInline, children: layoutActions))
+        menuSections.append(UIMenu(options: .displayInline, children: [sortMenu, filterMenu]))
+        moreBarButton.menu = UIMenu(children: menuSections)
 
         moreBarButton.isSelected = false
         moreBarButton.image = UIImage(systemName: "line.3.horizontal.decrease")
@@ -2523,8 +2531,9 @@ extension LibraryViewController: LibraryCategorySelectionHeaderDelegate {
 
 // MARK: - Collection View Delegate
 extension LibraryViewController {
-    // support two finger drag to select
+    // Support two-finger drag to select when Library selection is enabled.
     func collectionView(_ collectionView: UICollectionView, shouldBeginMultipleSelectionInteractionAt indexPath: IndexPath) -> Bool {
+        guard Self.selectionEnabled else { return false }
         guard let item = dataSource.itemIdentifier(for: indexPath), !item.isEmptyPinnedPlaceholder else {
             return false
         }
@@ -2539,6 +2548,7 @@ extension LibraryViewController {
     }
 
     func collectionView(_ collectionView: UICollectionView, didBeginMultipleSelectionInteractionAt indexPath: IndexPath) {
+        guard Self.selectionEnabled else { return }
         setEditing(true, animated: true)
     }
 

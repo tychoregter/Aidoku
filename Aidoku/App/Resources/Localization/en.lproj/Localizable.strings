@@ -76,6 +76,7 @@
 "REMOVE_FROM_LIBRARY" = "Remove from Library";
 "MANGA_INFO" = "Manga Info";
 "LIST_ORDER" = "List Order";
+"DEFAULT_LIST_ORDER" = "Default List Order";
 "SORT_BY" = "Sort By";
 "FILTER_BY" = "Filter By";
 "REMOVE_FILTER" = "Reset Filters";

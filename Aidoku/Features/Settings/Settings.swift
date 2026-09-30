@@ -557,7 +557,11 @@ extension Settings {
                 ),
                 .init(
                     key: AppSettings.library.chapterListOrder.key,
-                    title: NSLocalizedString("LIST_ORDER"),
+                    title: NSLocalizedString(
+                        "DEFAULT_LIST_ORDER",
+                        value: "Default List Order",
+                        comment: "Default chapter list order in Library settings"
+                    ),
                     notification: .init(AppSettings.library.chapterListOrder.key),
                     value: .select(.init(
                         values: ChapterListOrder.allCases.map(\.rawValue),

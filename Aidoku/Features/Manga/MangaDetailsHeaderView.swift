@@ -35,7 +35,6 @@ struct MangaDetailsHeaderView: View {
     @Binding var chapterTitleDisplayMode: ChapterTitleDisplayMode
 
     var hasOtherDownloads: Bool
-    var chapterHeaderShadowColor: Color = .black
     var usesDarkHeaderText = false
     var headerControlBackgroundColor: Color = .white.opacity(0.14)
     var nsfwBaseColor: UIColor?
@@ -56,11 +55,20 @@ struct MangaDetailsHeaderView: View {
     @State private var hasEditedCover = false
     @State private var showImagePicker = false
     @State private var uploadedCover: UIImage?
+    @State private var coverAspectRatio: CGFloat = 2 / 3
     @State private var showAlternateCoverPicker = false
     @StateObject private var developerMode = UserDefaultsBool(key: AppSettings.general.developerMode.key)
     @StateObject private var hideNSFWCovers = UserDefaultsBool(key: AppSettings.appearance.blurNSFWCovers.key)
 
-    static let coverWidth: CGFloat = 200
+    static let coverMaxDimension: CGFloat = 300
+
+    private var coverSize: CGSize {
+        let ratio = coverAspectRatio.isFinite && coverAspectRatio > 0 ? coverAspectRatio : 2 / 3
+        return CGSize(
+            width: min(Self.coverMaxDimension, Self.coverMaxDimension * ratio),
+            height: min(Self.coverMaxDimension, Self.coverMaxDimension / ratio)
+        )
+    }
 
     private var headerTextColor: Color { usesDarkHeaderText ? .black : .white }
     private var readButtonColor: Color { usesDarkHeaderText ? .black : .white }
@@ -84,7 +92,6 @@ struct MangaDetailsHeaderView: View {
         scanlatorFilter: Binding<[String]>,
         chapterTitleDisplayMode: Binding<ChapterTitleDisplayMode>,
         hasOtherDownloads: Bool,
-        chapterHeaderShadowColor: Color = .black,
         usesDarkHeaderText: Bool = false,
         headerControlBackgroundColor: Color = .white.opacity(0.14),
         nsfwBaseColor: UIColor? = nil,
@@ -109,7 +116,6 @@ struct MangaDetailsHeaderView: View {
         self._scanlatorFilter = scanlatorFilter
         self._chapterTitleDisplayMode = chapterTitleDisplayMode
         self.hasOtherDownloads = hasOtherDownloads
-        self.chapterHeaderShadowColor = chapterHeaderShadowColor
         self.usesDarkHeaderText = usesDarkHeaderText
         self.headerControlBackgroundColor = headerControlBackgroundColor
         self.nsfwBaseColor = nsfwBaseColor
@@ -147,10 +153,7 @@ struct MangaDetailsHeaderView: View {
                         .padding(.top, 18)
                         .padding(.bottom, 18)
                         .frame(maxWidth: .infinity)
-                        .background {
-                            Color(uiColor: .systemBackground)
-                                .shadow(color: chapterHeaderShadowColor.opacity(0.42), radius: 80, x: 0, y: -16)
-                        }
+                        .background(Color(uiColor: .systemBackground))
                     }
                 }
             }
@@ -222,15 +225,20 @@ struct MangaDetailsHeaderView: View {
         MangaCoverView(
             source: source,
             coverImage: manga.cover ?? "",
-            width: Self.coverWidth,
-            height: Self.coverWidth * 3 / 2,
+            width: coverSize.width,
+            height: coverSize.height,
             coverDownsampleSide: 630,
             borderColor: Color.white.opacity(0.24),
             privacyPlaceholder: developerMode.value,
             hideNSFW: hidesNSFWCover,
             nsfwBaseColor: nsfwBaseColor,
-            onDominantColorChange: onCoverDominantColorChange
+            onDominantColorChange: onCoverDominantColorChange,
+            onImageSizeChange: { size in
+                guard size.width > 0, size.height > 0 else { return }
+                coverAspectRatio = size.width / size.height
+            }
         )
+        .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 10)
         .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contextMenu {
             coverActions
@@ -238,8 +246,8 @@ struct MangaDetailsHeaderView: View {
             MangaCoverView(
                 source: source,
                 coverImage: manga.cover ?? "",
-                width: Self.coverWidth,
-                height: Self.coverWidth * 3 / 2,
+                width: coverSize.width,
+                height: coverSize.height,
                 coverDownsampleSide: 630,
                 borderColor: Color.white.opacity(0.24),
                 privacyPlaceholder: developerMode.value,
@@ -248,6 +256,7 @@ struct MangaDetailsHeaderView: View {
             )
         }
         .id(manga.cover ?? "")
+        .onChange(of: manga.cover) { _ in coverAspectRatio = 2 / 3 }
         .padding(.top, 12)
         .padding(.bottom, 23)
         .frame(maxWidth: .infinity)

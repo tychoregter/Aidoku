@@ -113,16 +113,11 @@ struct ChapterTableCell: View {
     private var subtitle: String? {
         if developerMode.value {
             let count = DeveloperMode.pageCount(for: chapter.key)
-            return page == nil || page == 0
-                ? "\(count) pages"
-                : "\(max(count - (page ?? 0), 0)) pages left"
+            return chapterPageCountSubtitle(pageCount: count, progressPage: page)
         }
         if showPageCounts.value, supportsPageCounts {
             if let loadedPageCount {
-                if let page, page > 0 {
-                    return String(format: NSLocalizedString("%i_PAGES_LEFT"), max(loadedPageCount - page, 0))
-                }
-                return String(format: NSLocalizedString("%i_PAGES"), loadedPageCount)
+                return chapterPageCountSubtitle(pageCount: loadedPageCount, progressPage: page)
             }
         }
         return chapter.formattedSubtitle(page: page, sourceKey: sourceKey)

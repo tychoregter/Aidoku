@@ -31,7 +31,7 @@ extension MangaView {
         @Published var allChaptersRead = false
         @Published var initialDataLoaded = false
 
-        @Published var chapterSortOption: ChapterSortOption = .sourceOrder {
+        @Published var chapterSortOption: ChapterSortOption = .default {
             didSet { refilterChapters() }
         }
         @Published var chapterSortAscending = false {
@@ -53,6 +53,7 @@ extension MangaView {
         @Published var error: Error?
 
         private var fetchedDetails = false
+        private var restoredChapterPreferences = false
         private var markedOpened = false
         private var cancellables = Set<AnyCancellable>()
 
@@ -376,12 +377,13 @@ extension MangaView.ViewModel {
             self.manga = self.manga.copy(from: cachedManga.toNewManga())
         }
 
-        let filters = CoreDataManager.shared.getMangaChapterFilters(mangaId: manga.identifier, context: context)
-        chapterSortOption = .init(flags: filters.flags)
-        chapterSortAscending = filters.flags & ChapterFlagMask.sortAscending != 0
-        chapterFilters = ChapterFilterOption.parseOptions(flags: filters.flags)
-        chapterLangFilter = filters.language
-        chapterScanlatorFilter = filters.scanlators ?? []
+        let preferences = ChapterListPreferences.load(for: manga.identifier)
+        chapterSortOption = .init(flags: preferences.flags)
+        chapterSortAscending = preferences.flags & ChapterFlagMask.sortAscending != 0
+        chapterFilters = ChapterFilterOption.parseOptions(flags: preferences.flags)
+        chapterLangFilter = preferences.language
+        chapterScanlatorFilter = preferences.scanlators
+        restoredChapterPreferences = true
 
         await loadBookmarked()
         await loadHistory()
@@ -750,11 +752,26 @@ extension MangaView.ViewModel {
             chapters = filteredChapters()
         }
         updateReadButton()
+        guard restoredChapterPreferences else { return }
+        ChapterListPreferences(
+            flags: generateChapterFlags(),
+            language: chapterLangFilter,
+            scanlators: chapterScanlatorFilter
+        ).save(for: manga.identifier)
         if bookmarked {
-            Task {
-                await saveFilters()
-            }
+            Task { await saveFilters() }
         }
+    }
+
+    func resetChapterListPreferences() {
+        restoredChapterPreferences = false
+        chapterSortOption = .default
+        chapterSortAscending = false
+        chapterFilters = []
+        chapterLangFilter = nil
+        chapterScanlatorFilter = []
+        restoredChapterPreferences = true
+        refilterChapters()
     }
 
     private func removeDownload(_ notification: Notification) {
@@ -794,72 +811,20 @@ extension MangaView.ViewModel {
         guard let chapters = manga.chapters, !chapters.isEmpty else {
             return []
         }
-        return switch chapterSortOption {
-            case .sourceOrder:
-                ChapterListOrder(
-                    rawValue: AppSettings.library.chapterListOrder.get()
-                )?.orderedChapters(chapters, for: manga) ?? chapters
-            case .chapter:
-                if chapterSortAscending {
-                    chapters.sorted(by: { $0.chapterNumber ?? -1 < $1.chapterNumber ?? -1 })
-                } else {
-                    chapters.sorted(by: { $0.chapterNumber ?? -1 > $1.chapterNumber ?? -1 })
-                }
-            case .uploadDate:
-                if chapterSortAscending {
-                    chapters.sorted(by: { $0.dateUploaded ?? .distantPast < $1.dateUploaded ?? .distantPast })
-                } else {
-                    chapters.sorted(by: { $0.dateUploaded ?? .distantPast > $1.dateUploaded ?? .distantPast })
-                }
-        }
+        return ChapterListPresentation.orderedChapters(
+            chapters, for: manga, option: chapterSortOption, ascending: chapterSortAscending
+        )
     }
 
     private func filteredChapters() -> [AidokuRunner.Chapter] {
-        var chapters = sortedChapters()
-
-        // filter by language and scanlators
-        if chapterLangFilter != nil || !chapterScanlatorFilter.isEmpty {
-            chapters = chapters.filter { chapter in
-                let cond1 = if let chapterLangFilter {
-                    chapter.language == chapterLangFilter
-                } else {
-                    true
-                }
-                let cond2 = if !chapterScanlatorFilter.isEmpty  {
-                    if let chapterScanlators = chapter.scanlators, !chapterScanlators.isEmpty {
-                        chapterScanlatorFilter.contains(where: chapterScanlators.contains)
-                    } else {
-                        chapterScanlatorFilter.contains("")
-                    }
-                } else {
-                    true
-                }
-                return cond1 && cond2
-            }
-        }
-
-        for filter in chapterFilters {
-            switch filter.type {
-                case .downloaded:
-                    chapters = chapters.filter {
-                        let downloaded = !DownloadManager.shared.isChapterDownloaded(
-                            chapter: .init(sourceKey: manga.sourceKey, mangaKey: manga.key, chapterKey: $0.key)
-                        )
-                        return filter.exclude ? downloaded : !downloaded
-                    }
-                case .unread:
-                    chapters = chapters.filter {
-                        let isCompleted = self.readingHistory[$0.id]?.0 == -1
-                        return filter.exclude ? isCompleted : !isCompleted
-                    }
-                case .locked:
-                    chapters = chapters.filter {
-                        filter.exclude ? !$0.locked : $0.locked
-                    }
-            }
-        }
-
-        return chapters
+        ChapterListPresentation.filteredChapters(
+            sortedChapters(),
+            for: manga,
+            filters: chapterFilters,
+            language: chapterLangFilter,
+            scanlators: chapterScanlatorFilter,
+            readingHistory: readingHistory
+        )
     }
 
     enum ChapterResult: Equatable {
@@ -876,17 +841,9 @@ extension MangaView.ViewModel {
         // always evaluate unread chapters from the beginning of the source,
         // otherwise an ascending list gets reversed a second time and starts
         // an unread title at its final chapter.
-        let candidateChapters: [AidokuRunner.Chapter]
-        if chapterSortOption == .sourceOrder,
-           let sourceChapters = manga.chapters,
-           !sourceChapters.isEmpty
-        {
-            let visibleChapterIds = Set(chapters.map(\.id))
-            candidateChapters = sourceChapters.reversed().filter {
-                visibleChapterIds.contains($0.id)
-            }
-        } else {
-            candidateChapters = chapterSortAscending ? chapters : Array(chapters.reversed())
+        let visibleChapterIds = Set(chapters.map(\.id))
+        let candidateChapters = (manga.chapters ?? chapters).reversed().filter {
+            visibleChapterIds.contains($0.id)
         }
 
         let chapter = MangaManager.shared.getNextChapter(
