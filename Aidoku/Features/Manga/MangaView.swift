@@ -80,6 +80,7 @@ struct MangaView: View {
     ) {
         let source = source ?? SourceManager.shared.store.source(for: manga.sourceKey)
         self._viewModel = StateObject(wrappedValue: ViewModel(source: source, manga: manga))
+        self._backdropDominantColor = State(initialValue: DeveloperMode.color(for: manga.cover ?? ""))
         self.path = path
         self.toolbarTransitionState = toolbarTransitionState
         self._targetChapterKey = State(initialValue: chapterKey)
@@ -219,12 +220,8 @@ struct MangaView: View {
                         MangaDetailsBackdrop(
                             source: viewModel.source,
                             coverImage: viewModel.manga.cover ?? "",
-                            privacyPlaceholder: developerMode.value,
-                            onDominantColorChange: { color in
-                                backdropDominantColor = color
-                                backdropShadowTint = MangaDetailsBackdrop.darkenedColor(from: color, colorScheme: colorScheme)
-                                updateBackdropAppearance()
-                            }
+                            baseColor: backdropDominantColor,
+                            privacyPlaceholder: developerMode.value
                         )
                         .frame(height: headerHeight)
                         .frame(maxHeight: .infinity, alignment: .top)
@@ -431,6 +428,11 @@ extension MangaView {
             usesDarkHeaderText: usesDarkHeaderText,
             headerControlBackgroundColor: headerControlBackgroundColor,
             nsfwBaseColor: backdropDominantColor,
+            onCoverDominantColorChange: { color in
+                backdropDominantColor = color
+                backdropShadowTint = MangaDetailsBackdrop.darkenedColor(from: color, colorScheme: colorScheme)
+                updateBackdropAppearance()
+            },
             onHeroBottomChange: updateHeroPosition,
             onTitlePressed: {
                 guard let tabBarController = path.rootViewController?.tabBarController as? TabBarController else {
@@ -1237,8 +1239,8 @@ struct MangaDetailsBackdrop: View {
 
     let source: AidokuRunner.Source?
     let coverImage: String
+    var baseColor: UIColor
     var privacyPlaceholder = false
-    var onDominantColorChange: ((UIColor) -> Void)?
     // Switch to `.blurredCover` to restore the previous info-header backdrop.
     var style: Style = .coverColor
 
@@ -1333,15 +1335,7 @@ struct MangaDetailsBackdrop: View {
         GeometryReader { geometry in
             Group {
                 if style == .coverColor {
-                    SourceImageView(
-                        source: source,
-                        imageUrl: coverImage,
-                        width: geometry.size.width,
-                        height: geometry.size.height,
-                        downsampleWidth: 180,
-                        privacyPlaceholder: true,
-                        onDominantColorChange: onDominantColorChange
-                    )
+                    Color(uiColor: baseColor)
                     .overlay(Color.black.opacity(Self.darkening(for: colorScheme)))
                 } else {
                     SourceImageView(

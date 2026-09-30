@@ -928,7 +928,7 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     private func developerSubtitle(for info: MangaInfo, indexPath: IndexPath) -> String {
         let section = dataSource.snapshot().sectionIdentifiers[safe: indexPath.section]
-        if section == .continueReading { return "Continue Chapter 3" }
+        if section == .continueReading { return "Chapter 3" }
         if info.isLibraryStack { return "Collection" }
         if AppSettings.library.showCoverAuthors.get() {
             return DeveloperMode.author(for: String(describing: info.id))

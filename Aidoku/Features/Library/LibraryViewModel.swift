@@ -1723,7 +1723,7 @@ private func libraryReadingSubtitle(for manga: MangaObject, context: NSManagedOb
     }
     let isInProgress = (history[next.id]?.date ?? -1) > 0
     let format = isInProgress
-        ? NSLocalizedString("LIBRARY_COVER_CONTINUE_CHAPTER", value: "Continue %@", comment: "Reading progress beneath a library cover")
-        : NSLocalizedString("LIBRARY_COVER_START_CHAPTER", value: "Start %@", comment: "Reading progress beneath a library cover")
+        ? NSLocalizedString("LIBRARY_COVER_CONTINUE_CHAPTER", value: "%@", comment: "Reading progress beneath a library cover")
+        : NSLocalizedString("LIBRARY_COVER_START_CHAPTER", value: "%@", comment: "Reading progress beneath a library cover")
     return String(format: format, chapterTitle)
 }

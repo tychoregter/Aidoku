@@ -1008,7 +1008,9 @@ private enum LibraryReadingStatus {
             // Stored source order is newest to oldest. Advancing in reading
             // order therefore moves toward the start of this array.
             guard currentIndex > chapters.startIndex else {
-                return manga.status == AidokuRunner.PublishingStatus.completed.rawValue ? "Finished" : "Caught up"
+                return manga.status == AidokuRunner.PublishingStatus.completed.rawValue
+                    ? NSLocalizedString("FINISHED")
+                    : NSLocalizedString("CAUGHT_UP")
             }
             let nextIndex = chapters.index(before: currentIndex)
             return chapterSubtitle(for: chapters[nextIndex])
@@ -1028,7 +1030,7 @@ private enum LibraryReadingStatus {
 
     private static func chapterSubtitle(for chapter: ChapterObject) -> String {
         let chapterName = chapter.toNewChapter().sourceDisplayTitle
-        return truncatedShortcutSubtitle("Continue \(chapterName)")
+        return truncatedShortcutSubtitle(chapterName)
     }
 
     private static func truncatedShortcutSubtitle(_ value: String, maximumLength: Int = 48) -> String {

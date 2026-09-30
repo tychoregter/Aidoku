@@ -44,33 +44,38 @@ struct SourceImageView: View {
             request: imageRequest,
             transaction: .init(animation: .default)
         ) { state in
-            if privacyPlaceholder {
-                let dominantColor = state.imageContainer?.image.dominantColor()
-                    ?? DeveloperMode.color(for: imageUrl)
-                Rectangle()
-                    .fill(Color(uiColor: dominantColor))
-                    .frame(width: width, height: height)
-                    .task(id: dominantColor.description) {
-                        onDominantColorChange?(dominantColor)
-                    }
-            } else if state.imageContainer?.type == .gif, let data = state.imageContainer?.data {
-                GIFImage(
-                    data: data,
-                    contentMode: contentMode
-                )
-                    .frame(width: width, height: height)
-                    .id(state.image != nil ? imageUrl : "placeholder") // ensures only opacity is animated
-            } else {
-                let result = if let image = state.image {
-                    image
+            let dominantColor = privacyPlaceholder || onDominantColorChange != nil
+                ? state.imageContainer?.image.dominantColor() ?? DeveloperMode.color(for: imageUrl)
+                : nil
+            Group {
+                if privacyPlaceholder {
+                    Rectangle()
+                        .fill(Color(uiColor: dominantColor ?? DeveloperMode.color(for: imageUrl)))
+                        .frame(width: width, height: height)
+                } else if state.imageContainer?.type == .gif, let data = state.imageContainer?.data {
+                    GIFImage(
+                        data: data,
+                        contentMode: contentMode
+                    )
+                        .frame(width: width, height: height)
+                        .id(state.image != nil ? imageUrl : "placeholder") // ensures only opacity is animated
                 } else {
-                    Image(placeholder)
+                    let result = if let image = state.image {
+                        image
+                    } else {
+                        Image(placeholder)
+                    }
+                    result
+                        .resizable()
+                        .aspectRatio(contentMode: contentMode)
+                        .frame(width: width, height: height)
+                        .id(state.image != nil ? imageUrl : "placeholder") // ensures only opacity is animated
                 }
-                result
-                    .resizable()
-                    .aspectRatio(contentMode: contentMode)
-                    .frame(width: width, height: height)
-                    .id(state.image != nil ? imageUrl : "placeholder") // ensures only opacity is animated
+            }
+            .task(id: dominantColor?.description) {
+                if let dominantColor {
+                    onDominantColorChange?(dominantColor)
+                }
             }
         }
         .processors(processors)

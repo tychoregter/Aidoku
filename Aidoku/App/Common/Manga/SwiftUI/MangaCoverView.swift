@@ -50,6 +50,7 @@ struct MangaCoverView: View {
     var privacyPlaceholder = false
     var hideNSFW = false
     var nsfwBaseColor: UIColor?
+    var onDominantColorChange: ((UIColor) -> Void)?
     var bookmarked: Bool = false
 
     private var hiddenCoverColor: UIColor {
@@ -70,7 +71,10 @@ struct MangaCoverView: View {
             contentMode: contentMode,
             placeholder: placeholder,
             privacyPlaceholder: privacyPlaceholder || hideNSFW,
-            onDominantColorChange: hideNSFW ? { sampledNSFWColor = $0 } : nil
+            onDominantColorChange: hideNSFW || onDominantColorChange != nil ? { color in
+                if hideNSFW { sampledNSFWColor = color }
+                onDominantColorChange?(color)
+            } : nil
         )
         .overlay {
             if hideNSFW {

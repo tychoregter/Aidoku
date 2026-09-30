@@ -39,6 +39,7 @@ struct MangaDetailsHeaderView: View {
     var usesDarkHeaderText = false
     var headerControlBackgroundColor: Color = .white.opacity(0.14)
     var nsfwBaseColor: UIColor?
+    var onCoverDominantColorChange: ((UIColor) -> Void)?
     var onHeroBottomChange: ((CGFloat) -> Void)?
     var onTitlePressed: (() -> Void)?
     var onReadButtonPressed: (() -> Void)?
@@ -87,6 +88,7 @@ struct MangaDetailsHeaderView: View {
         usesDarkHeaderText: Bool = false,
         headerControlBackgroundColor: Color = .white.opacity(0.14),
         nsfwBaseColor: UIColor? = nil,
+        onCoverDominantColorChange: ((UIColor) -> Void)? = nil,
         onHeroBottomChange: ((CGFloat) -> Void)? = nil,
         onTitlePressed: (() -> Void)? = nil,
         onReadButtonPressed: (() -> Void)? = nil
@@ -111,6 +113,7 @@ struct MangaDetailsHeaderView: View {
         self.usesDarkHeaderText = usesDarkHeaderText
         self.headerControlBackgroundColor = headerControlBackgroundColor
         self.nsfwBaseColor = nsfwBaseColor
+        self.onCoverDominantColorChange = onCoverDominantColorChange
         self.onHeroBottomChange = onHeroBottomChange
         self.onTitlePressed = onTitlePressed
         self.onReadButtonPressed = onReadButtonPressed
@@ -224,7 +227,8 @@ struct MangaDetailsHeaderView: View {
             borderColor: Color.white.opacity(0.24),
             privacyPlaceholder: developerMode.value,
             hideNSFW: hidesNSFWCover,
-            nsfwBaseColor: nsfwBaseColor
+            nsfwBaseColor: nsfwBaseColor,
+            onDominantColorChange: onCoverDominantColorChange
         )
         .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contextMenu {
