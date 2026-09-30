@@ -12,7 +12,8 @@ Some changes I made are currently non-configurable as I never planned for this t
 <img width="25%" alt="Reader" src="https://github.com/user-attachments/assets/5340f6aa-3fa3-4a04-b20b-7da48a7b7421" />
 
 
-## List of changes (as of the moment of writing):
+## List of changes:
+_NOTE: This is the list of changes when the first build released, more changes can be found for each release in the releases section_
 
 ### Library
 - Added a continue reading section, including extra compatibility and syncing in combination with Komga.
