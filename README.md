@@ -7,7 +7,8 @@ Even though this fork was primarily meant as a private project for private use, 
 
 Some changes I made are currently non-configurable as I never planned for this to be much of a public project, changes I made later in the project are mostly configurable. Commits are unfortunately also quite a mess because I didn't really care about them much because of it being, again, a private project I started mostly for fun, which is why most commits were made and summarized by AI, often after multiple unrelated changes had been made.
 
-<img width="25%" alt="Library" src="https://github.com/user-attachments/assets/c0a973a7-eea3-4688-975b-1e03e1e15075" />
+<img width="25%" alt="Library" src="https://github.com/user-attachments/assets/62c09c07-c452-4698-9675-8517cbf2d986" />
+<img width="25%" alt="Info" src="https://github.com/user-attachments/assets/f32223ad-9659-458f-bc5d-14388ad43830" />
 <img width="25%" alt="Reader" src="https://github.com/user-attachments/assets/5340f6aa-3fa3-4a04-b20b-7da48a7b7421" />
 
 
