@@ -51,6 +51,7 @@ class MangaViewController: UIHostingController<MangaView> {
         self.manga = manga
         self.mangaInfo = mangaInfo
         let toolbarTransitionState = MangaToolbarTransitionState()
+        let readerTransitionSource = ReaderTransitionSource()
         self.toolbarTransitionState = toolbarTransitionState
         super.init(rootView: MangaView(
             source: source,
@@ -58,8 +59,10 @@ class MangaViewController: UIHostingController<MangaView> {
             path: NavigationCoordinator(rootViewController: parent),
             chapterKey: chapterKey,
             openAction: openAction,
-            toolbarTransitionState: toolbarTransitionState
+            toolbarTransitionState: toolbarTransitionState,
+            readerTransitionSource: readerTransitionSource
         ))
+        readerTransitionSource.viewController = self
 
         navigationItem.title = manga.title
         navigationItem.titleView = UIView() // hide navigation bar title

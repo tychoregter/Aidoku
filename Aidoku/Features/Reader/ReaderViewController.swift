@@ -51,10 +51,13 @@ class ReaderViewController: BaseObservingViewController {
     private var sessionLastInteraction: Date?
     private weak var contentSwipeDismissGesture: UIGestureRecognizer?
     private weak var observedContentSwipeDismissGesture: UIGestureRecognizer?
+    private weak var observedParallaxSwipeDismissGesture: UIGestureRecognizer?
+    weak var openingTransitionSourceViewController: UIViewController?
     private weak var openingTransitionCornerMask: UIView?
     private var openingTransitionCornerMaskDisplayLink: CADisplayLink?
     private var openingTransitionCornerMaskFramesRemaining = 0
     private var openingTransitionCornerMaskGeneration = 0
+    private var hasCompletedInitialAppearance = false
     private struct ScrubberThumbnailLoad {
         let id: UUID
         let task: Task<UIImage?, Never>
@@ -582,6 +585,7 @@ class ReaderViewController: BaseObservingViewController {
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        hasCompletedInitialAppearance = true
 
         sessionReadPages = [self.currentPage]
         sessionStartDate = Date.now
@@ -687,6 +691,9 @@ extension ReaderViewController {
             switch String(describing: type(of: recognizer)) {
                 case "_UIParallaxTransitionPanGestureRecognizer": // swipe edge gesture
                     recognizer.isEnabled = isVerticalReader
+                    if isVerticalReader {
+                        observeParallaxSwipeDismissGesture(recognizer)
+                    }
 
                 case "_UIContentSwipeDismissGestureRecognizer": // swipe down gesture
                     recognizer.isEnabled = !isVerticalReader
@@ -714,6 +721,17 @@ extension ReaderViewController {
         observedContentSwipeDismissGesture = gestureRecognizer
     }
 
+    private func observeParallaxSwipeDismissGesture(_ gestureRecognizer: UIGestureRecognizer) {
+        guard observedParallaxSwipeDismissGesture !== gestureRecognizer else { return }
+
+        observedParallaxSwipeDismissGesture?.removeTarget(
+            self,
+            action: #selector(handleContentSwipeDismissGesture(_:))
+        )
+        gestureRecognizer.addTarget(self, action: #selector(handleContentSwipeDismissGesture(_:)))
+        observedParallaxSwipeDismissGesture = gestureRecognizer
+    }
+
     private func touchIsInScrubber(_ touch: UITouch) -> Bool {
         var view = touch.view
         while let current = view {
@@ -726,8 +744,6 @@ extension ReaderViewController {
     }
 
     @objc private func handleContentSwipeDismissGesture(_ gestureRecognizer: UIGestureRecognizer) {
-        // This gesture starts before UIKit's dismissal callback. Clear the
-        // temporary Library backdrop while the reader first starts to move.
         if gestureRecognizer.state == .began {
             removeOpeningTransitionCornerMaskImmediately()
         }
@@ -2281,26 +2297,16 @@ extension ReaderViewController {
 
 // MARK: - Bar Visibility
 extension ReaderViewController {
-    /// The native zoom snapshot can retain its larger rounded corners for a
-    /// fraction of a second after the reader has filled the screen. On a dark
-    /// canvas, briefly mask that outer area so the system background cannot
-    /// show through.
+    /// The zoom snapshot can retain rounded corners briefly after filling the
+    /// screen. Add a solid backdrop only after that snapshot was captured.
     private func scheduleBlackOpeningCornerMaskIfNeeded(animated: Bool) {
-        guard
-            animated,
-            isBeingPresented || navigationController?.isBeingPresented == true,
-            let coordinator = transitionCoordinator
-        else {
+        guard let coordinator = openingTransitionCoordinator,
+              animated || (openingTransitionSourceViewController != nil && coordinator.isAnimated) else {
             notifyReaderBarsHidden(immediately: true)
             return
         }
 
-        // Trigger near the end of the native zoom rather than subtracting a
-        // fixed time. This keeps the same visual phase on 60 Hz and ProMotion
-        // displays. The display-frame offset below preserves a consistent
-        // frame relationship instead of adding a fixed number of milliseconds.
         let transitionPhase = 1.50
-        let additionalDisplayFrames = 0
         let revealDelay = coordinator.transitionDuration * transitionPhase
         let generation = openingTransitionCornerMaskGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + revealDelay) { [weak self] in
@@ -2310,8 +2316,31 @@ extension ReaderViewController {
                 self.openingTransitionCornerMaskGeneration == generation
             else { return }
             self.notifyReaderBarsHidden(immediately: true)
-            self.showOpeningCornerMask(afterDisplayFrames: additionalDisplayFrames)
+            self.showOpeningCornerMask(afterDisplayFrames: 0)
         }
+    }
+
+    private var openingTransitionCoordinator: UIViewControllerTransitionCoordinator? {
+        if isBeingPresented || navigationController?.isBeingPresented == true {
+            return transitionCoordinator
+        }
+
+        guard !hasCompletedInitialAppearance,
+              let source = openingTransitionSourceViewController else { return nil }
+        let sourceCoordinator = source.transitionCoordinator
+            ?? source.navigationController?.transitionCoordinator
+        if let coordinator = transitionCoordinator
+            ?? navigationController?.transitionCoordinator
+            ?? sourceCoordinator {
+            return coordinator
+        }
+
+        var ancestor = navigationController?.parent
+        while let controller = ancestor {
+            if let coordinator = controller.transitionCoordinator { return coordinator }
+            ancestor = controller.parent
+        }
+        return nil
     }
 
     func removeOpeningTransitionCornerMaskImmediately() {
@@ -2341,30 +2370,91 @@ extension ReaderViewController {
         openingTransitionCornerMaskDisplayLink?.invalidate()
         openingTransitionCornerMaskDisplayLink = nil
 
-        guard
-            let libraryView = navigationController?.presentingViewController?.view
-        else { return }
-
+        let fillColor = (node.backgroundColor ?? hiddenControlsBackgroundColor)
+            .resolvedColor(with: traitCollection)
         openingTransitionCornerMask?.removeFromSuperview()
-        // This lives on the presenting Library view, below the reader and the
-        // native zoom snapshot. It therefore supplies a solid backdrop for
-        // the snapshot's rounded cutout without being clipped by it.
-        let mask = ReaderOpeningTransitionCornerMask(
-            frame: libraryView.bounds,
-            fillColor: (node.backgroundColor ?? hiddenControlsBackgroundColor)
-                .resolvedColor(with: traitCollection),
-            fillsBounds: true
-        )
-        mask.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        libraryView.addSubview(mask)
-        openingTransitionCornerMask = mask
+
+        if let sourceView = openingTransitionSourceViewController?.view,
+           let readerView = navigationController?.view,
+           let placement = infoOpeningBackdropPlacement(
+                sourceView: sourceView,
+                readerView: readerView
+           ) {
+            let mask = ReaderOpeningTransitionCornerMask(
+                frame: placement.container.bounds,
+                fillColor: fillColor,
+                fillsBounds: true
+            )
+            mask.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            if let sourceBranch = placement.sourceBranch {
+                placement.container.insertSubview(mask, aboveSubview: sourceBranch)
+            } else {
+                placement.container.insertSubview(mask, belowSubview: placement.readerBranch)
+            }
+            openingTransitionCornerMask = mask
+        } else if openingTransitionSourceViewController == nil,
+                  let libraryView = navigationController?.presentingViewController?.view {
+            // Preserve the library's existing placement below its reader zoom.
+            let mask = ReaderOpeningTransitionCornerMask(
+                frame: libraryView.bounds,
+                fillColor: fillColor,
+                fillsBounds: true
+            )
+            mask.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            libraryView.addSubview(mask)
+            openingTransitionCornerMask = mask
+        } else {
+            return
+        }
 
         let generation = openingTransitionCornerMaskGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.50) { [weak self, weak mask] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.50) { [weak self, weak mask = openingTransitionCornerMask] in
             guard self?.openingTransitionCornerMaskGeneration == generation else { return }
             mask?.removeFromSuperview()
             self?.openingTransitionCornerMask = nil
         }
+    }
+
+    /// Keep the backdrop above the live info screen but below the reader and
+    /// any zoom snapshot, rather than inside the content being captured.
+    private func infoOpeningBackdropPlacement(
+        sourceView: UIView,
+        readerView: UIView
+    ) -> (container: UIView, sourceBranch: UIView?, readerBranch: UIView)? {
+        guard let readerWindow = readerView.window else { return nil }
+
+        if sourceView.window !== readerWindow {
+            var readerBranch = readerView
+            while let parent = readerBranch.superview, parent !== readerWindow {
+                readerBranch = parent
+            }
+            guard readerBranch.superview === readerWindow else { return nil }
+            return (readerWindow, nil, readerBranch)
+        }
+
+        var readerBranch = readerView
+        while let parent = readerBranch.superview, parent !== sourceView {
+            readerBranch = parent
+        }
+        if readerBranch.superview === sourceView {
+            return (sourceView, nil, readerBranch)
+        }
+
+        var sourceBranch = sourceView
+        while let container = sourceBranch.superview {
+            var readerBranch = readerView
+            while let parent = readerBranch.superview, parent !== container {
+                readerBranch = parent
+            }
+            if readerBranch.superview === container, readerBranch !== sourceBranch,
+               let sourceIndex = container.subviews.firstIndex(of: sourceBranch),
+               let readerIndex = container.subviews.firstIndex(of: readerBranch),
+               sourceIndex < readerIndex {
+                return (container, sourceBranch, readerBranch)
+            }
+            sourceBranch = container
+        }
+        return nil
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -2555,11 +2645,7 @@ private final class ReaderOpeningTransitionCornerMask: UIView {
         }
     }
 
-    init(
-        frame: CGRect,
-        fillColor: UIColor,
-        fillsBounds: Bool = false
-    ) {
+    init(frame: CGRect, fillColor: UIColor, fillsBounds: Bool = false) {
         self.fillColor = fillColor
         self.fillsBounds = fillsBounds
         super.init(frame: frame)
@@ -2584,9 +2670,6 @@ private final class ReaderOpeningTransitionCornerMask: UIView {
         }
 
         let path = UIBezierPath(rect: bounds)
-        // UIKit does not expose the physical display radius on this deployment
-        // target. This is intentionally conservative: it only covers the tiny
-        // outer region left by the zoom snapshot on rounded iPhone displays.
         let cornerRadius: CGFloat = traitCollection.userInterfaceIdiom == .phone ? 44 : 0
         path.append(UIBezierPath(roundedRect: bounds, cornerRadius: cornerRadius))
         maskLayer.path = path.cgPath

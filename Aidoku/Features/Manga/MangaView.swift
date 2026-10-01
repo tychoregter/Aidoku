@@ -8,6 +8,7 @@
 import AidokuRunner
 import NukeUI
 import SwiftUI
+import UIKit
 
 struct MangaView: View {
     @StateObject private var viewModel: ViewModel
@@ -28,6 +29,7 @@ struct MangaView: View {
     @State private var heroBottom: CGFloat?
     @State private var backdropDominantColor: UIColor = .black
     @State private var backdropIsDark = true
+    @State private var roundsHeaderTopCorners = false
     @State private var originalNavigationTint: UIColor?
     @State private var statusBarStyleOwner = UUID()
 
@@ -40,6 +42,7 @@ struct MangaView: View {
     @StateObject private var developerMode = UserDefaultsBool(key: AppSettings.general.developerMode.key)
 
     private var path: NavigationCoordinator
+    private let readerTransitionSource: ReaderTransitionSource?
 
     @Namespace private var transitionNamespace
 
@@ -74,13 +77,15 @@ struct MangaView: View {
         path: NavigationCoordinator,
         chapterKey: String? = nil,
         openAction: OpenAction? = nil,
-        toolbarTransitionState: MangaToolbarTransitionState = MangaToolbarTransitionState()
+        toolbarTransitionState: MangaToolbarTransitionState = MangaToolbarTransitionState(),
+        readerTransitionSource: ReaderTransitionSource? = nil
     ) {
         let source = source ?? SourceManager.shared.store.source(for: manga.sourceKey)
         self._viewModel = StateObject(wrappedValue: ViewModel(source: source, manga: manga))
         self._backdropDominantColor = State(initialValue: CoverPalette.color(for: manga.cover ?? "")
             ?? DeveloperMode.color(for: manga.cover ?? ""))
         self.path = path
+        self.readerTransitionSource = readerTransitionSource
         self.toolbarTransitionState = toolbarTransitionState
         self._targetChapterKey = State(initialValue: chapterKey)
         self._openAction = State(initialValue: openAction)
@@ -237,10 +242,17 @@ struct MangaView: View {
                             source: viewModel.source,
                             coverImage: viewModel.manga.cover ?? "",
                             baseColor: backdropDominantColor,
-                            privacyPlaceholder: developerMode.value
+                            privacyPlaceholder: developerMode.value,
+                            roundsTopCorners: roundsHeaderTopCorners
                         )
                         .frame(height: headerHeight)
                         .frame(maxHeight: .infinity, alignment: .top)
+
+                        MangaHeaderDisplayModeProbe { shouldRoundCorners in
+                            guard roundsHeaderTopCorners != shouldRoundCorners else { return }
+                            roundsHeaderTopCorners = shouldRoundCorners
+                        }
+                        .frame(width: 0, height: 0)
                     }
                 }
                 .ignoresSafeArea()
@@ -352,7 +364,9 @@ struct MangaView: View {
                         }
                         return mangaWithFilteredChapters
                     }(),
-                    chapter: chapter
+                    chapter: chapter,
+                    transitionSource: readerTransitionSource
+                        ?? ReaderTransitionSource(path.navigationController?.topViewController)
                 )
                 .ignoresSafeArea()
                 .navigationTransitionZoom(sourceID: chapter, in: transitionNamespace)
@@ -1250,6 +1264,7 @@ struct MangaDetailsBackdrop: View {
     let coverImage: String
     var baseColor: UIColor
     var privacyPlaceholder = false
+    var roundsTopCorners = false
     // Switch to `.blurredCover` to restore the previous info-header backdrop.
     var style: Style = .coverColor
 
@@ -1405,7 +1420,82 @@ struct MangaDetailsBackdrop: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipped()
+            .clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: roundsTopCorners ? 39 : 0,
+                    bottomLeadingRadius: 0,
+                    bottomTrailingRadius: 0,
+                    topTrailingRadius: roundsTopCorners ? 39 : 0,
+                    style: .continuous
+                )
+            )
         }
         .allowsHitTesting(false)
+    }
+}
+
+/// Enables screen-corner rounding only when the info view occupies the full display
+/// on a device with a system gesture area (rather than a physical Home button).
+private struct MangaHeaderDisplayModeProbe: UIViewRepresentable {
+    var onChange: (Bool) -> Void
+
+    func makeUIView(context: Context) -> MangaHeaderDisplayModeProbeView {
+        let view = MangaHeaderDisplayModeProbeView()
+        view.onChange = onChange
+        return view
+    }
+
+    func updateUIView(_ uiView: MangaHeaderDisplayModeProbeView, context: Context) {
+        uiView.onChange = onChange
+        uiView.updateEligibility()
+    }
+}
+
+private final class MangaHeaderDisplayModeProbeView: UIView {
+    var onChange: ((Bool) -> Void)?
+    private var lastEligibility = false
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateEligibility()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        updateEligibility()
+    }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        updateEligibility()
+    }
+
+    func updateEligibility() {
+        guard let window, let screen = window.windowScene?.screen else {
+            publish(false)
+            return
+        }
+
+        let screenBounds = screen.coordinateSpace.bounds
+        let windowBoundsOnScreen = window.convert(window.bounds, to: screen.coordinateSpace)
+        let tolerance: CGFloat = 1
+        let fillsDisplay = abs(windowBoundsOnScreen.minX - screenBounds.minX) <= tolerance
+            && abs(windowBoundsOnScreen.minY - screenBounds.minY) <= tolerance
+            && abs(windowBoundsOnScreen.maxX - screenBounds.maxX) <= tolerance
+            && abs(windowBoundsOnScreen.maxY - screenBounds.maxY) <= tolerance
+
+        // A gesture-indicator inset is present at the bottom in portrait and may
+        // move to either side in landscape. The threshold excludes Home-button safe areas.
+        let safeArea = window.safeAreaInsets
+        let hasGestureIndicator = max(safeArea.bottom, max(safeArea.left, safeArea.right)) >= 24
+        publish(fillsDisplay && hasGestureIndicator)
+    }
+
+    private func publish(_ eligible: Bool) {
+        guard eligible != lastEligibility else { return }
+        lastEligibility = eligible
+        DispatchQueue.main.async { [weak self] in
+            self?.onChange?(eligible)
+        }
     }
 }

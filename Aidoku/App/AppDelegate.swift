@@ -265,6 +265,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         )
         NotificationCenter.default.addObserver(
             self,
+            selector: #selector(indexLibraryForSpotlight),
+            name: Notification.Name(AppSettings.library.showCoverAuthors.key),
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
             selector: #selector(removeLibraryItemFromSpotlight(_:)),
             name: .removeFromLibrary,
             object: nil
@@ -1026,8 +1032,25 @@ private enum LibraryReadingStatus {
 
     static func spotlightSubtitle(for libraryManga: LibraryMangaObject) -> String? {
         guard let manga = libraryManga.manga else { return nil }
+        if AppSettings.library.showCoverAuthors.get() {
+            return manga.author ?? ""
+        }
         let chapterCount = manga.chapters?.count ?? 0
-        return "\(chapterCount) chapters"
+        if chapterCount == 1 {
+            return NSLocalizedString(
+                "LIBRARY_COVER_ONE_CHAPTER",
+                value: "1 chapter",
+                comment: "One chapter beneath a library cover"
+            )
+        }
+        return String(
+            format: NSLocalizedString(
+                "LIBRARY_COVER_CHAPTERS",
+                value: "%d chapters",
+                comment: "Chapter count beneath a library cover"
+            ),
+            chapterCount
+        )
     }
 
     private static func chapterSubtitle(for chapter: ChapterObject) -> String {

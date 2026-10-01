@@ -226,11 +226,6 @@ extension Settings {
                 value: .toggle(.init())
             ),
             .init(
-                key: AppSettings.library.showCoverAuthors.key,
-                title: NSLocalizedString("SHOW_COVER_AUTHORS", value: "Show Author on Covers", comment: "Show the author instead of the chapter count beneath regular library covers"),
-                value: .toggle(.init())
-            ),
-            .init(
                 key: AppSettings.appearance.blurNSFWCovers.key,
                 title: Bundle.main.localizedString(
                     forKey: "BLUR_NSFW_COVERS",
@@ -483,6 +478,11 @@ extension Settings {
             .init(
                 key: AppSettings.library.contextMenuPagePreviews.key,
                 title: "Page Previews in Menus",
+                value: .toggle(.init())
+            ),
+            .init(
+                key: AppSettings.library.showCoverAuthors.key,
+                title: NSLocalizedString("SHOW_COVER_AUTHORS", value: "Show Author on Covers", comment: "Show the author instead of the chapter count beneath regular library covers"),
                 value: .toggle(.init())
             ),
             .init(
