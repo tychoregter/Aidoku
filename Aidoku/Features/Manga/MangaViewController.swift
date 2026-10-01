@@ -10,6 +10,7 @@ import SwiftUI
 
 final class MangaToolbarTransitionState: ObservableObject {
     @Published var isLeaving = false
+    @Published var isEntering = false
 }
 
 class MangaViewController: UIHostingController<MangaView> {
@@ -72,6 +73,14 @@ class MangaViewController: UIHostingController<MangaView> {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         toolbarTransitionState.isLeaving = false
+        toolbarTransitionState.isEntering = animated
+        if animated, let transitionCoordinator {
+            transitionCoordinator.animate(alongsideTransition: nil) { [weak self] _ in
+                self?.toolbarTransitionState.isEntering = false
+            }
+        } else {
+            toolbarTransitionState.isEntering = false
+        }
 
         guard let tabBar = tabBarController?.tabBar else { return }
         if previousTabBarAppearance == nil {

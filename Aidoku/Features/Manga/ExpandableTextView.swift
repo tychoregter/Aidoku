@@ -13,11 +13,14 @@ struct ExpandableTextView: View {
     let text: String
     var textColor: Color = .secondary
     var moreTextColor: Color = .white
+    var onExpansionAnimationChange: ((Bool) -> Void)?
 
     @EnvironmentObject private var path: NavigationCoordinator
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var expanded = false
     @State private var collapsedHeight: CGFloat = 0
     @State private var fullHeight: CGFloat = 0
+    @State private var expandedHeight: CGFloat = 0
 
     private var hasHiddenText: Bool {
         textUntilNewline != text || fullHeight > collapsedHeight + 1
@@ -26,6 +29,19 @@ struct ExpandableTextView: View {
     private var moreLabel: String { NSLocalizedString("MORE").uppercased() }
 
     private var moreFont: UIFont { .systemFont(ofSize: 13, weight: .semibold) }
+
+    private func setExpanded(_ value: Bool) {
+        guard expanded != value else { return }
+        onExpansionAnimationChange?(true)
+        withAnimation(
+            reduceMotion ? nil : .easeInOut(duration: 0.28),
+            completionCriteria: .logicallyComplete
+        ) {
+            expanded = value
+        } completion: {
+            onExpansionAnimationChange?(false)
+        }
+    }
 
     private var moreLabelWidth: CGFloat {
         (moreLabel as NSString).size(withAttributes: [.font: moreFont]).width
@@ -81,78 +97,82 @@ struct ExpandableTextView: View {
     }
 
     var body: some View {
-        Group {
-            if expanded {
+        collapsedView
+            .opacity(expanded ? 0 : 1)
+            .allowsHitTesting(!expanded)
+            .overlay(alignment: .topLeading) {
                 markdownView(text)
+                    .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            expanded = false
-                        }
-                    }
-                    .transition(.opacity)
-            } else {
-                markdownView(textUntilNewline)
-                    .lineLimit(3)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                        collapsedHeight = height
+                        expandedHeight = height
                     }
-                    .background {
-                        markdownView(textUntilNewline)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .hidden()
-                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                                fullHeight = height
-                            }
-                    }
-                    .mask {
-                        if hasHiddenText {
-                            GeometryReader { geometry in
-                                let moreX = moreStartX(in: geometry.size.width)
-                                let fadeWidth = min(52, moreX)
-                                VStack(spacing: 0) {
-                                    Color.white
-                                    HStack(spacing: 0) {
-                                        Color.white.frame(width: moreX - fadeWidth)
-                                        LinearGradient(
-                                            colors: [.white, .clear],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                        .frame(width: fadeWidth)
-                                        Color.clear
-                                    }
-                                    .frame(height: min(22, geometry.size.height))
-                                }
-                            }
-                        } else {
-                            Color.white
-                        }
-                    }
-                    .overlay {
-                        if hasHiddenText {
-                            GeometryReader { geometry in
-                                Text(moreLabel)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(moreTextColor)
-                                    .position(
-                                        x: moreStartX(in: geometry.size.width) + moreLabelWidth / 2,
-                                        y: geometry.size.height - moreFont.lineHeight / 2
-                                    )
-                            }
-                        }
-                    }
+                    .opacity(expanded ? 1 : 0)
                     .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            expanded = true
+                    .allowsHitTesting(expanded)
+            }
+            .frame(
+                height: expanded && expandedHeight > 0
+                    ? expandedHeight : (collapsedHeight > 0 ? collapsedHeight : nil),
+                alignment: .top
+            )
+            .clipped()
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var collapsedView: some View {
+        markdownView(textUntilNewline)
+            .lineLimit(3)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                collapsedHeight = height
+            }
+            .background {
+                markdownView(textUntilNewline)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .hidden()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                        fullHeight = height
+                    }
+            }
+            .mask {
+                if hasHiddenText {
+                    GeometryReader { geometry in
+                        let moreX = moreStartX(in: geometry.size.width)
+                        let fadeWidth = min(52, moreX)
+                        VStack(spacing: 0) {
+                            Color.white
+                            HStack(spacing: 0) {
+                                Color.white.frame(width: moreX - fadeWidth)
+                                LinearGradient(
+                                    colors: [.white, .clear],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                                .frame(width: fadeWidth)
+                                Color.clear
+                            }
+                            .frame(height: min(22, geometry.size.height))
                         }
                     }
-                    .transition(.opacity)
+                } else {
+                    Color.white
+                }
             }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+            .overlay {
+                if hasHiddenText {
+                    GeometryReader { geometry in
+                        Text(moreLabel)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(moreTextColor)
+                            .position(
+                                x: moreStartX(in: geometry.size.width) + moreLabelWidth / 2,
+                                y: geometry.size.height - moreFont.lineHeight / 2
+                            )
+                    }
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { setExpanded(true) }
     }
 
     private func markdownView(_ content: String) -> some View {

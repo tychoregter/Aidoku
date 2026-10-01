@@ -436,6 +436,7 @@ extension MangaView {
             scanlatorFilter: $viewModel.chapterScanlatorFilter,
             chapterTitleDisplayMode: $viewModel.chapterTitleDisplayMode,
             usesDarkHeaderText: usesDarkHeaderText,
+            isEnteringTransition: toolbarTransitionState.isEntering,
             headerControlBackgroundColor: headerControlBackgroundColor,
             nsfwBaseColor: backdropDominantColor,
             onCoverDominantColorChange: { color in
@@ -1253,7 +1254,7 @@ struct MangaDetailsBackdrop: View {
     var style: Style = .coverColor
 
     private static func darkening(for colorScheme: ColorScheme) -> CGFloat {
-        colorScheme == .dark ? 0.50 : 0.15
+        colorScheme == .dark ? 0.50 : 0.10
     }
 
     private static func darkenedBackgroundColor(from color: UIColor, colorScheme: ColorScheme) -> UIColor {
@@ -1301,7 +1302,7 @@ struct MangaDetailsBackdrop: View {
         guard background.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
             return .black
         }
-        return UIColor(red: red * 0.82, green: green * 0.82, blue: blue * 0.82, alpha: 1)
+        return UIColor(red: red * 0.86, green: green * 0.86, blue: blue * 0.86, alpha: 1)
     }
 
     private static func luminance(_ background: UIColor) -> Double {

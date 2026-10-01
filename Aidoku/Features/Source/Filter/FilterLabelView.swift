@@ -33,8 +33,11 @@ struct FilterLabelView: View {
             }
 
             Text(name)
-                .opacity(highlighted ? 1 : 0.6)
-                .foregroundColor(highlighted && colorScheme == .light ? .accentColor : .primary)
+                .foregroundColor(
+                    highlighted && colorScheme == .light
+                        ? .accentColor
+                        : highlighted ? .primary : Color(uiColor: .secondaryLabel)
+                )
 
             Group {
                 if let icon {
@@ -82,10 +85,25 @@ struct FilterLabelView: View {
 final class LibraryStyleFilterMenuButtonView: UIButton {
     private let pillFont = UIFont.systemFont(ofSize: 12, weight: .medium)
     private var pillSize = CGSize(width: 32, height: 30)
+    private var hostedLabel: UIHostingController<FilterLabelView>?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         showsMenuAsPrimaryAction = true
+        if #available(iOS 26.0, *) {
+            let label = UIHostingController(rootView: FilterLabelView(name: ""))
+            label.view.backgroundColor = .clear
+            label.view.isUserInteractionEnabled = false
+            label.view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(label.view)
+            NSLayoutConstraint.activate([
+                label.view.topAnchor.constraint(equalTo: topAnchor),
+                label.view.bottomAnchor.constraint(equalTo: bottomAnchor),
+                label.view.leadingAnchor.constraint(equalTo: leadingAnchor),
+                label.view.trailingAnchor.constraint(equalTo: trailingAnchor)
+            ])
+            hostedLabel = label
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -124,10 +142,13 @@ final class LibraryStyleFilterMenuButtonView: UIButton {
 
         var style: UIButton.Configuration
         if #available(iOS 26.0, *) {
-            style = .glass()
-            if active {
-                style.baseBackgroundColor = accent.withAlphaComponent(darkMode ? 1 : 0.1)
-            }
+            style = .plain()
+            tintColor = active && !darkMode ? accent : .label
+            hostedLabel?.rootView = FilterLabelView(
+                name: text,
+                badgeCount: badgeCount,
+                active: active
+            )
         } else {
             style = .filled()
             style.baseBackgroundColor = active && darkMode ? accent : .secondarySystemFill
@@ -135,13 +156,18 @@ final class LibraryStyleFilterMenuButtonView: UIButton {
         style.cornerStyle = .capsule
         style.buttonSize = .small
         style.contentInsets = NSDirectionalEdgeInsets(top: hasBadge ? 6 : 8, leading: 9, bottom: hasBadge ? 6 : 8, trailing: 9)
-        style.attributedTitle = AttributedString(title)
+        if #unavailable(iOS 26.0) {
+            style.attributedTitle = AttributedString(title)
+            style.image = symbol
+        }
         style.titleLineBreakMode = .byClipping
-        style.image = symbol
         style.imagePlacement = .trailing
         style.imagePadding = 4
         style.indicator = .none
         configuration = style
+        if let hostedView = hostedLabel?.view {
+            bringSubviewToFront(hostedView)
+        }
 
         let textWidth = (text as NSString).size(withAttributes: [.font: pillFont]).width
         let symbolWidth = symbol?.size.width ?? 0

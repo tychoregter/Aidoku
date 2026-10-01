@@ -35,6 +35,7 @@ struct MangaDetailsHeaderView: View {
     @Binding var chapterTitleDisplayMode: ChapterTitleDisplayMode
 
     var usesDarkHeaderText = false
+    var isEnteringTransition = false
     var headerControlBackgroundColor: Color = .white.opacity(0.14)
     var nsfwBaseColor: UIColor?
     var onCoverDominantColorChange: ((UIColor) -> Void)?
@@ -56,6 +57,7 @@ struct MangaDetailsHeaderView: View {
     @State private var uploadedCover: UIImage?
     @State private var coverAspectRatio: CGFloat = 2 / 3
     @State private var showAlternateCoverPicker = false
+    @State private var descriptionExpansionAnimating = false
     @StateObject private var developerMode = UserDefaultsBool(key: AppSettings.general.developerMode.key)
     @StateObject private var hideNSFWCovers = UserDefaultsBool(key: AppSettings.appearance.blurNSFWCovers.key)
 
@@ -78,6 +80,9 @@ struct MangaDetailsHeaderView: View {
     private var readButtonColor: Color { usesDarkHeaderText ? .black : .white }
     private var readButtonTextColor: Color { usesDarkHeaderText ? .white : .black }
     private var hidesNSFWCover: Bool { hideNSFWCovers.value && manga.contentRating == .nsfw }
+    private var displayedTitle: String {
+        developerMode.value ? DeveloperMode.title(for: String(describing: manga.identifier)) : manga.title
+    }
 
     init(
         section: Section = .details,
@@ -96,6 +101,7 @@ struct MangaDetailsHeaderView: View {
         scanlatorFilter: Binding<[String]>,
         chapterTitleDisplayMode: Binding<ChapterTitleDisplayMode>,
         usesDarkHeaderText: Bool = false,
+        isEnteringTransition: Bool = false,
         headerControlBackgroundColor: Color = .white.opacity(0.14),
         nsfwBaseColor: UIColor? = nil,
         onCoverDominantColorChange: ((UIColor) -> Void)? = nil,
@@ -119,6 +125,7 @@ struct MangaDetailsHeaderView: View {
         self._scanlatorFilter = scanlatorFilter
         self._chapterTitleDisplayMode = chapterTitleDisplayMode
         self.usesDarkHeaderText = usesDarkHeaderText
+        self.isEnteringTransition = isEnteringTransition
         self.headerControlBackgroundColor = headerControlBackgroundColor
         self.nsfwBaseColor = nsfwBaseColor
         self.onCoverDominantColorChange = onCoverDominantColorChange
@@ -273,25 +280,34 @@ struct MangaDetailsHeaderView: View {
             Button {
                 onTitlePressed?()
             } label: {
-                Text(developerMode.value ? DeveloperMode.title(for: String(describing: manga.identifier)) : manga.title)
+                Text(displayedTitle)
                     .font(.system(size: 22, weight: .heavy))
                     .lineLimit(4)
                     .minimumScaleFactor(0.75)
                     .multilineTextAlignment(.center)
-                    .contentTransitionDisabledPlease()
+                    .contentTransition(isEnteringTransition ? .identity : .interpolate)
+                    .animation(isEnteringTransition ? nil : loadingAnimation, value: displayedTitle)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 24)
+            .transaction {
+                if descriptionExpansionAnimating || isEnteringTransition {
+                    $0.animation = nil
+                }
+            }
 
             if let authors = manga.authors, !authors.isEmpty {
-                let authorText = Text(developerMode.value
+                let displayedAuthor = developerMode.value
                     ? DeveloperMode.author(for: String(describing: manga.identifier))
-                    : authors.joined(separator: ", "))
+                    : authors.joined(separator: ", ")
+                let authorText = Text(displayedAuthor)
                     .font(.callout.weight(.medium))
                     .foregroundStyle(headerTextColor)
                     .lineLimit(2)
                     .multilineTextAlignment(.center)
+                    .contentTransition(isEnteringTransition ? .identity : .interpolate)
+                    .animation(isEnteringTransition ? nil : loadingAnimation, value: displayedAuthor)
 
                 Group {
                     if let source, source.supportsAuthorSearch {
@@ -322,7 +338,12 @@ struct MangaDetailsHeaderView: View {
                     }
                 }
                 .padding(.top, 7)
-                .transition(.opacity)
+                .transition(isEnteringTransition ? .identity : .opacity)
+                .transaction {
+                    if descriptionExpansionAnimating || isEnteringTransition {
+                        $0.animation = nil
+                    }
+                }
             }
 
             if !metadataText.isEmpty {
@@ -331,28 +352,43 @@ struct MangaDetailsHeaderView: View {
                     .foregroundStyle(headerTextColor.opacity(0.7))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
-                    .contentTransitionDisabledPlease()
-                    .transaction { $0.animation = nil }
+                    .contentTransition(isEnteringTransition ? .identity : .interpolate)
+                    .animation(isEnteringTransition ? nil : loadingAnimation, value: metadataText)
+                    .transaction {
+                        if descriptionExpansionAnimating || isEnteringTransition {
+                            $0.animation = nil
+                        }
+                    }
                     .padding(.top, 7)
                     .padding(.horizontal, 20)
-                    .transition(.identity)
+                    .transition(isEnteringTransition ? .identity : .opacity)
+                    .transaction {
+                        if descriptionExpansionAnimating || isEnteringTransition {
+                            $0.animation = nil
+                        }
+                    }
             }
 
             HStack(spacing: 12) {
-                if let sourcePageURL = manga.url {
-                    Button {
+                Button {
+                    if let sourcePageURL = manga.url {
                         openURL(sourcePageURL)
-                    } label: {
-                        Image(systemName: "safari")
-                            .font(.system(size: 18, weight: .medium))
-                            .frame(width: 48, height: 48)
-                            .contentShape(Circle())
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(headerTextColor)
-                    .background(headerControlBackgroundColor, in: Circle())
-                    .accessibilityLabel(NSLocalizedString("OPEN_SOURCE_PAGE"))
-                    .transition(.opacity)
+                } label: {
+                    Image(systemName: "safari")
+                        .font(.system(size: 18, weight: .medium))
+                        .frame(width: 48, height: 48)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(headerTextColor.opacity(manga.url == nil ? 0.45 : 1))
+                .background(headerControlBackgroundColor, in: Circle())
+                .disabled(manga.url == nil)
+                .accessibilityLabel(NSLocalizedString("OPEN_SOURCE_PAGE"))
+                .transaction {
+                    if descriptionExpansionAnimating || isEnteringTransition {
+                        $0.animation = nil
+                    }
                 }
 
                 Button {
@@ -362,8 +398,8 @@ struct MangaDetailsHeaderView: View {
                         .font(.system(size: 16, weight: .semibold))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
-                        .contentTransitionDisabledPlease()
-                        .transaction { $0.animation = nil }
+                        .contentTransition(isEnteringTransition ? .identity : .interpolate)
+                        .animation(isEnteringTransition ? nil : loadingAnimation, value: readButtonTitle)
                         .padding(.bottom, readButtonSubtitle == nil ? 0 : 17)
                         .overlay(alignment: .bottom) {
                             if let readButtonSubtitle {
@@ -374,8 +410,8 @@ struct MangaDetailsHeaderView: View {
                                     .foregroundStyle(readButtonTextColor.opacity(0.62))
                                     .lineLimit(1)
                                     .truncationMode(.tail)
-                                    .contentTransitionDisabledPlease()
-                                    .transaction { $0.animation = nil }
+                                    .contentTransition(isEnteringTransition ? .identity : .interpolate)
+                                    .animation(isEnteringTransition ? nil : loadingAnimation, value: readButtonSubtitle)
                                     .frame(maxWidth: .infinity)
                                     .transition(.identity)
                             }
@@ -388,6 +424,11 @@ struct MangaDetailsHeaderView: View {
                 .foregroundStyle(readButtonTextColor.opacity(readButtonDisabled ? 0.78 : 1))
                 .background(readButtonColor.opacity(readButtonDisabled ? 0.67 : 1), in: Capsule())
                 .disabled(readButtonDisabled)
+                .transaction {
+                    if descriptionExpansionAnimating || isEnteringTransition {
+                        $0.animation = nil
+                    }
+                }
 
                 Button {
                     if bookmarked && isTracking {
@@ -407,6 +448,11 @@ struct MangaDetailsHeaderView: View {
                 .foregroundStyle(headerTextColor)
                 .background(headerControlBackgroundColor, in: Circle())
                 .accessibilityLabel(bookmarked ? NSLocalizedString("REMOVE_FROM_LIBRARY") : NSLocalizedString("ADD_TO_LIBRARY"))
+                .transaction {
+                    if descriptionExpansionAnimating || isEnteringTransition {
+                        $0.animation = nil
+                    }
+                }
                 .alert(NSLocalizedString("REMOVE_FROM_LIBRARY_CONFIRM"), isPresented: $showLibraryRemoveConfirm) {
                     Button(NSLocalizedString("CANCEL"), role: .cancel) {}
                     Button(NSLocalizedString("REMOVE"), role: .destructive) {
@@ -422,8 +468,14 @@ struct MangaDetailsHeaderView: View {
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.top, 28)
             .padding(.horizontal, 20)
-            .animation(loadingAnimation, value: readButtonTitle)
-            .animation(loadingAnimation, value: readButtonSubtitle)
+            .animation(
+                descriptionExpansionAnimating || isEnteringTransition ? nil : loadingAnimation,
+                value: readButtonTitle
+            )
+            .animation(
+                descriptionExpansionAnimating || isEnteringTransition ? nil : loadingAnimation,
+                value: readButtonSubtitle
+            )
 
             if let description = manga.description, !description.isEmpty {
                 ExpandableTextView(
@@ -431,9 +483,9 @@ struct MangaDetailsHeaderView: View {
                         ? DeveloperMode.description(for: String(describing: manga.identifier))
                         : description,
                     textColor: headerTextColor.opacity(0.72),
-                    moreTextColor: headerTextColor
+                    moreTextColor: headerTextColor,
+                    onExpansionAnimationChange: { descriptionExpansionAnimating = $0 }
                 )
-                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 18)
                     .padding(.horizontal, 20)
                     .transition(.opacity)
