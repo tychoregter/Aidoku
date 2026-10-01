@@ -116,6 +116,7 @@ class LibraryViewController: OldMangaCollectionViewController {
     private var shouldRestoreLargeTitleAfterRefresh = false
     private let refreshDismissalDistance: CGFloat = 44
     private var usesSeparatedPinnedSections = false
+    private var showsEmptyRegularSection = false
     private var usesDedicatedContinueReadingSection: Bool {
         LibraryViewModel.isDedicatedContinueReadingEnabled
     }
@@ -146,7 +147,9 @@ class LibraryViewController: OldMangaCollectionViewController {
             case .pinned:
                 showsPinnedSectionTitles || (showsCombinedLibraryHeader && usesSeparatedPinnedSections)
             case .regular:
-                showsPinnedSectionTitles
+                (showsEmptyRegularSection
+                    && !(showsCombinedLibraryHeader && usesSeparatedPinnedSections && viewModel.pinType != .none))
+                    || showsPinnedSectionTitles
                     || (showsCombinedLibraryHeader && !usesSeparatedPinnedSections)
             case nil:
                 false
@@ -263,6 +266,7 @@ class LibraryViewController: OldMangaCollectionViewController {
             forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
             withReuseIdentifier: LibrarySectionHeader.reuseIdentifier
         )
+        collectionView.register(LibraryEmptyCell.self, forCellWithReuseIdentifier: LibraryEmptyCell.reuseIdentifier)
         dataSource.supplementaryViewProvider = { [weak self] collectionView, kind, indexPath in
             guard
                 kind == UICollectionView.elementKindSectionHeader,
@@ -374,13 +378,19 @@ class LibraryViewController: OldMangaCollectionViewController {
             CGPoint(x: titleEdge, y: 0),
             to: collectionView
         ).x
-        let headerFrame = collectionView.collectionViewLayout.layoutAttributesForSupplementaryView(
+        let layoutFrame = collectionView.collectionViewLayout.layoutAttributesForSupplementaryView(
             ofKind: UICollectionView.elementKindSectionHeader,
             at: indexPath
         )?.frame ?? header.frame
-        header.leadingInset = isRightToLeft
-            ? headerFrame.maxX - titleEdgeInCollection
-            : titleEdgeInCollection - headerFrame.minX
+        // Orthogonal sections can place the actual supplementary view farther
+        // in than its layout attributes, especially for an empty placeholder.
+        let headerFrame = header.frame.width > 0 ? header.frame : layoutFrame
+        let targetEdge = isRightToLeft
+            ? min(collectionView.bounds.width - 20, titleEdgeInCollection)
+            : max(20, titleEdgeInCollection)
+        header.leadingInset = max(0, isRightToLeft
+            ? headerFrame.maxX - targetEdge
+            : targetEdge - headerFrame.minX)
     }
 
     private func enableHorizontalRowBouncing(in view: UIView) {
@@ -816,7 +826,9 @@ class LibraryViewController: OldMangaCollectionViewController {
                     && self.usesSeparatedPinnedSections
                     && !self.usesListLayout
                     && AppSettings.appearance.horizontalPinnedTitles.get())
-            let section = if usesHorizontalPinnedRow {
+            let section = if sectionIdentifier == .regular && self.showsEmptyRegularSection {
+                Self.makeEmptyLibraryLayoutSection()
+            } else if usesHorizontalPinnedRow {
                 Self.makeHorizontalGridLayoutSection(environment: environment, showsCaptions: sectionShowsCaptions)
             } else if self.usesListLayout && !isPinnedPlaceholderSection {
                 Self.makeListLayoutSection(environment: environment)
@@ -847,6 +859,16 @@ class LibraryViewController: OldMangaCollectionViewController {
         layout.configuration = config
 
         return layout
+    }
+
+    private static func makeEmptyLibraryLayoutSection() -> NSCollectionLayoutSection {
+        let size = NSCollectionLayoutSize(
+            widthDimension: .fractionalWidth(1),
+            heightDimension: .absolute(230)
+        )
+        let item = NSCollectionLayoutItem(layoutSize: size)
+        let group = NSCollectionLayoutGroup.vertical(layoutSize: size, subitems: [item])
+        return NSCollectionLayoutSection(group: group)
     }
 
     // cells with badges
@@ -1492,6 +1514,28 @@ extension LibraryViewController {
             }
         }
 
+        // An empty Continue Reading or pinned row still occupies its section
+        // with a placeholder, so keep the Library empty state below it.
+        let hasOtherVisibleSection = snapshot.sectionIdentifiers.contains { $0 != .regular }
+        let showsEmptyRegularSection = !snapshot.sectionIdentifiers.contains(.regular) && hasOtherVisibleSection
+        if showsEmptyRegularSection {
+            snapshot.appendSections([.regular])
+            snapshot.appendItems([
+                .emptyLibraryPlaceholder(
+                    title: viewModel.currentCategory == nil
+                        ? NSLocalizedString("LIBRARY_EMPTY")
+                        : NSLocalizedString("CATEGORY_EMPTY"),
+                    text: viewModel.actuallyEmpty
+                        ? NSLocalizedString("LIBRARY_ADD_CONTENT")
+                        : NSLocalizedString("LIBRARY_ADJUST_FILTERS")
+                )
+            ], toSection: .regular)
+        }
+        if self.showsEmptyRegularSection != showsEmptyRegularSection {
+            self.showsEmptyRegularSection = showsEmptyRegularSection
+            collectionView.setCollectionViewLayout(makeCollectionViewLayout(), animated: false)
+        }
+
         dataSource.apply(snapshot) { [weak self] in
             if reloadCells { self?.collectionView.reloadData() }
             self?.updateVisibleSectionHeaders()
@@ -1619,6 +1663,34 @@ extension LibraryViewController {
         var snapshot = dataSource.snapshot()
         snapshot.reconfigureItems(snapshot.itemIdentifiers)
         dataSource.apply(snapshot)
+    }
+}
+
+final class LibraryEmptyCell: UICollectionViewCell {
+    static let reuseIdentifier = "LibraryEmptyCell"
+
+    private let emptyView = EmptyPageStackView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        emptyView.imageSystemName = "books.vertical.fill"
+        emptyView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(emptyView)
+        NSLayoutConstraint.activate([
+            emptyView.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+            emptyView.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            emptyView.leadingAnchor.constraint(greaterThanOrEqualTo: contentView.leadingAnchor, constant: 20),
+            emptyView.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor, constant: -20)
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(title: String, text: String) {
+        emptyView.title = title
+        emptyView.text = text
     }
 }
 

@@ -10,6 +10,7 @@ import SwiftUI
 
 struct CheckFilterView: View {
     let filter: AidokuRunner.Filter
+    let usesLibrarySelectionStyle: Bool
 
     @Binding var enabledFilters: [FilterValue]
 
@@ -19,9 +20,14 @@ struct CheckFilterView: View {
 
     @State private var state: Int
 
-    init(filter: AidokuRunner.Filter, enabledFilters: Binding<[FilterValue]>) {
+    init(
+        filter: AidokuRunner.Filter,
+        enabledFilters: Binding<[FilterValue]>,
+        usesLibrarySelectionStyle: Bool = false
+    ) {
         self.filter = filter
         self._enabledFilters = enabledFilters
+        self.usesLibrarySelectionStyle = usesLibrarySelectionStyle
 
         guard case let .check(name, canExclude, defaultValue) = filter.value else {
             fatalError("invalid filter type")
@@ -57,7 +63,7 @@ struct CheckFilterView: View {
                     if canExclude {
                         switch state {
                             case 1: "checkmark"
-                            case 2: "xmark"
+                            case 2: usesLibrarySelectionStyle ? "minus" : "xmark"
                             default: nil
                         }
                     } else {

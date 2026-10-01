@@ -37,10 +37,15 @@ class SourceSearchViewController: MangaCollectionViewController {
     init(source: AidokuRunner.Source) {
         self.viewModel = .init(source: source)
         super.init()
+        showsGridCaptions = true
+        gridCaptionHeight = 30
     }
 
     override func configure() {
         super.configure()
+        // Leave the same breathing room above the first result in both source-search routes.
+        collectionView.contentInset.top = 10
+        skeletonTopInset = 10
 
         errorView.onRetry = { [weak self] in
             guard let self else { return }
@@ -68,6 +73,11 @@ class SourceSearchViewController: MangaCollectionViewController {
                 guard let self else { return }
                 Task { @MainActor in
                     if self.viewModel.error == nil {
+                        let captionHeight: CGFloat = self.viewModel.entries.contains { !($0.authors?.isEmpty ?? true) } ? 48 : 30
+                        if self.gridCaptionHeight != captionHeight {
+                            self.gridCaptionHeight = captionHeight
+                            self.collectionView.collectionViewLayout.invalidateLayout()
+                        }
                         self.updateDataSource()
                     }
                 }
@@ -112,7 +122,7 @@ extension SourceSearchViewController {
     }
 
     func scrollToTop(animated: Bool = true) {
-        collectionView.setContentOffset(.init(x: 0, y: -view.safeAreaInsets.top), animated: animated)
+        collectionView.setContentOffset(.init(x: 0, y: -collectionView.adjustedContentInset.top), animated: animated)
     }
 
     @objc override func refresh(_ control: UIRefreshControl) {

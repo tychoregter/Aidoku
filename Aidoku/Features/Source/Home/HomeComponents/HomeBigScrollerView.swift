@@ -17,7 +17,7 @@ struct HomeBigScrollerView: View {
     private let autoScrollInterval: TimeInterval?
     private let hasTags: Bool
 
-    static let coverHeight: CGFloat = 170
+    static let coverHeight: CGFloat = 190
 
     @State private var autoScrollPaused = false
     @State private var bookmarkedItems: Set<String> = .init()
@@ -133,7 +133,7 @@ struct HomeBigScrollerView: View {
                             // if items without tags are present while others do have them, align the view to the top
                             Spacer(minLength: 0)
                         }
-                        .padding(.horizontal)
+                        .padding(.horizontal, 20)
                     }
                     .foregroundStyle(.primary)
                     .tag(offset + 1)
@@ -205,7 +205,7 @@ struct PlaceholderMangaHomeBigScroller: View {
                 .font(.title3)
                 .fontWeight(.semibold)
                 .lineLimit(1)
-                .padding(.horizontal)
+                .padding(.horizontal, 20)
 
             Self.mainView
         }
@@ -255,7 +255,7 @@ struct PlaceholderMangaHomeBigScroller: View {
                 Spacer()
             }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, 20)
         .frame(height: HomeBigScrollerView.coverHeight + 40)
     }
 }

@@ -14,12 +14,13 @@ struct HomeScrollerView: View {
     let component: HomeComponent
     let partial: Bool
     let pressAction: ((AidokuRunner.Manga) -> Void)?
+    let itemSpacing: CGFloat
 
     private let entries: [HomeComponent.Value.Link]
     private let listing: AidokuRunner.Listing?
     private let hasSubtitles: Bool
 
-    static let coverHeight: CGFloat = 180
+    static let coverHeight: CGFloat = 200
 
     @State private var bookmarkedItems: Set<String> = .init()
     @State private var loadedBookmarks = false
@@ -30,12 +31,14 @@ struct HomeScrollerView: View {
         source: AidokuRunner.Source,
         component: HomeComponent,
         partial: Bool = false,
-        pressAction: ((AidokuRunner.Manga) -> Void)? = nil
+        pressAction: ((AidokuRunner.Manga) -> Void)? = nil,
+        itemSpacing: CGFloat = 12
     ) {
         self.source = source
         self.component = component
         self.partial = partial
         self.pressAction = pressAction
+        self.itemSpacing = itemSpacing
 
         guard case let .scroller(entries, listing) = component.value else {
             fatalError("invalid component type")
@@ -65,7 +68,7 @@ struct HomeScrollerView: View {
                     .shimmering()
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(alignment: .top, spacing: 16) {
+                    LazyHStack(alignment: .top, spacing: itemSpacing) {
                         ForEach(entries.indices, id: \.self) { offset in
                             let entry = entries[offset]
                             let label = VStack(alignment: .leading) {
@@ -78,7 +81,7 @@ struct HomeScrollerView: View {
                                     coverImage: entry.imageUrl ?? "",
                                     width: Self.coverHeight * 2/3,
                                     height: Self.coverHeight,
-                                    downsampleWidth: 200,
+                                    downsampleWidth: 400,
                                     bookmarked: mangaKey.flatMap { bookmarkedItems.contains($0) } ?? false
                                 )
 
@@ -101,7 +104,7 @@ struct HomeScrollerView: View {
                                     }
 
                                     // Add empty line only when title shows 1 line
-                                    if shouldAddEmptyLine(for: entry.title) {
+                                    if !isKeepReadingSection && shouldAddEmptyLine(for: entry.title) {
                                         Text("empty")
                                             .lineLimit(1)
                                             .opacity(0)
@@ -182,7 +185,7 @@ struct HomeScrollerView: View {
                             }
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, 20)
                     .scrollTargetLayoutPlease()
                 }
                 .scrollViewAlignedPlease()
@@ -232,6 +235,10 @@ struct HomeScrollerView: View {
         let titleWidth = title.size(withAttributes: [.font: font]).width
         return titleWidth <= maxWidth && !title.contains("\n")
     }
+
+    private var isKeepReadingSection: Bool {
+        listing?.id.hasSuffix("keep_reading") == true
+    }
 }
 
 struct PlaceholderMangaScroller: View {
@@ -243,7 +250,7 @@ struct PlaceholderMangaScroller: View {
                 Text("Loading")
                     .font(.title3)
                     .fontWeight(.semibold)
-                    .padding(.horizontal)
+                    .padding(.horizontal, 20)
             }
 
             Self.mainView
@@ -254,11 +261,11 @@ struct PlaceholderMangaScroller: View {
 
     static var mainView: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(alignment: .top, spacing: 16) {
+            LazyHStack(alignment: .top, spacing: 12) {
                 ForEach(0..<20) { _ in
                     VStack(alignment: .leading) {
                         MangaGridItem.placeholder
-                            .frame(height: 180)
+                            .frame(height: HomeScrollerView.coverHeight)
 
                         let text = Text("Loading\n")
                             .padding(.horizontal, 4)
@@ -271,10 +278,10 @@ struct PlaceholderMangaScroller: View {
                             text.lineLimit(2)
                         }
                     }
-                    .frame(width: 180 * 2/3)
+                    .frame(width: HomeScrollerView.coverHeight * 2/3)
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 20)
             .scrollTargetLayoutPlease()
         }
         .scrollViewAlignedPlease()

@@ -60,15 +60,14 @@ struct SearchContentView: View {
                     UnavailableView.search(text: searchText)
                         .ignoresSafeArea()
                 }
+            } else if !searchText.isEmpty {
+                ScrollView {
+                    searchResults
+                }
+                .scrollDismissesKeyboardImmediately()
             } else {
                 List {
-                    if searchText.isEmpty {
-                        if !viewModel.history.isEmpty {
-                            historyItems
-                        }
-                    } else {
-                        searchResults
-                    }
+                    historyItems
                 }
                 .scrollBackgroundHiddenPlease()
                 .scrollDismissesKeyboardImmediately()
@@ -116,7 +115,7 @@ struct SearchContentView: View {
                             Spacer()
                         }
                     }
-                    .buttonStyle(ListButtonStyle(tint: false))
+                    .buttonStyle(ListButtonStyle(tint: false, horizontalInset: 20))
 
                     Divider().padding(.horizontal)
                 }
@@ -146,50 +145,57 @@ struct SearchContentView: View {
     }
 
     var searchResults: some View {
-        ForEach(viewModel.results) { searchResult in
-            let source = searchResult.source
-            let result = searchResult.result
-            let id = {
-                var hasher = Hasher()
-                for entry in result.entries {
-                    hasher.combine(entry)
-                }
-                return hasher.finalize()
-            }()
-            if !result.entries.isEmpty {
-                Section {
-                    HomeScrollerView(
-                        source: source,
-                        component: .init(
-                            title: nil,
-                            value: .scroller(entries: result.entries.map { $0.intoLink() })
-                        )
-                    )
-                    .id("\(source.key).\(id)") // fixes issue with incorrect entries showing
-                    .environmentObject(path)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(.zero)
-                    .listRowSeparator(.hidden)
-                } header: {
-                    HStack {
-                        SourceIconView(
-                            sourceId: source.key,
-                            imageUrl: source.imageUrl,
-                            iconSize: 29
-                        )
-                        .scaleEffect(0.75)
-                        Text(source.name)
-
-                        Spacer()
-
-                        Button(NSLocalizedString("VIEW_MORE")) {
-                            openResult(searchResult)
-                        }
+        VStack(spacing: 24) {
+            ForEach(viewModel.results) { searchResult in
+                let source = searchResult.source
+                let result = searchResult.result
+                let id = {
+                    var hasher = Hasher()
+                    for entry in result.entries {
+                        hasher.combine(entry)
                     }
-                    .font(.body)
-                    .textCase(nil)
+                    return hasher.finalize()
+                }()
+                if !result.entries.isEmpty {
+                    VStack(alignment: .leading, spacing: 11) {
+                        Button {
+                            openResult(searchResult)
+                        } label: {
+                            HStack(spacing: 8) {
+                                SourceIconView(
+                                    sourceId: source.key,
+                                    imageUrl: source.imageUrl,
+                                    iconSize: 25
+                                )
+                                Text(source.name)
+                                    .font(.title3.weight(.semibold))
+                                    .foregroundStyle(Color(uiColor: .label))
+                                Spacer()
+                                Image(systemName: "chevron.forward")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.tertiary)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .padding(.horizontal, 20)
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(source.name), \(NSLocalizedString("VIEW_MORE"))")
+
+                        HomeScrollerView(
+                            source: source,
+                            component: .init(
+                                title: nil,
+                                value: .scroller(entries: result.entries.map { $0.intoLink() })
+                            ),
+                            itemSpacing: 12
+                        )
+                        .id("\(source.key).\(id)") // fixes issue with incorrect entries showing
+                        .environmentObject(path)
+                    }
                 }
             }
         }
+        .padding(.top, 14)
+        .padding(.bottom)
     }
 }

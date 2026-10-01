@@ -13,6 +13,7 @@ struct FilterHeaderView: View {
     let filters: [AidokuRunner.Filter]
     @Binding var search: String
     @Binding var enabledFilters: [FilterValue]
+    let usesLibrarySelectionStyle: Bool
     let onFilterButtonClick: (() -> Void)?
     let onFilterSheetDismiss: (() -> Void)?
 
@@ -43,6 +44,7 @@ struct FilterHeaderView: View {
         filters: [AidokuRunner.Filter],
         search: Binding<String> = .constant(""),
         enabledFilters: Binding<[FilterValue]>,
+        usesLibrarySelectionStyle: Bool = false,
         onFilterButtonClick: (() -> Void)? = nil,
         onFilterSheetDismiss: (() -> Void)? = nil
     ) {
@@ -50,6 +52,7 @@ struct FilterHeaderView: View {
         self.filters = filters
         self._search = search
         self._enabledFilters = enabledFilters
+        self.usesLibrarySelectionStyle = usesLibrarySelectionStyle
         self.onFilterButtonClick = onFilterButtonClick
         self.onFilterSheetDismiss = onFilterSheetDismiss
     }
@@ -75,17 +78,33 @@ struct FilterHeaderView: View {
                     if !(filter.hideFromHeader ?? false) {
                         switch filter.value {
                             case .sort:
-                                SortFilterView(filter: filter, enabledFilters: $enabledFilters)
+                                SortFilterView(
+                                    filter: filter,
+                                    enabledFilters: $enabledFilters,
+                                    usesLibrarySelectionStyle: usesLibrarySelectionStyle
+                                )
                             case let .check(_, _, defaultValue):
                                 // if check filter has a default value then hide it from the list
                                 // we don't want it to appear as enabled when the filters are reset
                                 if defaultValue == nil {
-                                    CheckFilterView(filter: filter, enabledFilters: $enabledFilters)
+                                    CheckFilterView(
+                                        filter: filter,
+                                        enabledFilters: $enabledFilters,
+                                        usesLibrarySelectionStyle: usesLibrarySelectionStyle
+                                    )
                                 }
                             case .select:
-                                SelectFilterView(filter: filter, enabledFilters: $enabledFilters)
+                                SelectFilterView(
+                                    filter: filter,
+                                    enabledFilters: $enabledFilters,
+                                    usesLibrarySelectionStyle: usesLibrarySelectionStyle
+                                )
                             case .multiselect:
-                                MultiSelectFilterView(filter: filter, enabledFilters: $enabledFilters)
+                                MultiSelectFilterView(
+                                    filter: filter,
+                                    enabledFilters: $enabledFilters,
+                                    usesLibrarySelectionStyle: usesLibrarySelectionStyle
+                                )
                             default:
                                 EmptyView()
                         }

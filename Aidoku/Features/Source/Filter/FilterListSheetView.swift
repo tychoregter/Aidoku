@@ -53,6 +53,8 @@ struct FilterListSheetView: View {
                     if incognitoMode.value {
                         Text(NSLocalizedString("INCOGNITO_FILTERS_NOTICE"))
                             .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
                     }
 
                     FilterListView(
@@ -62,6 +64,7 @@ struct FilterListSheetView: View {
                         savedSearches: $savedSearches
                     )
                 }
+                .padding(.horizontal, 4)
             }
             .scrollDismissesKeyboardInteractively()
             .navigationTitle(NSLocalizedString("FILTERS"))

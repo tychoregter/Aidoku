@@ -27,6 +27,13 @@ class SourceViewController: OldMangaCollectionViewController {
         return activityIndicator
     }()
 
+    override func makeCollectionViewLayout() -> UICollectionViewLayout {
+        guard hidesListings, !usesListLayout else { return super.makeCollectionViewLayout() }
+        return UICollectionViewCompositionalLayout { _, environment in
+            Self.makeGridLayoutSection(environment: environment, showsCaptions: true)
+        }
+    }
+
     init(source: Source) {
         self.source = source
         super.init()
@@ -153,6 +160,8 @@ class SourceViewController: OldMangaCollectionViewController {
     override func configure(cell: MangaGridCell, info: MangaInfo, indexPath: IndexPath) {
         cell.identifier = info.id
         cell.title = info.title
+        cell.subtitle = hidesListings ? info.author : nil
+        cell.showsCaption = hidesListings
         Task {
             let inLibrary = await CoreDataManager.shared.container.performBackgroundTask { context in
                 CoreDataManager.shared.hasLibraryManga(

@@ -134,7 +134,7 @@ struct HomeChapterListView: View {
                 }
                 Spacer()
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 20)
         }
         .foregroundStyle(.primary)
         .multilineTextAlignment(.leading)

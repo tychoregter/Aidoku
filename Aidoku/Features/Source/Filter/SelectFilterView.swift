@@ -7,9 +7,11 @@
 
 import AidokuRunner
 import SwiftUI
+import UIKit
 
 struct SelectFilterView: View {
     let filter: AidokuRunner.Filter
+    let usesLibrarySelectionStyle: Bool
 
     @Binding var enabledFilters: [FilterValue]
 
@@ -18,9 +20,14 @@ struct SelectFilterView: View {
     @State private var showingSheet = false
     @State private var selectedOption: String
 
-    init(filter: AidokuRunner.Filter, enabledFilters: Binding<[FilterValue]>) {
+    init(
+        filter: AidokuRunner.Filter,
+        enabledFilters: Binding<[FilterValue]>,
+        usesLibrarySelectionStyle: Bool = false
+    ) {
         self.filter = filter
         self._enabledFilters = enabledFilters
+        self.usesLibrarySelectionStyle = usesLibrarySelectionStyle
 
         guard case let .select(value) = filter.value else {
             fatalError("invalid filter type")
@@ -45,25 +52,36 @@ struct SelectFilterView: View {
                 active: selectedOption != selectFilter.resolvedDefaultValue,
                 chevron: true
             )
-            Menu {
-                ForEach(selectFilter.options.indices, id: \.self) { offset in
-                    let option = selectFilter.options[offset]
-                    let value = selectFilter.ids?[safe: offset] ?? option
-                    Button {
-                        selectedOption = value
-                    } label: {
-                        HStack {
-                            Text(option)
-                            Spacer()
-                            if selectedOption == value {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
+            if usesLibrarySelectionStyle {
+                LibraryStyleSelectMenuButton(
+                    options: selectFilter.options.enumerated().map { offset, option in
+                        (title: option, id: selectFilter.ids?[safe: offset] ?? option)
+                    },
+                    selectedOption: $selectedOption,
+                    accessibilityLabel: filter.title ?? "",
+                    active: selectedOption != selectFilter.resolvedDefaultValue
+                )
+            } else {
+                Menu {
+                    ForEach(selectFilter.options.indices, id: \.self) { offset in
+                        let option = selectFilter.options[offset]
+                        let value = selectFilter.ids?[safe: offset] ?? option
+                        Button {
+                            selectedOption = value
+                        } label: {
+                            HStack {
+                                Text(option)
+                                Spacer()
+                                if selectedOption == value {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.tint)
+                                }
                             }
                         }
                     }
+                } label: {
+                    label
                 }
-            } label: {
-                label
             }
         }
         .sheet(isPresented: $showingSheet) {
@@ -105,6 +123,72 @@ struct SelectFilterView: View {
             }
         } else if !isDefault {
             enabledFilters.append(filterValue)
+        }
+    }
+}
+
+private struct LibraryStyleSelectMenuButton: UIViewRepresentable {
+    let options: [(title: String, id: String)]
+    @Binding var selectedOption: String
+    let accessibilityLabel: String
+    let active: Bool
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> LibraryStyleFilterMenuButtonView {
+        let button = LibraryStyleFilterMenuButtonView()
+        button.accessibilityLabel = accessibilityLabel
+        button.update(title: accessibilityLabel, active: active, darkMode: colorScheme == .dark)
+        context.coordinator.button = button
+        button.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak coordinator = context.coordinator] completion in
+            completion(coordinator?.makeMenu().children ?? [])
+        }])
+        return button
+    }
+
+    func updateUIView(_ button: LibraryStyleFilterMenuButtonView, context: Context) {
+        context.coordinator.parent = self
+        button.accessibilityLabel = accessibilityLabel
+        button.update(title: accessibilityLabel, active: active, darkMode: colorScheme == .dark)
+    }
+
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        uiView: LibraryStyleFilterMenuButtonView,
+        context: Context
+    ) -> CGSize? {
+        uiView.intrinsicContentSize
+    }
+
+    final class Coordinator {
+        var parent: LibraryStyleSelectMenuButton
+        weak var button: UIButton?
+
+        init(_ parent: LibraryStyleSelectMenuButton) {
+            self.parent = parent
+        }
+
+        func makeMenu(selected: String? = nil) -> UIMenu {
+            let selected = selected ?? parent.selectedOption
+            return UIMenu(children: parent.options.map { option in
+                UIAction(
+                    title: option.title,
+                    attributes: .keepsMenuPresented,
+                    state: selected == option.id ? .on : .off
+                ) { [weak self] _ in
+                    self?.select(option.id)
+                }
+            })
+        }
+
+        private func select(_ id: String) {
+            parent.selectedOption = id
+            if let interaction = button?.interactions.compactMap({ $0 as? UIContextMenuInteraction }).first {
+                let updatedMenu = makeMenu(selected: id)
+                interaction.updateVisibleMenu { _ in updatedMenu }
+            }
         }
     }
 }

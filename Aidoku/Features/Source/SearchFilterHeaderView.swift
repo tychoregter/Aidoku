@@ -36,6 +36,7 @@ struct SearchFilterHeaderView: View {
                         filters: filters,
                         search: $search,
                         enabledFilters: $enabledFilters,
+                        usesLibrarySelectionStyle: true,
                         onFilterButtonClick: onFilterButtonClick
                     )
                 }

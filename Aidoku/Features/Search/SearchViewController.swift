@@ -88,7 +88,13 @@ class SearchViewController: UIViewController {
                 title: NSLocalizedString("CONTENT_RATING"),
                 value: .multiselect(.init(
                     canExclude: true,
-                    options: SourceContentRating.allCases.map { $0.title },
+                    options: SourceContentRating.allCases.map { rating in
+                        switch rating {
+                            case .safe: NSLocalizedString("SAFE")
+                            case .containsNsfw: NSLocalizedString("SUGGESTIVE")
+                            case .primarilyNsfw: NSLocalizedString("NSFW")
+                        }
+                    },
                     ids: SourceContentRating.allCases.map { $0.toString() }
                 ))
             )
@@ -123,6 +129,7 @@ class SearchViewController: UIViewController {
         return FilterHeaderView(
             filters: filters,
             enabledFilters: filtersBinding,
+            usesLibrarySelectionStyle: true,
             onFilterSheetDismiss: {
                 Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 100_000_000)

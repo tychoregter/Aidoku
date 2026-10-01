@@ -228,7 +228,7 @@ struct HomeListView: View {
 
             Spacer()
         }
-        .padding(.horizontal)
+        .padding(.horizontal, 20)
         if let value = entry.value {
             Button {
                 switch value {
@@ -311,7 +311,7 @@ struct PlaceholderMangaHomeList: View {
                 Text("Loading")
                     .font(.title3)
                     .fontWeight(.semibold)
-                    .padding(.horizontal)
+                    .padding(.horizontal, 20)
             }
 
             Self.mainView(itemCount: itemCount)
@@ -337,7 +337,7 @@ struct PlaceholderMangaHomeList: View {
                     }
                     Spacer()
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, 20)
             }
         }
     }

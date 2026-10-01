@@ -298,12 +298,13 @@ extension OldMangaCollectionViewController {
 
     static func makeGridLayoutSection(
         environment: NSCollectionLayoutEnvironment,
-        showsCaptions: Bool = false
+        showsCaptions: Bool = false,
+        captionHeight: CGFloat = 48
     ) -> NSCollectionLayoutSection {
         let containerWidth = environment.container.contentSize.width
         let itemsPerRow = gridItemsPerRow(environment: environment)
         let coverWidth = (containerWidth - 40 - CGFloat(itemsPerRow - 1) * itemSpacing) / CGFloat(itemsPerRow)
-        let rowHeight = coverWidth * 1.5 + (showsCaptions ? 48 : 0)
+        let rowHeight = coverWidth * 1.5 + (showsCaptions ? captionHeight : 0)
 
         let item = NSCollectionLayoutItem(layoutSize: NSCollectionLayoutSize(
             widthDimension: .fractionalWidth(1 / CGFloat(itemsPerRow)),
@@ -412,7 +413,14 @@ extension OldMangaCollectionViewController {
 
     func openInfoView(info: MangaInfo, zoom: Bool = true, sourceCell: UICollectionViewCell? = nil) {
         let viewController = MangaViewController(manga: info, parent: self)
-        if zoom, #available(iOS 18.0, *) {
+        // UIKit's zoom navigation transition does not animate reliably inside the
+        // Settings page sheet (where Favorites lives when its tab is disabled).
+        // Use the normal navigation transition there so both push and pop keep
+        // the Favorites screen visible throughout the animation.
+        let isFavoritesInSettingsSheet = (self as? LibraryViewController)?.scope == .favorites
+            && navigationController?.presentingViewController != nil
+            && navigationController?.modalPresentationStyle == .pageSheet
+        if zoom && !isFavoritesInSettingsSheet, #available(iOS 18.0, *) {
             viewController.preferredTransition = .zoom { [weak self, weak sourceCell] context in
                 guard
                     let self,
@@ -503,7 +511,14 @@ extension OldMangaCollectionViewController {
             collectionView: collectionView
         ) { [weak self] collectionView, indexPath, item in
             // swiftlint:disable force_cast
-            if item.isEmptyPinnedPlaceholder {
+            if item.isEmptyLibraryPlaceholder {
+                let cell = collectionView.dequeueReusableCell(
+                    withReuseIdentifier: LibraryEmptyCell.reuseIdentifier,
+                    for: indexPath
+                ) as! LibraryEmptyCell
+                cell.configure(title: item.title ?? "", text: item.author ?? "")
+                return cell
+            } else if item.isEmptyPinnedPlaceholder {
                 let cell = collectionView.dequeueReusableCell(
                     withReuseIdentifier: "MangaGridCell",
                     for: indexPath

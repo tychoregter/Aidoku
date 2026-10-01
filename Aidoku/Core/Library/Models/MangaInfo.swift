@@ -56,6 +56,10 @@ struct MangaInfo: Hashable, Sendable {
         id.sourceKey == Self.emptyPinnedPlaceholderSourceKey
     }
 
+    var isEmptyLibraryPlaceholder: Bool {
+        displayVariant == "empty-library"
+    }
+
     static func emptyPinnedPlaceholder(title: String) -> MangaInfo {
         MangaInfo(
             id: MangaIdentifier(
@@ -64,6 +68,18 @@ struct MangaInfo: Hashable, Sendable {
             ),
             title: title,
             displayVariant: "empty-pinned"
+        )
+    }
+
+    static func emptyLibraryPlaceholder(title: String, text: String) -> MangaInfo {
+        MangaInfo(
+            id: MangaIdentifier(
+                sourceKey: emptyPinnedPlaceholderSourceKey,
+                mangaKey: "library-empty"
+            ),
+            title: title,
+            author: text,
+            displayVariant: "empty-library"
         )
     }
 

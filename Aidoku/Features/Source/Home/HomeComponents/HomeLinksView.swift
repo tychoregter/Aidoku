@@ -63,7 +63,7 @@ struct HomeLinksView: View {
                     } label: {
                         Text(link.title)
                     }
-                    .buttonStyle(ListButtonStyle())
+                    .buttonStyle(ListButtonStyle(horizontalInset: 20))
 
                     Divider().padding(.horizontal)
                 }
@@ -103,6 +103,6 @@ struct PlaceholderHomeLinksView: View {
                 Divider().padding(.horizontal)
             }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, 20)
     }
 }

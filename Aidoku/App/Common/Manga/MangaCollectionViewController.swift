@@ -11,6 +11,12 @@ import SwiftUI
 
 class MangaCollectionViewController: BaseCollectionViewController {
     var usesListLayout = false
+    var showsGridCaptions = false
+    var gridCaptionHeight: CGFloat = 48
+    var skeletonTopInset: CGFloat = 0 {
+        didSet { skeletonTopConstraint?.constant = skeletonTopInset }
+    }
+    private var skeletonTopConstraint: NSLayoutConstraint?
 
     lazy var dataSource = makeDataSource()
     lazy var refreshControl = UIRefreshControl()
@@ -67,6 +73,11 @@ class MangaCollectionViewController: BaseCollectionViewController {
 
         errorView.translatesAutoresizingMaskIntoConstraints = false
         skeletonViewController.view.translatesAutoresizingMaskIntoConstraints = false
+        let skeletonTopConstraint = skeletonViewController.view.topAnchor.constraint(
+            equalTo: collectionView.safeAreaLayoutGuide.topAnchor,
+            constant: skeletonTopInset
+        )
+        self.skeletonTopConstraint = skeletonTopConstraint
 
         NSLayoutConstraint.activate([
             errorView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -74,7 +85,7 @@ class MangaCollectionViewController: BaseCollectionViewController {
             errorView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             errorView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
-            skeletonViewController.view.topAnchor.constraint(equalTo: collectionView.safeAreaLayoutGuide.topAnchor),
+            skeletonTopConstraint,
             skeletonViewController.view.bottomAnchor.constraint(equalTo: collectionView.bottomAnchor),
             skeletonViewController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             skeletonViewController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor)
@@ -125,7 +136,11 @@ class MangaCollectionViewController: BaseCollectionViewController {
                     if self.usesListLayout {
                         return OldMangaCollectionViewController.makeListLayoutSection(environment: environment)
                     } else {
-                        return OldMangaCollectionViewController.makeGridLayoutSection(environment: environment)
+                        return OldMangaCollectionViewController.makeGridLayoutSection(
+                            environment: environment,
+                            showsCaptions: self.showsGridCaptions,
+                            captionHeight: self.gridCaptionHeight
+                        )
                     }
                 case nil:
                     return nil
@@ -158,6 +173,8 @@ extension MangaCollectionViewController {
         GridCellRegistration { [weak self] cell, _, manga in
             cell.identifier = MangaIdentifier(sourceKey: manga.sourceKey, mangaKey: manga.key)
             cell.title = manga.title
+            cell.subtitle = manga.authors?.joined(separator: ", ")
+            cell.showsCaption = self?.showsGridCaptions ?? false
             cell.showsBookmark = self?.bookmarkedItems.contains(manga.key) ?? false
             Task {
                 await cell.loadImage(url: manga.cover.flatMap { URL(string: $0) })

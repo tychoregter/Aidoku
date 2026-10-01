@@ -37,7 +37,6 @@ struct MangaView: View {
 
     @State private var openChapter: AidokuRunner.Chapter?
 
-    @StateObject private var refreshController = RefreshController()
     @StateObject private var developerMode = UserDefaultsBool(key: AppSettings.general.developerMode.key)
 
     private var path: NavigationCoordinator
@@ -106,6 +105,30 @@ struct MangaView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                 } else {
+                    if viewModel.initialDataLoaded && viewModel.chapters.isEmpty {
+                        VStack(spacing: 4) {
+                            Image(systemName: "book.closed")
+                                .font(.system(size: 48, weight: .regular))
+                                .foregroundStyle(.secondary)
+                                .padding(.bottom, 12)
+                            Text(NSLocalizedString("NO_CHAPTERS_AVAILABLE"))
+                                .font(.title2.bold())
+                            Text(viewModel.manga.chapters?.isEmpty == false
+                                ? NSLocalizedString("CHAPTERS_ADJUST_FILTERS")
+                                : NSLocalizedString("CHAPTERS_EMPTY_DESCRIPTION"))
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 30)
+                        .padding(.top, 56)
+                        .padding(.bottom, 64)
+                        .listRowInsets(.zero)
+                        .listRowBackground(Color(uiColor: .systemBackground))
+                        .listRowSeparator(.hidden)
+                    }
+
                     ForEach(viewModel.chapters.indices, id: \.self) { index in
                         let chapter = viewModel.chapters[index]
                         viewForChapter(chapter, index: index)
@@ -148,13 +171,6 @@ struct MangaView: View {
             .transition(.opacity)
             .listStyle(.plain)
             .contentMargins(.top, 0, for: .scrollContent)
-            .refreshable {
-                await viewModel.refresh()
-            }
-            .introspect(.list, on: .iOS(.v18, .v26, .v27)) { list in
-                refreshController.list = list
-                list.refreshControl?.tintColor = .white
-            }
             .navigationBarTitleDisplayMode(.inline)
             .confirmationDialogOrAlert(
                 NSLocalizedString("REMOVE_ALL_DOWNLOADS"),
@@ -419,7 +435,6 @@ extension MangaView {
             langFilter: $viewModel.chapterLangFilter,
             scanlatorFilter: $viewModel.chapterScanlatorFilter,
             chapterTitleDisplayMode: $viewModel.chapterTitleDisplayMode,
-            hasOtherDownloads: !viewModel.otherDownloadedChapters.isEmpty,
             usesDarkHeaderText: usesDarkHeaderText,
             headerControlBackgroundColor: headerControlBackgroundColor,
             nsfwBaseColor: backdropDominantColor,
@@ -666,7 +681,7 @@ extension MangaView {
     var rightNavbarButton: some View {
         RightNavbarButton(
             viewModel: viewModel,
-            refreshController: refreshController,
+            refresh: { await viewModel.refresh() },
             usesLightLabel: usesLightToolbarIcons,
             setEditing: { editing in
                 // Set the native bar tint before the selection button is created.
@@ -1062,7 +1077,7 @@ private struct RightNavbarButton: View, Equatable {
 
     init(
         viewModel: MangaView.ViewModel,
-        refreshController: RefreshController,
+        refresh: @escaping () async -> Void,
         usesLightLabel: Bool,
         setEditing: @escaping (Bool) -> Void,
         markAllRead: @escaping () -> Void,
@@ -1080,7 +1095,7 @@ private struct RightNavbarButton: View, Equatable {
         self.hasCategories = viewModel.hasCategories
         self.url = viewModel.manga.url
         self.hasDownloads = viewModel.downloadStatus.contains(where: { $0.value == .finished || $0.value == .failed })
-        self.refresh = refreshController.refresh
+        self.refresh = refresh
 
         self.setEditing = setEditing
         self.markAllRead = markAllRead
@@ -1391,21 +1406,5 @@ struct MangaDetailsBackdrop: View {
             .clipped()
         }
         .allowsHitTesting(false)
-    }
-}
-
-// hack for programmatically starting the refresh control from swiftui
-@MainActor
-private class RefreshController: ObservableObject {
-    weak var list: UIScrollView?
-
-    func refresh() {
-        guard let list, let refreshControl = list.refreshControl else { return }
-        if #available(iOS 17.4, *) {
-            list.stopScrollingAndZooming() // fixes not scrolling down after refresh finishes
-        }
-        list.setContentOffset(CGPoint(x: 0, y: -list.safeAreaInsets.top - refreshControl.frame.height), animated: true)
-        refreshControl.beginRefreshing()
-        refreshControl.sendActions(for: .valueChanged)
     }
 }

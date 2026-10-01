@@ -7,9 +7,11 @@
 
 import AidokuRunner
 import SwiftUI
+import UIKit
 
 struct SortFilterView: View {
     let filter: AidokuRunner.Filter
+    let usesLibrarySelectionStyle: Bool
 
     @Binding var enabledFilters: [FilterValue]
 
@@ -24,9 +26,14 @@ struct SortFilterView: View {
         (selectedOption != defaultValue?.index ?? 0) || (ascending != defaultValue?.ascending ?? false)
     }
 
-    init(filter: AidokuRunner.Filter, enabledFilters: Binding<[FilterValue]>) {
+    init(
+        filter: AidokuRunner.Filter,
+        enabledFilters: Binding<[FilterValue]>,
+        usesLibrarySelectionStyle: Bool = false
+    ) {
         self.filter = filter
         self._enabledFilters = enabledFilters
+        self.usesLibrarySelectionStyle = usesLibrarySelectionStyle
 
         guard case let .sort(canAscend, options, defaultValue) = filter.value else {
             fatalError("invalid filter type")
@@ -48,28 +55,8 @@ struct SortFilterView: View {
     }
 
     var body: some View {
-        Menu {
-            ForEach(Array(options.enumerated()), id: \.offset) { index, option in
-                Button {
-                    withAnimation {
-                        if selectedOption == index && canAscend {
-                            ascending.toggle()
-                        } else {
-                            selectedOption = index
-                            ascending = false
-                        }
-                    }
-                } label: {
-                    HStack {
-                        Text(option)
-                        if selectedOption == index {
-                            Image(systemName: ascending ? "chevron.up" : "chevron.down")
-                        }
-                    }
-                }
-            }
-        } label: {
-            FilterLabelView(
+        Group {
+            let label = FilterLabelView(
                 name: {
                     if selectedOption >= options.count {
                         NSLocalizedString("INVALID")
@@ -82,6 +69,42 @@ struct SortFilterView: View {
                 active: active,
                 chevron: true
             )
+            if usesLibrarySelectionStyle {
+                LibraryStyleSortMenuButton(
+                    options: options,
+                    canAscend: canAscend,
+                    selectedOption: $selectedOption,
+                    ascending: $ascending,
+                    accessibilityLabel: filter.title ?? "",
+                    displayTitle: selectedOption >= options.count ? NSLocalizedString("INVALID")
+                        : (filter.title.map { "\($0): \(options[selectedOption])" } ?? options[selectedOption]),
+                    active: active
+                )
+            } else {
+                Menu {
+                    ForEach(Array(options.enumerated()), id: \.offset) { index, option in
+                        Button {
+                            withAnimation {
+                                if selectedOption == index && canAscend {
+                                    ascending.toggle()
+                                } else {
+                                    selectedOption = index
+                                    ascending = false
+                                }
+                            }
+                        } label: {
+                            HStack {
+                                Text(option)
+                                if selectedOption == index {
+                                    Image(systemName: ascending ? "chevron.up" : "chevron.down")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    label
+                }
+            }
         }
         .onChange(of: selectedOption) { _ in
             updateFilter()
@@ -123,6 +146,81 @@ struct SortFilterView: View {
             )
         }
         enabledFilters = newEnabledFilters
+    }
+}
+
+private struct LibraryStyleSortMenuButton: UIViewRepresentable {
+    let options: [String]
+    let canAscend: Bool
+    @Binding var selectedOption: Int
+    @Binding var ascending: Bool
+    let accessibilityLabel: String
+    let displayTitle: String
+    let active: Bool
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> LibraryStyleFilterMenuButtonView {
+        let button = LibraryStyleFilterMenuButtonView()
+        button.accessibilityLabel = accessibilityLabel
+        button.update(title: displayTitle, active: active, darkMode: colorScheme == .dark)
+        context.coordinator.button = button
+        button.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak coordinator = context.coordinator] completion in
+            completion(coordinator?.makeMenu().children ?? [])
+        }])
+        return button
+    }
+
+    func updateUIView(_ button: LibraryStyleFilterMenuButtonView, context: Context) {
+        context.coordinator.parent = self
+        button.accessibilityLabel = accessibilityLabel
+        button.update(title: displayTitle, active: active, darkMode: colorScheme == .dark)
+    }
+
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        uiView: LibraryStyleFilterMenuButtonView,
+        context: Context
+    ) -> CGSize? {
+        uiView.intrinsicContentSize
+    }
+
+    final class Coordinator {
+        var parent: LibraryStyleSortMenuButton
+        weak var button: UIButton?
+
+        init(_ parent: LibraryStyleSortMenuButton) {
+            self.parent = parent
+        }
+
+        func makeMenu(selected: Int? = nil, ascending: Bool? = nil) -> UIMenu {
+            let selected = selected ?? parent.selectedOption
+            let ascending = ascending ?? parent.ascending
+            return UIMenu(children: parent.options.enumerated().map { index, option in
+                let isSelected = selected == index
+                return UIAction(
+                    title: option,
+                    subtitle: isSelected && parent.canAscend
+                        ? NSLocalizedString(ascending ? "ASCENDING" : "DESCENDING") : nil,
+                    attributes: .keepsMenuPresented,
+                    state: isSelected ? .on : .off
+                ) { [weak self] _ in
+                    self?.select(index, current: selected, ascending: ascending)
+                }
+            })
+        }
+
+        private func select(_ index: Int, current: Int, ascending: Bool) {
+            let nextAscending = parent.canAscend && (current == index ? !ascending : true)
+            parent.selectedOption = index
+            parent.ascending = nextAscending
+            if let interaction = button?.interactions.compactMap({ $0 as? UIContextMenuInteraction }).first {
+                let updatedMenu = makeMenu(selected: index, ascending: nextAscending)
+                interaction.updateVisibleMenu { _ in updatedMenu }
+            }
+        }
     }
 }
 

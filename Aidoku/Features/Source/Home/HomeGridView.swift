@@ -96,7 +96,8 @@ struct HomeGridView: View {
             }
             loadMoreView
         }
-        .padding([.horizontal, .bottom])
+        .padding(.horizontal, 20)
+        .padding(.bottom)
         .onChange(of: entries) { _ in
             loadingMore = false
         }
@@ -208,6 +209,7 @@ struct HomeGridView: View {
             }
         }
         .shimmering()
-        .padding([.horizontal, .bottom])
+        .padding(.horizontal, 20)
+        .padding(.bottom)
     }
 }

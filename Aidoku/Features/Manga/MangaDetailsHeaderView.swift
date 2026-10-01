@@ -34,7 +34,6 @@ struct MangaDetailsHeaderView: View {
 
     @Binding var chapterTitleDisplayMode: ChapterTitleDisplayMode
 
-    var hasOtherDownloads: Bool
     var usesDarkHeaderText = false
     var headerControlBackgroundColor: Color = .white.opacity(0.14)
     var nsfwBaseColor: UIColor?
@@ -45,11 +44,11 @@ struct MangaDetailsHeaderView: View {
 
     @EnvironmentObject private var path: NavigationCoordinator
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var readButtonTitle = NSLocalizedString("LOADING_ELLIPSIS")
     @State private var readButtonSubtitle: String?
     @State private var readButtonDisabled = true
-    @State private var animationTrigger = false
     @State private var isTracking = false
     @State private var showLibraryRemoveConfirm = false
     @State private var hasEditedCover = false
@@ -60,14 +59,19 @@ struct MangaDetailsHeaderView: View {
     @StateObject private var developerMode = UserDefaultsBool(key: AppSettings.general.developerMode.key)
     @StateObject private var hideNSFWCovers = UserDefaultsBool(key: AppSettings.appearance.blurNSFWCovers.key)
 
-    static let coverMaxDimension: CGFloat = 300
+    private static let coverDimensionBudget: CGFloat = 500
+    private var loadingAnimation: Animation? {
+        reduceMotion ? nil : .easeInOut(duration: 0.28)
+    }
 
     private var coverSize: CGSize {
-        let ratio = coverAspectRatio.isFinite && coverAspectRatio > 0 ? coverAspectRatio : 2 / 3
-        return CGSize(
-            width: min(Self.coverMaxDimension, Self.coverMaxDimension * ratio),
-            height: min(Self.coverMaxDimension, Self.coverMaxDimension / ratio)
-        )
+        let imageRatio = coverAspectRatio.isFinite && coverAspectRatio > 0 ? coverAspectRatio : 2 / 3
+        // Keep the displayed frame between 1:2 and 2:1. More extreme images
+        // fill and crop within the nearest allowed ratio.
+        let ratio = min(max(imageRatio, 1 / 2), 2)
+        let width = Self.coverDimensionBudget * ratio / (1 + ratio)
+        let height = Self.coverDimensionBudget / (1 + ratio)
+        return CGSize(width: width, height: height)
     }
 
     private var headerTextColor: Color { usesDarkHeaderText ? .black : .white }
@@ -91,7 +95,6 @@ struct MangaDetailsHeaderView: View {
         langFilter: Binding<String?>,
         scanlatorFilter: Binding<[String]>,
         chapterTitleDisplayMode: Binding<ChapterTitleDisplayMode>,
-        hasOtherDownloads: Bool,
         usesDarkHeaderText: Bool = false,
         headerControlBackgroundColor: Color = .white.opacity(0.14),
         nsfwBaseColor: UIColor? = nil,
@@ -115,7 +118,6 @@ struct MangaDetailsHeaderView: View {
         self._langFilter = langFilter
         self._scanlatorFilter = scanlatorFilter
         self._chapterTitleDisplayMode = chapterTitleDisplayMode
-        self.hasOtherDownloads = hasOtherDownloads
         self.usesDarkHeaderText = usesDarkHeaderText
         self.headerControlBackgroundColor = headerControlBackgroundColor
         self.nsfwBaseColor = nsfwBaseColor
@@ -137,33 +139,29 @@ struct MangaDetailsHeaderView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     heroView
 
-                    // hide the chapter list header if there are no chapters and the other downloads header is shown
-                    if !(manga.chapters ?? chapters).isEmpty || !hasOtherDownloads {
-                        ChapterListHeaderView(
-                            allChapters: manga.chapters,
-                            sortOption: $chapterSortOption,
-                            sortAscending: $chapterSortAscending,
-                            filters: $filters,
-                            langFilter: $langFilter,
-                            scanlatorFilter: $scanlatorFilter,
-                            displayMode: $chapterTitleDisplayMode,
-                            mangaId: manga.identifier
-                        )
-                        .padding(.horizontal, 20)
-                        .padding(.top, 18)
-                        .padding(.bottom, 18)
-                        .frame(maxWidth: .infinity)
-                        .background(Color(uiColor: .systemBackground))
-                    }
+                    ChapterListHeaderView(
+                        allChapters: manga.chapters,
+                        sortOption: $chapterSortOption,
+                        sortAscending: $chapterSortAscending,
+                        filters: $filters,
+                        langFilter: $langFilter,
+                        scanlatorFilter: $scanlatorFilter,
+                        displayMode: $chapterTitleDisplayMode,
+                        mangaId: manga.identifier
+                    )
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                    .padding(.bottom, 18)
+                    .frame(maxWidth: .infinity)
+                    .background(Color(uiColor: .systemBackground))
                 }
             }
         }
-        .animation(.default, value: animationTrigger)
+        .animation(loadingAnimation, value: manga)
+        .animation(loadingAnimation, value: source != nil)
+        .animation(loadingAnimation, value: chapters.count)
         .foregroundStyle(.primary)
         .textCase(.none)
-        .onChange(of: manga) { _ in
-            animationTrigger.toggle()
-        }
         .onChange(of: nextChapter) { _ in
             updateReadButtonText()
         }
@@ -235,7 +233,11 @@ struct MangaDetailsHeaderView: View {
             onDominantColorChange: onCoverDominantColorChange,
             onImageSizeChange: { size in
                 guard size.width > 0, size.height > 0 else { return }
-                coverAspectRatio = size.width / size.height
+                let ratio = size.width / size.height
+                guard ratio != coverAspectRatio else { return }
+                withAnimation(loadingAnimation) {
+                    coverAspectRatio = ratio
+                }
             }
         )
         .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 10)
@@ -256,7 +258,11 @@ struct MangaDetailsHeaderView: View {
             )
         }
         .id(manga.cover ?? "")
-        .onChange(of: manga.cover) { _ in coverAspectRatio = 2 / 3 }
+        .onChange(of: manga.cover) { _ in
+            withAnimation(loadingAnimation) {
+                coverAspectRatio = 2 / 3
+            }
+        }
         .padding(.top, 12)
         .padding(.bottom, 23)
         .frame(maxWidth: .infinity)
@@ -316,6 +322,7 @@ struct MangaDetailsHeaderView: View {
                     }
                 }
                 .padding(.top, 7)
+                .transition(.opacity)
             }
 
             if !metadataText.isEmpty {
@@ -324,8 +331,11 @@ struct MangaDetailsHeaderView: View {
                     .foregroundStyle(headerTextColor.opacity(0.7))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
+                    .contentTransitionDisabledPlease()
+                    .transaction { $0.animation = nil }
                     .padding(.top, 7)
                     .padding(.horizontal, 20)
+                    .transition(.identity)
             }
 
             HStack(spacing: 12) {
@@ -342,32 +352,41 @@ struct MangaDetailsHeaderView: View {
                     .foregroundStyle(headerTextColor)
                     .background(headerControlBackgroundColor, in: Circle())
                     .accessibilityLabel(NSLocalizedString("OPEN_SOURCE_PAGE"))
+                    .transition(.opacity)
                 }
 
                 Button {
                     onReadButtonPressed?()
                 } label: {
-                    VStack(spacing: 0.5) {
-                        Text(readButtonTitle)
-                            .font(.system(size: 16, weight: .semibold))
-                            .lineLimit(1)
-                        if let readButtonSubtitle {
-                            Text(developerMode.value
-                                ? DeveloperMode.chapterTitle(for: String(describing: manga.identifier))
-                                : readButtonSubtitle)
-                                .font(.system(size: 13))
-                                .foregroundStyle(readButtonTextColor.opacity(0.62))
-                                .lineLimit(1)
-                                .truncationMode(.tail)
+                    Text(readButtonTitle)
+                        .font(.system(size: 16, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .contentTransitionDisabledPlease()
+                        .transaction { $0.animation = nil }
+                        .padding(.bottom, readButtonSubtitle == nil ? 0 : 17)
+                        .overlay(alignment: .bottom) {
+                            if let readButtonSubtitle {
+                                Text(developerMode.value
+                                    ? DeveloperMode.chapterTitle(for: String(describing: manga.identifier))
+                                    : readButtonSubtitle)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(readButtonTextColor.opacity(0.62))
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                    .contentTransitionDisabledPlease()
+                                    .transaction { $0.animation = nil }
+                                    .frame(maxWidth: .infinity)
+                                    .transition(.identity)
+                            }
                         }
-                    }
-                    .padding(.horizontal, 22)
-                    .frame(maxWidth: 200, minHeight: 48)
-                    .contentShape(Capsule())
+                        .padding(.horizontal, readButtonSubtitle == nil ? 18 : 24)
+                        .frame(minWidth: 168, minHeight: 48)
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(readButtonTextColor)
-                .background(readButtonColor, in: Capsule())
+                .foregroundStyle(readButtonTextColor.opacity(readButtonDisabled ? 0.78 : 1))
+                .background(readButtonColor.opacity(readButtonDisabled ? 0.67 : 1), in: Capsule())
                 .disabled(readButtonDisabled)
 
                 Button {
@@ -403,6 +422,8 @@ struct MangaDetailsHeaderView: View {
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.top, 28)
             .padding(.horizontal, 20)
+            .animation(loadingAnimation, value: readButtonTitle)
+            .animation(loadingAnimation, value: readButtonSubtitle)
 
             if let description = manga.description, !description.isEmpty {
                 ExpandableTextView(
@@ -415,6 +436,7 @@ struct MangaDetailsHeaderView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 18)
                     .padding(.horizontal, 20)
+                    .transition(.opacity)
             }
 
             tagsView
@@ -526,6 +548,7 @@ struct MangaDetailsHeaderView: View {
                 .padding(.horizontal, 20)
             }
             .padding(.bottom, 8)
+            .transition(.opacity)
         }
     }
 
@@ -580,30 +603,28 @@ struct MangaDetailsHeaderView: View {
     func updateReadButtonText() {
         var title = ""
         var subtitle: String?
+        var disabled = true
         if allChaptersLocked {
             title = NSLocalizedString("ALL_CHAPTERS_LOCKED")
-            readButtonDisabled = true
         } else if allChaptersRead {
             title = NSLocalizedString("ALL_CHAPTERS_READ")
-            readButtonDisabled = true
         } else if source == nil {
             title = NSLocalizedString("UNAVAILABLE")
-            readButtonDisabled = true
+        } else if let chapter = nextChapter {
+            title = readingInProgress
+                ? NSLocalizedString("CONTINUE_READING")
+                : NSLocalizedString("START_READING")
+            subtitle = chapter.sourceDisplayTitle
+            disabled = false
         } else {
-            if let chapter = nextChapter {
-                if !readingInProgress {
-                    title = NSLocalizedString("START_READING")
-                } else {
-                    title = NSLocalizedString("CONTINUE_READING")
-                }
-                subtitle = chapter.sourceDisplayTitle
-            } else {
-                title = NSLocalizedString("NO_CHAPTERS_AVAILABLE")
-            }
-            readButtonDisabled = false
+            title = NSLocalizedString("NO_CHAPTERS_AVAILABLE")
         }
-        readButtonTitle = title
-        readButtonSubtitle = subtitle
+        guard title != readButtonTitle || subtitle != readButtonSubtitle || disabled != readButtonDisabled else { return }
+        withAnimation(loadingAnimation) {
+            readButtonTitle = title
+            readButtonSubtitle = subtitle
+            readButtonDisabled = disabled
+        }
     }
 }
 
@@ -748,7 +769,6 @@ private struct AlternateCoverPicker: View {
         filters: $filters,
         langFilter: $langFilter,
         scanlatorFilter: $scanlatorFilter,
-        chapterTitleDisplayMode: $chapterTitleDisplayMode,
-        hasOtherDownloads: false,
+        chapterTitleDisplayMode: $chapterTitleDisplayMode
     )
 }

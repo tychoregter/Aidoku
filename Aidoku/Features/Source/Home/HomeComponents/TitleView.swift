@@ -26,14 +26,14 @@ struct TitleView: View {
                 }
                 .contentShape(Rectangle())
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 20)
             .buttonStyle(.plain)
         } else {
             HStack {
                 titleView
                 Spacer()
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 20)
         }
     }
 

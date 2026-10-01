@@ -100,7 +100,7 @@ struct HomeImageScrollerView: View {
                             }
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, 20)
                     .scrollTargetLayoutPlease()
                 }
                 .scrollViewAlignedPlease()
@@ -148,7 +148,7 @@ struct PlaceholderHomeImageScrollerView: View {
                     .font(.title3)
                     .fontWeight(.semibold)
                     .lineLimit(1)
-                    .padding(.horizontal)
+                    .padding(.horizontal, 20)
             }
 
             Self.mainView
@@ -167,7 +167,7 @@ struct PlaceholderHomeImageScrollerView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 20)
         }
     }
 }

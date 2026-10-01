@@ -9,12 +9,13 @@ import SwiftUI
 
 struct ListButtonStyle: ButtonStyle {
     var tint: Bool = true
+    var horizontalInset: CGFloat = 16
 
     @ViewBuilder
     func makeBody(configuration: Configuration) -> some View {
         let label = configuration.label
             .padding(.vertical, 12)
-            .padding(.horizontal)
+            .padding(.horizontal, horizontalInset)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 Group {

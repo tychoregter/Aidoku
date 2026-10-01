@@ -92,7 +92,7 @@ struct HomeFiltersView: View {
                     }
                 }
             }
-            .padding(.horizontal)
+            .padding(.horizontal, 20)
         }
     }
 
@@ -125,7 +125,7 @@ struct PlaceholderHomeFiltersView: View {
                 Text("Loading")
                     .font(.title3)
                     .fontWeight(.semibold)
-                    .padding(.horizontal)
+                    .padding(.horizontal, 20)
             }
 
             Self.mainView
@@ -152,6 +152,6 @@ struct PlaceholderHomeFiltersView: View {
                 }
             }
         }
-        .padding(.horizontal)
+        .padding(.horizontal, 20)
     }
 }

@@ -7,9 +7,11 @@
 
 import AidokuRunner
 import SwiftUI
+import UIKit
 
 struct MultiSelectFilterView: View {
     let filter: AidokuRunner.Filter
+    let usesLibrarySelectionStyle: Bool
 
     @Binding var enabledFilters: [FilterValue]
 
@@ -19,9 +21,14 @@ struct MultiSelectFilterView: View {
     @State private var includedOptions: [String]
     @State private var excludedOptions: [String]
 
-    init(filter: AidokuRunner.Filter, enabledFilters: Binding<[FilterValue]>) {
+    init(
+        filter: AidokuRunner.Filter,
+        enabledFilters: Binding<[FilterValue]>,
+        usesLibrarySelectionStyle: Bool = false
+    ) {
         self.filter = filter
         self._enabledFilters = enabledFilters
+        self.usesLibrarySelectionStyle = usesLibrarySelectionStyle
 
         if case let .multiselect(filter) = filter.value {
             self.multiSelectFilter = filter
@@ -56,28 +63,41 @@ struct MultiSelectFilterView: View {
                 badgeCount: isDefault ? 0 : includedOptions.count + excludedOptions.count,
                 chevron: true
             )
-            Menu {
-                ForEach(Array(multiSelectFilter.options.enumerated()), id: \.offset) { offset, option in
-                    let id = multiSelectFilter.ids?[safe: offset] ?? option
-                    Button {
-                        toggle(option: id)
-                    } label: {
-                        HStack {
-                            Text(option)
-                            Spacer()
-                            if includedOptions.contains(id) {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
-                            } else if multiSelectFilter.canExclude, excludedOptions.contains(id) {
-                                Image(systemName: "xmark")
-                                    .foregroundStyle(.tint)
+            if usesLibrarySelectionStyle {
+                LibraryStyleMultiSelectMenuButton(
+                    options: multiSelectFilter.options.enumerated().map { offset, option in
+                        (title: option, id: multiSelectFilter.ids?[safe: offset] ?? option)
+                    },
+                    canExclude: multiSelectFilter.canExclude,
+                    includedOptions: $includedOptions,
+                    excludedOptions: $excludedOptions,
+                    accessibilityLabel: filter.title ?? "",
+                    badgeCount: isDefault ? 0 : includedOptions.count + excludedOptions.count
+                )
+            } else {
+                Menu {
+                    ForEach(Array(multiSelectFilter.options.enumerated()), id: \.offset) { offset, option in
+                        let id = multiSelectFilter.ids?[safe: offset] ?? option
+                        Button {
+                            toggle(option: id)
+                        } label: {
+                            HStack {
+                                Text(option)
+                                Spacer()
+                                if includedOptions.contains(id) {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(.tint)
+                                } else if multiSelectFilter.canExclude, excludedOptions.contains(id) {
+                                    Image(systemName: "xmark")
+                                        .foregroundStyle(.tint)
+                                }
                             }
                         }
+                        .menuActionDismissDisabled()
                     }
+                } label: {
+                    label
                 }
-                .menuActionDismissDisabled()
-            } label: {
-                label
             }
         }
         .sheet(isPresented: $showingSheet) {
@@ -136,6 +156,89 @@ struct MultiSelectFilterView: View {
             }
         } else if !isDefault {
             enabledFilters.append(filterValue)
+        }
+    }
+}
+
+private struct LibraryStyleMultiSelectMenuButton: UIViewRepresentable {
+    let options: [(title: String, id: String)]
+    let canExclude: Bool
+    @Binding var includedOptions: [String]
+    @Binding var excludedOptions: [String]
+    let accessibilityLabel: String
+    let badgeCount: Int
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> LibraryStyleFilterMenuButtonView {
+        let button = LibraryStyleFilterMenuButtonView()
+        button.accessibilityLabel = accessibilityLabel
+        button.update(title: accessibilityLabel, badgeCount: badgeCount, active: badgeCount > 0, darkMode: colorScheme == .dark)
+        context.coordinator.button = button
+        button.menu = UIMenu(children: [UIDeferredMenuElement.uncached { [weak coordinator = context.coordinator] completion in
+            completion(coordinator?.makeMenu().children ?? [])
+        }])
+        return button
+    }
+
+    func updateUIView(_ button: LibraryStyleFilterMenuButtonView, context: Context) {
+        context.coordinator.parent = self
+        button.accessibilityLabel = accessibilityLabel
+        button.update(title: accessibilityLabel, badgeCount: badgeCount, active: badgeCount > 0, darkMode: colorScheme == .dark)
+    }
+
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        uiView: LibraryStyleFilterMenuButtonView,
+        context: Context
+    ) -> CGSize? {
+        uiView.intrinsicContentSize
+    }
+
+    final class Coordinator {
+        var parent: LibraryStyleMultiSelectMenuButton
+        weak var button: UIButton?
+
+        init(_ parent: LibraryStyleMultiSelectMenuButton) {
+            self.parent = parent
+        }
+
+        func makeMenu(included: [String]? = nil, excluded: [String]? = nil) -> UIMenu {
+            let included = included ?? parent.includedOptions
+            let excluded = excluded ?? parent.excludedOptions
+            return UIMenu(children: parent.options.map { option in
+                let state: UIMenuElement.State = included.contains(option.id) ? .on
+                    : (parent.canExclude && excluded.contains(option.id) ? .mixed : .off)
+                return UIAction(
+                    title: option.title,
+                    attributes: .keepsMenuPresented,
+                    state: state
+                ) { [weak self] _ in
+                    self?.toggle(option.id)
+                }
+            })
+        }
+
+        private func toggle(_ id: String) {
+            var included = parent.includedOptions
+            var excluded = parent.excludedOptions
+            if let index = included.firstIndex(of: id) {
+                included.remove(at: index)
+                if parent.canExclude { excluded.append(id) }
+            } else if parent.canExclude, let index = excluded.firstIndex(of: id) {
+                excluded.remove(at: index)
+            } else {
+                included.append(id)
+            }
+            parent.includedOptions = included
+            parent.excludedOptions = excluded
+
+            if let interaction = button?.interactions.compactMap({ $0 as? UIContextMenuInteraction }).first {
+                let updatedMenu = makeMenu(included: included, excluded: excluded)
+                interaction.updateVisibleMenu { _ in updatedMenu }
+            }
         }
     }
 }
@@ -252,14 +355,14 @@ struct MultiSelectFilterGroupView: View {
                     toggle(option: id)
                 } label: {
                     HStack {
+                        let state: FilterState = if includedOptions.contains(id) {
+                            .included
+                        } else if multiSelectFilter.canExclude, excludedOptions.contains(id) {
+                            .excluded
+                        } else {
+                            .normal
+                        }
                         ZStack {
-                            let state: FilterState = if includedOptions.contains(id) {
-                                .included
-                            } else if multiSelectFilter.canExclude, excludedOptions.contains(id) {
-                                .excluded
-                            } else {
-                                .normal
-                            }
                             RoundedRectangle(cornerRadius: 5)
                                 .fill(state == .normal ? Color(uiColor: .secondarySystemFill) : Color.accentColor)
                                 .aspectRatio(1, contentMode: .fill)

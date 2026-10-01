@@ -179,7 +179,7 @@ struct LibrarySettings: Sendable {
     let unreadChapterBadges = SettingsKey<Bool>("Library.unreadChapterBadges", default: true)
     let downloadedChapterBadges = SettingsKey<Bool>("Library.downloadedChapterBadges", default: true)
     let pinTitles = SettingsKey<String>("Library.pinTitles", default: LibraryViewModel.PinType.none.rawValue)
-    let pinTitlesIgnoreFilters = SettingsKey<Bool>("Library.pinTitlesIgnoreFilters", default: false)
+    let pinTitlesIgnoreFilters = SettingsKey<Bool>("Library.pinTitlesIgnoreFilters", default: true)
     let pinTitlesIgnoredFilters = SettingsKey<[String]>(
         "Library.pinTitlesIgnoredFilters",
         default: LibraryFilter.FilterMethod.pinTitlesIgnoreFilterMethods.map(\.pinTitlesIgnoreFilterIdentifier)
@@ -190,11 +190,11 @@ struct LibrarySettings: Sendable {
     )
     let continueReadingHideCaughtUpTitles = SettingsKey<Bool>(
         "Library.hideCaughtUpPinnedTitles",
-        default: false
+        default: true
     )
     let continueReadingIgnoreFilters = SettingsKey<Bool>(
         "Library.continueReadingIgnoreFilters",
-        default: false
+        default: true
     )
     let continueReadingIgnoredFilters = SettingsKey<[String]>(
         "Library.continueReadingIgnoredFilters",
