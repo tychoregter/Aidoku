@@ -41,6 +41,8 @@ final class ReaderThumbnailScrubberView: UIControl {
         static let horizontalInset: CGFloat = 22
         static let trackHeight: CGFloat = 22
         static let selectedPageHeight: CGFloat = 33
+        static let selectionGrabInset: CGFloat = 12
+        static let dragDeadZone: CGFloat = 0.5
         static let pageAspectRatio: CGFloat = 0.70
         static let previewWidth: CGFloat = 82
         static let previewImageInset: CGFloat = 5
@@ -129,6 +131,12 @@ final class ReaderThumbnailScrubberView: UIControl {
     private var isActivelyScrubbing = false
     private var continuousPageIndex: Int?
     private var immediateGestureUpdatedValue = false
+    private var hasClassifiedTouchStart = false
+    private var touchBeganOnSelection = false
+    private var selectionGrabOffsetX: CGFloat?
+    private var selectionGrabStartX: CGFloat?
+    private var selectionGrabStartValue: CGFloat?
+    private var selectionGrabHasMoved = false
     private var isBlockingParentGestures = false
     private let selectionFeedbackGenerator = UISelectionFeedbackGenerator()
 
@@ -267,22 +275,53 @@ final class ReaderThumbnailScrubberView: UIControl {
 
     override func beginTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
         guard pageCount > 0 else { return false }
+        // Webtoons use the immediate recognizer below because the scroll view
+        // can delay UIControl tracking until after the finger has moved.
+        guard !usesContinuousProgress else { return false }
         setParentGestureBlocking(true)
         immediateGestureUpdatedValue = false
         let location = touch.location(in: self)
-        let beganOnSelection = selectionView.frame.insetBy(dx: -8, dy: -8).contains(location)
+        let beganOnSelection = classifyTouchStart(at: location)
         beginActiveInteraction(producesFeedback: beganOnSelection)
         if !usesContinuousProgress {
             schedulePreviewShow()
         }
-        updateValue(at: location)
-        sendActions(for: .valueChanged)
+        if !beganOnSelection && selectionGrabStartX == nil {
+            updateValue(at: location)
+            anchorDrag(at: location)
+            sendActions(for: .valueChanged)
+        }
         return true
     }
 
     override func continueTracking(_ touch: UITouch, with event: UIEvent?) -> Bool {
-        updateValue(at: touch.location(in: self))
-        sendActions(for: .valueChanged)
+        if updateTracking(at: touch.location(in: self)) {
+            sendActions(for: .valueChanged)
+        }
+        return true
+    }
+
+    private func updateTracking(at touchLocation: CGPoint) -> Bool {
+        var location = touchLocation
+        if let startX = selectionGrabStartX, let offsetX = selectionGrabOffsetX {
+            let movement = location.x - startX
+            let deadZone = usesContinuousProgress ? 0 : Metrics.dragDeadZone
+            if abs(movement) <= deadZone && !selectionGrabHasMoved {
+                return false
+            }
+            selectionGrabHasMoved = true
+            if usesContinuousProgress {
+                guard let startValue = selectionGrabStartValue,
+                      thumbnailContentFrame.width > 0 else { return false }
+                let directionSign: CGFloat = direction == .backward ? -1 : 1
+                currentValue = startValue + directionSign * movement
+                    / thumbnailContentFrame.width * (maximumValue - minimumValue)
+                return true
+            }
+            let effectiveMovement = max(0, abs(movement) - deadZone)
+            location.x = startX - offsetX + (movement < 0 ? -effectiveMovement : effectiveMovement)
+        }
+        updateValue(at: location)
         return true
     }
 
@@ -293,6 +332,7 @@ final class ReaderThumbnailScrubberView: UIControl {
         }
         sendActions(for: .editingDidEnd)
         setParentGestureBlocking(false)
+        resetTouchStart()
     }
 
     override func cancelTracking(with event: UIEvent?) {
@@ -302,6 +342,7 @@ final class ReaderThumbnailScrubberView: UIControl {
         }
         sendActions(for: .editingDidEnd)
         setParentGestureBlocking(false)
+        resetTouchStart()
     }
 
     override func accessibilityIncrement() {
@@ -318,9 +359,8 @@ final class ReaderThumbnailScrubberView: UIControl {
         clipsToBounds = false
         isExclusiveTouch = true
 
-        // A Webtoon reader's scroll view delays UIControl tracking until the
-        // finger moves. This zero-delay, non-cancelling recognizer lets the
-        // active thumbnail respond immediately without taking over dragging.
+        // A Webtoon reader's scroll view can delay UIControl tracking. This
+        // zero-delay recognizer owns its scrubber drag from touch-down onward.
         let immediateTouchRecognizer = UILongPressGestureRecognizer(
             target: self,
             action: #selector(handleImmediateTouch(_:))
@@ -524,18 +564,66 @@ final class ReaderThumbnailScrubberView: UIControl {
         }
     }
 
+    private func classifyTouchStart(at location: CGPoint) -> Bool {
+        if !hasClassifiedTouchStart {
+            hasClassifiedTouchStart = true
+            touchBeganOnSelection = selectionView.frame.insetBy(
+                dx: -Metrics.selectionGrabInset,
+                dy: -Metrics.selectionGrabInset
+            ).contains(location)
+            if touchBeganOnSelection {
+                anchorDrag(at: location)
+            }
+        }
+        return touchBeganOnSelection
+    }
+
+    private func anchorDrag(at location: CGPoint) {
+        selectionGrabOffsetX = location.x - selectionView.center.x
+        selectionGrabStartX = location.x
+        selectionGrabStartValue = currentValue
+    }
+
+    private func resetTouchStart() {
+        hasClassifiedTouchStart = false
+        touchBeganOnSelection = false
+        selectionGrabOffsetX = nil
+        selectionGrabStartX = nil
+        selectionGrabStartValue = nil
+        selectionGrabHasMoved = false
+    }
+
     @objc private func handleImmediateTouch(_ recognizer: UILongPressGestureRecognizer) {
         switch recognizer.state {
             case .began:
+                guard pageCount > 0 else { return }
                 let location = recognizer.location(in: self)
                 setParentGestureBlocking(true)
+                immediateGestureUpdatedValue = false
+                let grabbedSelection = classifyTouchStart(at: location)
                 if usesContinuousProgress {
-                    immediateGestureUpdatedValue = true
                     beginActiveInteraction(producesFeedback: true)
-                    updateValue(at: location)
-                    sendActions(for: .valueChanged)
-                } else if selectionView.frame.insetBy(dx: -8, dy: -8).contains(location) {
+                    if !grabbedSelection {
+                        let oldValue = currentValue
+                        updateValue(at: location)
+                        if currentValue != oldValue {
+                            immediateGestureUpdatedValue = true
+                            sendActions(for: .valueChanged)
+                        }
+                        // The reader can adjust progress during the seek. Use its
+                        // resulting position as the origin for the rest of the drag.
+                        anchorDrag(at: location)
+                    }
+                } else if grabbedSelection {
                     beginActiveInteraction(producesFeedback: true)
+                }
+            case .changed:
+                if usesContinuousProgress {
+                    let oldValue = currentValue
+                    if updateTracking(at: recognizer.location(in: self)), currentValue != oldValue {
+                        immediateGestureUpdatedValue = true
+                        sendActions(for: .valueChanged)
+                    }
                 }
             case .ended, .cancelled, .failed:
                 let shouldFinishValueChange = immediateGestureUpdatedValue && !isTracking
@@ -543,6 +631,7 @@ final class ReaderThumbnailScrubberView: UIControl {
                 if !isTracking {
                     setSelectionExpanded(false)
                     setParentGestureBlocking(false)
+                    resetTouchStart()
                 }
                 if shouldFinishValueChange {
                     sendActions(for: .editingDidEnd)
