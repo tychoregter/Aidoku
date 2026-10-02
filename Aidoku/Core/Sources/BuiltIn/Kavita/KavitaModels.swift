@@ -8,6 +8,26 @@
 import AidokuRunner
 import Foundation
 
+enum KavitaGenreStore {
+    private static let lock = NSLock()
+
+    static func genres(sourceKey: String, mangaKey: String) -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        let values = UserDefaults.standard.dictionary(forKey: "\(sourceKey).genreMetadata") as? [String: [String]]
+        return values?[mangaKey] ?? []
+    }
+
+    static func store(_ genres: [String], sourceKey: String, mangaKey: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        let key = "\(sourceKey).genreMetadata"
+        var values = UserDefaults.standard.dictionary(forKey: key) as? [String: [String]] ?? [:]
+        values[mangaKey] = genres.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        UserDefaults.standard.set(values, forKey: key)
+    }
+}
+
 struct KavitaErrorResponse: Codable, Sendable {
     let title: String
     let status: Int
@@ -182,6 +202,9 @@ extension KavitaSeries {
         apiKey: String,
         metadata: KavitaSeriesMetadata? = nil
     ) -> AidokuRunner.Manga {
+        if let metadata {
+            KavitaGenreStore.store(metadata.genres.map(\.title), sourceKey: sourceKey, mangaKey: "\(id)")
+        }
         let status: AidokuRunner.PublishingStatus = switch metadata?.publicationStatus {
             case .ongoing: .ongoing
             case .hiatus: .hiatus

@@ -118,6 +118,8 @@ struct LibrarySettings: Sendable {
             showCoverAuthors,
             contextMenuPagePreviews,
             showChapterPageCounts,
+            showMangaInfoGenres,
+            showMangaInfoTags,
             chapterListOrder,
             chapterListSortAscending,
             threeStateFilterMethods,
@@ -166,6 +168,8 @@ struct LibrarySettings: Sendable {
     let contextMenuPagePreviews = SettingsKey<Bool>("Library.contextMenuPagePreviews", default: true)
     // Keep the existing key so moving the setting does not reset the user's choice.
     let showChapterPageCounts = SettingsKey<Bool>("Reader.showChapterPageCounts", default: false)
+    let showMangaInfoGenres = SettingsKey<Bool>("Library.showMangaInfoGenres", default: true)
+    let showMangaInfoTags = SettingsKey<Bool>("Library.showMangaInfoTags", default: true)
     let chapterListOrder = SettingsKey<String>("Library.chapterListOrder", default: ChapterListOrder.automatic.rawValue)
     let chapterListSortAscending = SettingsKey<Bool>("Library.chapterListSortAscending", default: true)
     let threeStateFilterMethods = SettingsKey<[String]>(

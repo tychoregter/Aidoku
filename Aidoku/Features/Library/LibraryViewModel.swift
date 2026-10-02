@@ -1715,7 +1715,7 @@ private func libraryReadingSubtitle(for manga: MangaObject, context: NSManagedOb
     let chapterTitle: String
     if let number = next.chapterNumber, number >= 0 {
         chapterTitle = String(
-            format: NSLocalizedString("LIBRARY_COVER_CHAPTER_NUMBER", value: "Chapter %@", comment: "Chapter number beneath a library cover"),
+            format: NSLocalizedString("LIBRARY_COVER_CHAPTER_NUMBER", value: "Book %@", comment: "Book number beneath a library cover"),
             String(format: "%g", Double(number))
         )
     } else {

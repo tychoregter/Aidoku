@@ -27,7 +27,7 @@ enum ChapterSortOption: Int, CaseIterable {
         switch self {
             case .default, .automatic: NSLocalizedString("AUTOMATIC")
             case .sourceOrder: NSLocalizedString("SOURCE_ORDER")
-            case .chapter: NSLocalizedString("CHAPTER")
+            case .chapter: NSLocalizedString("BOOK_ORDER", value: "Book Order", comment: "Sort chapters by their book number")
             case .uploadDate: NSLocalizedString("UPLOAD_DATE")
         }
     }

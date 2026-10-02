@@ -991,13 +991,13 @@ private enum LibraryReadingStatus {
             .sorted { $0.sourceOrder < $1.sourceOrder }
 
         guard isReadingPin else {
-            return "\(chapters.count) chapters"
+            return bookCountSubtitle(chapters.count)
         }
 
         let identifier = manga.identifier
         let history = CoreDataManager.shared.getHistoryForManga(mangaId: identifier, context: context)
             .sorted { ($0.dateRead ?? .distantPast) > ($1.dateRead ?? .distantPast) }
-        guard let latestHistory = history.first else { return "\(chapters.count) chapters" }
+        guard let latestHistory = history.first else { return bookCountSubtitle(chapters.count) }
         let historyChapter = latestHistory.chapter ?? CoreDataManager.shared.getChapter(
             chapterId: ChapterIdentifier(
                 sourceKey: identifier.sourceKey,
@@ -1006,10 +1006,10 @@ private enum LibraryReadingStatus {
             ),
             context: context
         )
-        guard let historyChapter else { return "\(chapters.count) chapters" }
+        guard let historyChapter else { return bookCountSubtitle(chapters.count) }
 
         guard let currentIndex = chapters.firstIndex(where: { $0.sourceOrder == historyChapter.sourceOrder }) else {
-            return "\(chapters.count) chapters"
+            return bookCountSubtitle(chapters.count)
         }
 
         if latestHistory.completed {
@@ -1039,15 +1039,15 @@ private enum LibraryReadingStatus {
         if chapterCount == 1 {
             return NSLocalizedString(
                 "LIBRARY_COVER_ONE_CHAPTER",
-                value: "1 chapter",
-                comment: "One chapter beneath a library cover"
+                value: "1 book",
+                comment: "One book beneath a library cover"
             )
         }
         return String(
             format: NSLocalizedString(
                 "LIBRARY_COVER_CHAPTERS",
-                value: "%d chapters",
-                comment: "Chapter count beneath a library cover"
+                value: "%d books",
+                comment: "Book count beneath a library cover"
             ),
             chapterCount
         )
@@ -1056,6 +1056,12 @@ private enum LibraryReadingStatus {
     private static func chapterSubtitle(for chapter: ChapterObject) -> String {
         let chapterName = chapter.toNewChapter().sourceDisplayTitle
         return truncatedShortcutSubtitle(chapterName)
+    }
+
+    private static func bookCountSubtitle(_ count: Int) -> String {
+        count == 1
+            ? NSLocalizedString("LIBRARY_COVER_ONE_CHAPTER", value: "1 book", comment: "One book beneath a library cover")
+            : String(format: NSLocalizedString("LIBRARY_COVER_CHAPTERS", value: "%d books", comment: "Book count beneath a library cover"), count)
     }
 
     private static func truncatedShortcutSubtitle(_ value: String, maximumLength: Int = 48) -> String {

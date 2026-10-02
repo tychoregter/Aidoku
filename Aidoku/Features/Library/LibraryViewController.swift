@@ -943,22 +943,22 @@ class LibraryViewController: OldMangaCollectionViewController {
             return info.author ?? ""
         }
         if info.totalChapters == 1 {
-            return NSLocalizedString("LIBRARY_COVER_ONE_CHAPTER", value: "1 chapter", comment: "One chapter beneath a library cover")
+            return NSLocalizedString("LIBRARY_COVER_ONE_CHAPTER", value: "1 book", comment: "One book beneath a library cover")
         }
         return String(
-            format: NSLocalizedString("LIBRARY_COVER_CHAPTERS", value: "%d chapters", comment: "Chapter count beneath a library cover"),
+            format: NSLocalizedString("LIBRARY_COVER_CHAPTERS", value: "%d books", comment: "Book count beneath a library cover"),
             info.totalChapters
         )
     }
 
     private func developerSubtitle(for info: MangaInfo, indexPath: IndexPath) -> String {
         let section = dataSource.snapshot().sectionIdentifiers[safe: indexPath.section]
-        if section == .continueReading { return "Chapter 3" }
+        if section == .continueReading { return "Book 3" }
         if info.isLibraryStack { return "Collection" }
         if AppSettings.library.showCoverAuthors.get() {
             return DeveloperMode.author(for: String(describing: info.id))
         }
-        return info.totalChapters == 1 ? "1 chapter" : "\(info.totalChapters) chapters"
+        return info.totalChapters == 1 ? "1 book" : "\(info.totalChapters) books"
     }
 
     override func setEditing(_ editing: Bool, animated: Bool) {

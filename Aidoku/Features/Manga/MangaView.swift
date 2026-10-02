@@ -40,6 +40,7 @@ struct MangaView: View {
     @State private var openChapter: AidokuRunner.Chapter?
 
     @StateObject private var developerMode = UserDefaultsBool(key: AppSettings.general.developerMode.key)
+    @StateObject private var incognitoMode = UserDefaultsBool(key: AppSettings.general.incognitoMode.key)
 
     private var path: NavigationCoordinator
     private let readerTransitionSource: ReaderTransitionSource?
@@ -243,7 +244,7 @@ struct MangaView: View {
                             coverImage: viewModel.manga.cover ?? "",
                             baseColor: backdropDominantColor,
                             privacyPlaceholder: developerMode.value,
-                            roundsTopCorners: roundsHeaderTopCorners
+                            roundsTopCorners: roundsHeaderTopCorners && !incognitoMode.value
                         )
                         .frame(height: headerHeight)
                         .frame(maxHeight: .infinity, alignment: .top)

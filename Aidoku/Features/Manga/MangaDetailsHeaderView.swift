@@ -60,6 +60,8 @@ struct MangaDetailsHeaderView: View {
     @State private var descriptionExpansionAnimating = false
     @StateObject private var developerMode = UserDefaultsBool(key: AppSettings.general.developerMode.key)
     @StateObject private var hideNSFWCovers = UserDefaultsBool(key: AppSettings.appearance.blurNSFWCovers.key)
+    @StateObject private var showGenres = UserDefaultsBool(key: AppSettings.library.showMangaInfoGenres.key)
+    @StateObject private var showTags = UserDefaultsBool(key: AppSettings.library.showMangaInfoTags.key)
 
     private static let coverDimensionBudget: CGFloat = 500
     private var loadingAnimation: Animation? {
@@ -492,7 +494,6 @@ struct MangaDetailsHeaderView: View {
             }
 
             tagsView
-                .padding(.top, 12)
         }
         .foregroundStyle(headerTextColor)
         .frame(maxWidth: .infinity)
@@ -549,7 +550,7 @@ struct MangaDetailsHeaderView: View {
     private var metadataText: String {
         if developerMode.value {
             let count = manga.chapters?.count ?? chapters.count
-            return "Ongoing · \(count) \(count == 1 ? "Chapter" : "Chapters") · Library"
+            return "Ongoing · \(count) \(count == 1 ? "Book" : "Books") · Library"
         }
         var details: [String] = []
         if manga.status != .unknown {
@@ -571,10 +572,11 @@ struct MangaDetailsHeaderView: View {
 
     @ViewBuilder
     var tagsView: some View {
-        if let tags = manga.tags, !tags.isEmpty {
+        let tags = visibleTags
+        if !tags.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(manga.tags ?? [], id: \.self) { tag in
+                    ForEach(tags, id: \.self) { tag in
                         let label = TagView(
                             text: developerMode.value ? DeveloperMode.tag(for: tag) : tag,
                             foregroundColor: headerTextColor,
@@ -599,8 +601,29 @@ struct MangaDetailsHeaderView: View {
                 }
                 .padding(.horizontal, 20)
             }
+            .padding(.top, 12)
             .padding(.bottom, 8)
             .transition(.opacity)
+        }
+    }
+
+    private var visibleTags: [String] {
+        guard let tags = manga.tags, !tags.isEmpty else { return [] }
+
+        let sourceKey = manga.sourceKey
+        let genreCount: Int?
+        if sourceKey.hasPrefix(KomgaSourceRunner.sourceKeyPrefix) {
+            genreCount = KomgaGenreStore.genres(sourceKey: sourceKey, mangaKey: manga.key).count
+        } else if sourceKey.hasPrefix(KavitaSourceRunner.sourceKeyPrefix) {
+            genreCount = KavitaGenreStore.genres(sourceKey: sourceKey, mangaKey: manga.key).count
+        } else {
+            // Sources with only one label list expose those labels as genres.
+            genreCount = nil
+        }
+
+        return tags.enumerated().compactMap { index, tag in
+            let isGenre = genreCount.map { index < $0 } ?? true
+            return (isGenre ? showGenres.value : showTags.value) ? tag : nil
         }
     }
 

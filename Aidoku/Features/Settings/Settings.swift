@@ -567,6 +567,16 @@ extension Settings {
                         values: ChapterListOrder.allCases.map(\.rawValue),
                         titles: ChapterListOrder.allCases.map(\.localizedTitle)
                     ))
+                ),
+                .init(
+                    key: AppSettings.library.showMangaInfoGenres.key,
+                    title: NSLocalizedString("SHOW_GENRES", value: "Show Genres", comment: "Show genre pills on manga info screens"),
+                    value: .toggle(.init())
+                ),
+                .init(
+                    key: AppSettings.library.showMangaInfoTags.key,
+                    title: NSLocalizedString("SHOW_TAGS", value: "Show Tags", comment: "Show tag pills on manga info screens"),
+                    value: .toggle(.init())
                 )
             ]))
         )
@@ -1185,7 +1195,7 @@ extension Settings {
                 ),
                 .init(
                     key: "Advanced.migrateHistory",
-                    title: "Migrate Chapter History",
+                    title: "Migrate Book History",
                     value: .button(.init())
                 ),
                 .init(

@@ -41,7 +41,7 @@ enum DeveloperMode {
             "A Place to Begin", "Under Open Skies", "The Faraway Shore", "A Gentle Season",
             "Between Two Worlds", "The Winding Road", "Notes from Tomorrow", "A World Apart",
             "The Little Things", "Across the Blue", "When We Were Young", "The Long Way Home",
-            "A New Chapter", "Beneath the Lanterns", "The Morning After", "Somewhere, Someday",
+            "A New Book", "Beneath the Lanterns", "The Morning After", "Somewhere, Someday",
             "The Shape of Things", "A Thousand Miles", "Our Secret Garden", "The Turning Point",
             "Light Through the Leaves", "The Other Side of Spring", "A Story Untold", "Far from Here"
         ]
