@@ -35,10 +35,12 @@ struct MangaCoverView: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.colorScheme) private var colorScheme
     @State private var sampledNSFWColor: UIColor?
+    @StateObject private var hideNSFWCovers = UserDefaultsBool(key: AppSettings.appearance.blurNSFWCovers.key)
 
     var source: AidokuRunner.Source?
 
     let coverImage: String
+    var paletteIdentifier: MangaIdentifier?
     var width: CGFloat?
     var height: CGFloat?
     var downsampleWidth: CGFloat?
@@ -48,14 +50,20 @@ struct MangaCoverView: View {
     var borderColor: Color? = nil
     var placeholder = "MangaPlaceholder"
     var privacyPlaceholder = false
+    var usesHiddenCoverColorPlaceholder = false
+    var showsCachedCoverImmediately = false
     var hideNSFW = false
+    var isNSFW = false
     var nsfwBaseColor: UIColor?
     var onDominantColorChange: ((UIColor) -> Void)?
     var onImageSizeChange: ((CGSize) -> Void)?
     var bookmarked: Bool = false
 
+    private var hidesCover: Bool { hideNSFW || (isNSFW && hideNSFWCovers.value) }
+
     private var hiddenCoverColor: UIColor {
-        NSFWCoverView.backgroundColor(
+        CoverPalette.hiddenColor(for: coverImage, dark: colorScheme == .dark)
+            ?? NSFWCoverView.backgroundColor(
             for: nsfwBaseColor ?? sampledNSFWColor ?? CoverPalette.color(for: coverImage)
                 ?? DeveloperMode.color(for: coverImage),
             isDark: colorScheme == .dark
@@ -72,23 +80,29 @@ struct MangaCoverView: View {
             coverDownsampleSide: coverDownsampleSide,
             contentMode: contentMode,
             placeholder: placeholder,
-            privacyPlaceholder: privacyPlaceholder || hideNSFW,
-            onDominantColorChange: hideNSFW || privacyPlaceholder || onDominantColorChange != nil ? { color in
-                if hideNSFW || privacyPlaceholder { sampledNSFWColor = color }
+            privacyPlaceholder: privacyPlaceholder || hidesCover,
+            samplesCoverColor: true,
+            usesHiddenCoverColorPlaceholder: usesHiddenCoverColorPlaceholder,
+            showsCachedCoverImmediately: showsCachedCoverImmediately,
+            paletteIdentifier: paletteIdentifier,
+            onDominantColorChange: hidesCover || privacyPlaceholder || onDominantColorChange != nil ? { color in
+                if hidesCover || privacyPlaceholder { sampledNSFWColor = color }
                 onDominantColorChange?(color)
             } : nil,
             onImageSizeChange: onImageSizeChange
         )
         .overlay {
-            if hideNSFW || privacyPlaceholder {
+            if hidesCover || privacyPlaceholder {
                 Color(uiColor: hiddenCoverColor)
             }
         }
         .overlay {
-            if hideNSFW {
+            if hidesCover {
                 Image(systemName: "eye.slash")
                     .font(.system(size: (width ?? 150) < 80 ? 19 : 32, weight: .semibold))
-                    .foregroundStyle(Color(uiColor: NSFWCoverView.foregroundColor(for: hiddenCoverColor)))
+                    .foregroundStyle(Color(uiColor: CoverPalette.hiddenForegroundColor(
+                        for: coverImage, dark: colorScheme == .dark
+                    ) ?? NSFWCoverView.foregroundColor(for: hiddenCoverColor)))
             }
         }
         .overlay(

@@ -33,8 +33,10 @@ struct MangaUpdateItemView: View {
             MangaCoverView(
                 source: manga.flatMap { SourceManager.shared.store.source(for: $0.sourceKey) },
                 coverImage: manga?.cover ?? "",
+                paletteIdentifier: manga?.identifier,
                 width: coverWidth,
-                height: coverHeight
+                height: coverHeight,
+                isNSFW: manga?.contentRating == .nsfw
             )
             .padding(.trailing, 6)
 

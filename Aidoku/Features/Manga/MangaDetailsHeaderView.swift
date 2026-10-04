@@ -6,6 +6,7 @@
 //
 
 import Nuke
+import SafariServices
 import SwiftUI
 import AidokuRunner
 
@@ -238,11 +239,14 @@ struct MangaDetailsHeaderView: View {
         MangaCoverView(
             source: source,
             coverImage: manga.cover ?? "",
+            paletteIdentifier: manga.identifier,
             width: coverSize.width,
             height: coverSize.height,
             coverDownsampleSide: 630,
             borderColor: Color.white.opacity(0.24),
             privacyPlaceholder: developerMode.value,
+            usesHiddenCoverColorPlaceholder: true,
+            showsCachedCoverImmediately: true,
             hideNSFW: hidesNSFWCover,
             nsfwBaseColor: nsfwBaseColor,
             onDominantColorChange: onCoverDominantColorChange,
@@ -263,11 +267,14 @@ struct MangaDetailsHeaderView: View {
             MangaCoverView(
                 source: source,
                 coverImage: manga.cover ?? "",
+                paletteIdentifier: manga.identifier,
                 width: coverSize.width,
                 height: coverSize.height,
                 coverDownsampleSide: 630,
                 borderColor: Color.white.opacity(0.24),
                 privacyPlaceholder: developerMode.value,
+                usesHiddenCoverColorPlaceholder: true,
+                showsCachedCoverImmediately: true,
                 hideNSFW: hidesNSFWCover,
                 nsfwBaseColor: nsfwBaseColor
             )
@@ -380,7 +387,12 @@ struct MangaDetailsHeaderView: View {
             HStack(spacing: 12) {
                 Button {
                     if let sourcePageURL = manga.url {
-                        openURL(sourcePageURL)
+                        if let scheme = sourcePageURL.scheme?.lowercased(),
+                           scheme == "http" || scheme == "https" {
+                            path.present(SFSafariViewController(url: sourcePageURL))
+                        } else {
+                            openURL(sourcePageURL)
+                        }
                     }
                 } label: {
                     Image(systemName: "safari")
@@ -717,6 +729,8 @@ struct MangaDetailsHeaderView: View {
     }
 
     private func setCover(url: String, original: Bool = false) {
+        if let oldURL = manga.cover { CoverPalette.forgetMemory(for: oldURL) }
+        CoverPalette.invalidate(manga.identifier)
         if manga.cover == url {
             manga.cover = url + "?edited=\(Date().timeIntervalSince1970)"
         } else {

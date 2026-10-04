@@ -159,6 +159,7 @@ extension MangaManager {
         await TrackerManager.shared.bindEnhancedTrackers(manga: manga)
 
         await LibraryPagePreviewCache.shared.invalidate(mangaId: manga.identifier)
+        await CoverPalette.persistIfEligible(manga.identifier)
 
         NotificationCenter.default.post(name: .addToLibrary, object: manga.identifier)
         NotificationCenter.default.post(name: .updateLibrary, object: nil)
@@ -180,6 +181,7 @@ extension MangaManager {
             }
         }
         NotificationCenter.default.post(name: .removeFromLibrary, object: mangaId)
+        await CoverPalette.reconcile(mangaId)
         NotificationCenter.default.post(name: .updateLibrary, object: nil)
         NotificationCenter.default.post(name: .updateTrackers, object: nil)
     }
@@ -207,6 +209,7 @@ extension MangaManager {
         for id in mangaIds {
             NotificationCenter.default.post(name: .removeFromLibrary, object: id)
         }
+        await CoverPalette.reconcileAll()
         NotificationCenter.default.post(name: .updateLibrary, object: nil)
         NotificationCenter.default.post(name: .updateTrackers, object: nil)
         await UIApplication.shared.appDelegate?.hideLoadingIndicator()
@@ -692,6 +695,8 @@ extension MangaManager {
                 guard let newInfo = newDetails[mangaItem.hashValue] else { continue }
                 if let oldCoverURL = mangaItem.coverUrl,
                    oldCoverURL != newInfo.cover.flatMap(URL.init(string:)) {
+                    await CoverPalette.invalidate(mangaItem.identifier)
+                    await CoverPalette.forgetMemory(for: oldCoverURL.absoluteString)
                     await LibraryPagePreviewCache.shared.invalidateCoverCache(
                         for: oldCoverURL,
                         sourceKey: mangaItem.sourceId
@@ -724,7 +729,12 @@ extension MangaManager {
     // sets uploaded cover image and returns the new cover url
     func setCover(manga: AidokuRunner.Manga, cover: PlatformImage) async -> String? {
         if manga.isLocal() {
-            return await LocalFileManager.shared.setCover(for: manga.key, image: cover)
+            let url = await LocalFileManager.shared.setCover(for: manga.key, image: cover)
+            if url != nil {
+                await CoverPalette.invalidate(manga.identifier)
+                if let oldURL = manga.cover { await CoverPalette.forgetMemory(for: oldURL) }
+            }
+            return url
         }
 
         // upload cover image to Documents/Covers/id.png
@@ -758,6 +768,8 @@ extension MangaManager {
             mangaId: manga.identifier,
             coverUrl: coverUrl
         )
+        await CoverPalette.invalidate(manga.identifier)
+        if let oldURL = manga.cover { await CoverPalette.forgetMemory(for: oldURL) }
 
         return coverUrl
     }
@@ -780,6 +792,8 @@ extension MangaManager {
             coverUrl: cover,
             original: true
         )
+        await CoverPalette.invalidate(manga.identifier)
+        if let originalCover { await CoverPalette.forgetMemory(for: originalCover) }
 
         // if the original cover is an aidoku image, remove it
         if originalCover != cover, let originalCover, let url = URL(string: originalCover)?.toAidokuFileUrl() {

@@ -12,6 +12,8 @@ import SwiftUI
 import UIKit
 
 struct SourceImageView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var source: AidokuRunner.Source?
 
     let imageUrl: String
@@ -22,10 +24,16 @@ struct SourceImageView: View {
     var contentMode: ContentMode = .fill
     var placeholder = "MangaPlaceholder"
     var privacyPlaceholder = false
+    var samplesCoverColor = false
+    var usesHiddenCoverColorPlaceholder = false
+    var showsCachedCoverImmediately = false
+    var paletteIdentifier: MangaIdentifier?
     var onDominantColorChange: ((UIColor) -> Void)?
     var onImageSizeChange: ((CGSize) -> Void)?
 
     @State private var imageRequest: ImageRequest?
+    @State private var sampledColor: UIColor?
+    @State private var sampledColorURL: String?
 
     private var processors: [ImageProcessing] {
         var processors: [ImageProcessing] = []
@@ -40,23 +48,39 @@ struct SourceImageView: View {
         return processors
     }
 
+    private func cachedCoverImage() -> UIImage? {
+        guard showsCachedCoverImmediately,
+              coverDownsampleSide != nil,
+              let url = URL(string: imageUrl) else { return nil }
+
+        let urls = [url.toAidokuFileUrl(), url].compactMap { $0 }
+        for candidate in urls {
+            let request = ImageRequest(
+                urlRequest: URLRequest(url: candidate),
+                processors: processors,
+                userInfo: [.processesKey: source?.features.processesCovers ?? false]
+            )
+            if let container = ImagePipeline.shared.cache.cachedImage(for: request, caches: [.memory]),
+               container.type != .gif {
+                return container.image
+            }
+        }
+        return nil
+    }
+
     var body: some View {
         LazyImage(
             request: imageRequest,
             transaction: .init(animation: .default)
         ) { state in
-            let needsColor = privacyPlaceholder || onDominantColorChange != nil
-            let cachedColor = needsColor ? CoverPalette.color(for: imageUrl) : nil
-            let sampledColor = needsColor && cachedColor == nil
-                ? state.imageContainer?.image.dominantColor()
-                : nil
-            let dominantColor = needsColor
-                ? (cachedColor ?? sampledColor ?? DeveloperMode.color(for: imageUrl))
-                : nil
+            let cachedImage = state.image == nil && !privacyPlaceholder ? cachedCoverImage() : nil
+            let dominantColor = CoverPalette.color(for: imageUrl)
+                ?? (sampledColorURL == imageUrl ? sampledColor : nil)
+                ?? DeveloperMode.color(for: imageUrl)
             Group {
                 if privacyPlaceholder {
                     Rectangle()
-                        .fill(Color(uiColor: dominantColor ?? DeveloperMode.color(for: imageUrl)))
+                        .fill(Color(uiColor: dominantColor))
                         .frame(width: width, height: height)
                 } else if state.imageContainer?.type == .gif, let data = state.imageContainer?.data {
                     GIFImage(
@@ -66,28 +90,43 @@ struct SourceImageView: View {
                         .frame(width: width, height: height)
                         .id(state.image != nil ? imageUrl : "placeholder") // ensures only opacity is animated
                 } else {
-                    let result = if let image = state.image {
-                        image
-                    } else {
-                        Image(placeholder)
+                    Group {
+                        if let image = state.image {
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: contentMode)
+                        } else if let cachedImage {
+                            Image(uiImage: cachedImage)
+                                .resizable()
+                                .aspectRatio(contentMode: contentMode)
+                        } else if usesHiddenCoverColorPlaceholder,
+                                  let baseColor = CoverPalette.color(for: imageUrl)
+                                    ?? (sampledColorURL == imageUrl ? sampledColor : nil) {
+                            let dark = colorScheme == .dark
+                            let placeholderColor = CoverPalette.hiddenColor(for: imageUrl, dark: dark)
+                                ?? NSFWCoverView.backgroundColor(for: baseColor, isDark: dark)
+                            Color(uiColor: placeholderColor)
+                        } else {
+                            Image(placeholder)
+                                .resizable()
+                                .aspectRatio(contentMode: contentMode)
+                        }
                     }
-                    result
-                        .resizable()
-                        .aspectRatio(contentMode: contentMode)
-                        .frame(width: width, height: height)
-                        .id(state.image != nil ? imageUrl : "placeholder") // ensures only opacity is animated
+                    .frame(width: width, height: height)
+                    .id(state.image != nil ? imageUrl : "placeholder") // ensures only opacity is animated
                 }
             }
-            .task(id: dominantColor?.description) {
-                if let dominantColor {
-                    if sampledColor != nil {
-                        CoverPalette.remember(dominantColor, for: imageUrl)
-                    }
-                    onDominantColorChange?(dominantColor)
+            .task(id: state.imageContainer.map { ObjectIdentifier($0.image) }) {
+                guard samplesCoverColor || privacyPlaceholder || onDominantColorChange != nil,
+                      let image = state.imageContainer?.image else { return }
+                CoverPalette.observe(image, for: imageUrl, identifier: paletteIdentifier) { color in
+                    sampledColorURL = imageUrl
+                    sampledColor = color
+                    onDominantColorChange?(color)
                 }
             }
-            .task(id: state.imageContainer?.image.size) {
-                if let size = state.imageContainer?.image.size {
+            .task(id: state.imageContainer?.image.size ?? cachedImage?.size) {
+                if let size = state.imageContainer?.image.size ?? cachedImage?.size {
                     onImageSizeChange?(size)
                 }
             }
@@ -101,6 +140,8 @@ struct SourceImageView: View {
         }
         .onChange(of: imageUrl) { newValue in
             imageRequest = nil
+            sampledColor = nil
+            sampledColorURL = nil
             Task {
                 await loadImageRequest(url: newValue)
             }

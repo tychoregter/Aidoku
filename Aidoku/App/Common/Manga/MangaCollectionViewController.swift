@@ -95,6 +95,15 @@ class MangaCollectionViewController: BaseCollectionViewController {
     override func observe() {
         super.observe()
 
+        addObserver(forName: AppSettings.appearance.blurNSFWCovers.key) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                var snapshot = self.dataSource.snapshot()
+                snapshot.reconfigureItems(snapshot.itemIdentifiers)
+                self.dataSource.apply(snapshot)
+            }
+        }
+
         addObserver(forName: .addToLibrary) { [weak self] notification in
             guard
                 let self,
@@ -176,6 +185,7 @@ extension MangaCollectionViewController {
             cell.subtitle = manga.authors?.joined(separator: ", ")
             cell.showsCaption = self?.showsGridCaptions ?? false
             cell.showsBookmark = self?.bookmarkedItems.contains(manga.key) ?? false
+            cell.setNSFW(manga.contentRating == .nsfw, title: manga.title, developerMode: DeveloperMode.enabled)
             Task {
                 await cell.loadImage(url: manga.cover.flatMap { URL(string: $0) })
             }
@@ -185,6 +195,7 @@ extension MangaCollectionViewController {
     func makeListCellRegistration() -> ListCellRegistration {
         ListCellRegistration { [weak self] cell, _, manga in
             cell.configure(with: manga, isBookmarked: self?.bookmarkedItems.contains(manga.key) ?? false)
+            cell.setNSFW(manga.contentRating == .nsfw, title: manga.title, developerMode: DeveloperMode.enabled)
         }
     }
 
@@ -261,6 +272,7 @@ extension MangaCollectionViewController {
                     return cell.contentView
                 }
             }
+            viewController.prepareForZoomTransition(in: navigationController)
         }
         navigationController?.pushViewController(viewController, animated: true)
     }

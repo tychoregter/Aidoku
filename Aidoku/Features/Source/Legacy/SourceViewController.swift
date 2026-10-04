@@ -128,6 +128,9 @@ class SourceViewController: OldMangaCollectionViewController {
     }
 
     override func observe() {
+        addObserver(forName: AppSettings.appearance.blurNSFWCovers.key) { [weak self] _ in
+            Task { @MainActor in self?.collectionView.reloadData() }
+        }
         // refresh when languages change
         addObserver(forName: "\(source.id).languages") { [weak self] _ in
             guard let self = self else { return }
@@ -162,6 +165,7 @@ class SourceViewController: OldMangaCollectionViewController {
         cell.title = info.title
         cell.subtitle = hidesListings ? info.author : nil
         cell.showsCaption = hidesListings
+        cell.setNSFW(info.isNSFW, title: info.title, developerMode: DeveloperMode.enabled)
         Task {
             let inLibrary = await CoreDataManager.shared.container.performBackgroundTask { context in
                 CoreDataManager.shared.hasLibraryManga(

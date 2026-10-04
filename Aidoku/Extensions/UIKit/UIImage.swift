@@ -8,19 +8,6 @@
 import Photos
 import UIKit
 
-/// Shares the sampled cover color between UIKit library cells and SwiftUI details.
-enum CoverPalette {
-    private static let colors = NSCache<NSString, UIColor>()
-
-    static func color(for url: String) -> UIColor? {
-        colors.object(forKey: url as NSString)
-    }
-
-    static func remember(_ color: UIColor, for url: String) {
-        colors.setObject(color, forKey: url as NSString)
-    }
-}
-
 private struct PerceptualColorKey: Hashable, Comparable {
     let lightness: Int
     let redGreen: Int
@@ -85,6 +72,12 @@ extension UIImage {
     /// Ranks color families across a small cover sample, then returns an actual sampled color.
     /// Meaningful colored areas still take priority over neutral backgrounds.
     func dominantColor(sampleSize: Int = 32) -> UIColor? {
+        dominantColorSample(sampleSize: sampleSize)?.color
+    }
+
+    /// The fingerprint is of the exact pixels used by the picker. It detects
+    /// updated artwork even when a source keeps the same cover URL.
+    func dominantColorSample(sampleSize: Int = 32) -> (color: UIColor, fingerprint: UInt64)? {
         guard let cgImage, sampleSize > 0 else { return nil }
 
         let bytesPerPixel = 4
@@ -105,6 +98,10 @@ extension UIImage {
             return true
         }
         guard rendered else { return nil }
+
+        let fingerprint = pixels.reduce(UInt64(14_695_981_039_346_656_037)) { hash, byte in
+            (hash ^ UInt64(byte)) &* 1_099_511_628_211
+        }
 
         func linearComponent(_ component: Double) -> Double {
             component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
@@ -227,12 +224,12 @@ extension UIImage {
                             : firstDistance > secondDistance
                     }
                 if let representative {
-                    return UIColor(
+                    return (UIColor(
                         red: CGFloat(representative.red),
                         green: CGFloat(representative.green),
                         blue: CGFloat(representative.blue),
                         alpha: 1
-                    )
+                    ), fingerprint)
                 }
             }
         }
@@ -266,12 +263,12 @@ extension UIImage {
             }
         }
         guard bestGroup.count > 0 else { return nil }
-        return UIColor(
+        return (UIColor(
             red: CGFloat(bestGroup.red / Double(bestGroup.count)),
             green: CGFloat(bestGroup.green / Double(bestGroup.count)),
             blue: CGFloat(bestGroup.blue / Double(bestGroup.count)),
             alpha: 1
-        )
+        ), fingerprint)
     }
 
     @MainActor

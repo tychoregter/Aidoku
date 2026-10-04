@@ -73,6 +73,7 @@ struct HomeBigScrollerView: View {
                                     width: Self.coverHeight * 2/3,
                                     height: Self.coverHeight,
                                     downsampleWidth: 400,
+                                    isNSFW: entry.contentRating == .nsfw,
                                     bookmarked: bookmarkedItems.contains(entry.key)
                                 )
                                 .id(entry.cover ?? "") // fixes cover not updating when view is reused

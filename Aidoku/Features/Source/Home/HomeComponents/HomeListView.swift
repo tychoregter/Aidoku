@@ -159,6 +159,10 @@ struct HomeListView: View {
 
     @ViewBuilder
     func view(for entry: HomeComponent.Value.Link, position: Int) -> some View {
+        let isNSFW: Bool = {
+            guard case .manga(let manga) = entry.value else { return false }
+            return manga.contentRating == .nsfw
+        }()
         let label = HStack(spacing: 12) {
             let mangaKey: String? = switch entry.value {
                 case .manga(let manga): manga.key
@@ -170,6 +174,7 @@ struct HomeListView: View {
                 width: 100 * 2/3,
                 height: 100,
                 downsampleWidth: 200,
+                isNSFW: isNSFW,
                 bookmarked: mangaKey.flatMap { (usesBookmarksState ? bookmarkedItemsState : bookmarkedItems).contains($0) } ?? false
             )
 

@@ -67,13 +67,18 @@ struct HomeImageScrollerView: View {
                     LazyHStack(alignment: .top, spacing: 16) {
                         ForEach(links.indices, id: \.self) { offset in
                             let link = links[offset]
+                            let isNSFW: Bool = {
+                                guard let value = link.value, case .manga(let manga) = value else { return false }
+                                return manga.contentRating == .nsfw
+                            }()
                             let label = VStack(alignment: .leading) {
                                 MangaCoverView(
                                     source: source,
                                     coverImage: link.imageUrl ?? "",
                                     width: width,
                                     height: height ?? 140,
-                                    placeholder: "BannerPlaceholder"
+                                    placeholder: "BannerPlaceholder",
+                                    isNSFW: isNSFW
                                 )
                             }
                             if let value = link.value {

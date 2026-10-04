@@ -259,7 +259,8 @@ extension MigrateResultsView {
                     } label: {
                         MangaGridItem(
                             title: fromManga.title,
-                            coverImage: fromManga.cover ?? ""
+                            coverImage: fromManga.cover ?? "",
+                            paletteIdentifier: fromManga.identifier
                         )
                         .aspectRatio(2/3, contentMode: .fit)
                         .frame(maxHeight: maxCoverHeight) // restrict size on ipads
@@ -279,7 +280,8 @@ extension MigrateResultsView {
                         } label: {
                             MangaGridItem(
                                 title: toManga.title,
-                                coverImage: toManga.cover ?? ""
+                                coverImage: toManga.cover ?? "",
+                                paletteIdentifier: toManga.identifier
                             )
                             .aspectRatio(2/3, contentMode: .fit)
                             .frame(maxHeight: maxCoverHeight)

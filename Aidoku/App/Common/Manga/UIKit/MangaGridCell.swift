@@ -76,6 +76,7 @@ class MangaGridCell: UICollectionViewCell {
     private let highlightView = UIView()
 
     private var url: String?
+    private var paletteURL: String?
     private var imageTask: ImageTask?
     var isEditing = false
     private var isPlaceholder = false
@@ -313,6 +314,7 @@ class MangaGridCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         url = nil
+        paletteURL = nil
         imageView.image = UIImage(named: "MangaPlaceholder")
         originalCoverImage = nil
         grayscalesCaughtUpCover = false
@@ -329,6 +331,7 @@ class MangaGridCell: UICollectionViewCell {
         let hidesNSFW = isNSFW && AppSettings.appearance.blurNSFWCovers.get()
         hidesNSFWCover = hidesNSFW || developerMode
         nsfwCoverView.isHidden = !hidesNSFWCover
+        updateCoverImage()
         updatePosterBorderAppearance()
         guard hidesNSFWCover else { return }
         nsfwCoverView.presentation = hidesNSFW
@@ -336,7 +339,7 @@ class MangaGridCell: UICollectionViewCell {
             : .blank
         nsfwCoverView.layer.cornerRadius = coverView.layer.cornerRadius
         nsfwCoverView.layer.cornerCurve = .continuous
-        nsfwCoverView.configure(title: title, image: imageView.image)
+        nsfwCoverView.configure(title: title, paletteURL: paletteURL)
         coverView.bringSubviewToFront(nsfwCoverView)
         coverView.bringSubviewToFront(highlightView)
         coverView.bringSubviewToFront(shadowOverlayView)
@@ -352,6 +355,11 @@ class MangaGridCell: UICollectionViewCell {
     }
 
     private func updateCoverImage() {
+        if hidesNSFWCover {
+            imageView.stopAnimatingGIF()
+            imageView.image = nil
+            return
+        }
         guard let originalCoverImage else { return }
         imageView.image = grayscalesCaughtUpCover
             ? MangaCoverImageAppearance.grayscale(originalCoverImage)
@@ -441,6 +449,7 @@ extension MangaGridCell {
 extension MangaGridCell {
     func showCachedImage(url: URL?) {
         guard let url else { return }
+        paletteURL = url.absoluteString
         let imageURL = url.toAidokuFileUrl() ?? url
         self.url = imageURL.absoluteString
         let request = ImageRequest(
@@ -450,18 +459,17 @@ extension MangaGridCell {
         guard let image = ImagePipeline.shared.cache.cachedImage(for: request, caches: [.memory])?.image else {
             return
         }
-        if CoverPalette.color(for: url.absoluteString) == nil, let color = image.dominantColor() {
-            CoverPalette.remember(color, for: url.absoluteString)
-        }
+        observeCoverColor(image, url: url.absoluteString, identifier: identifier)
         originalCoverImage = image
         updateCoverImage()
         if hidesNSFWCover {
-            nsfwCoverView.configure(title: title, image: image)
+            nsfwCoverView.configure(title: title, paletteURL: url.absoluteString)
         }
     }
 
     func loadImage(url: URL?) async {
         guard let url else { return }
+        paletteURL = url.absoluteString
 
         if let imageTask, imageTask.state == .running {
             return
@@ -520,29 +528,27 @@ extension MangaGridCell {
                         }
                     }
                     Task { @MainActor in
-                        if self.hidesNSFWCover,
-                           CoverPalette.color(for: url.absoluteString) == nil,
-                           let color = response.image.dominantColor() {
-                            CoverPalette.remember(color, for: url.absoluteString)
-                        }
+                        self.observeCoverColor(response.image, url: url.absoluteString, identifier: currentIdentifier)
                         self.originalCoverImage = response.image
                         let coverImage = self.grayscalesCaughtUpCover
                             ? MangaCoverImageAppearance.grayscale(response.image)
                             : response.image
-                        if cached {
+                        if self.hidesNSFWCover {
+                            self.imageView.image = nil
+                        } else if cached {
                             self.imageView.image = coverImage
                         } else {
                             UIView.transition(with: self.imageView, duration: 0.3, options: .transitionCrossDissolve) {
                                 self.imageView.image = coverImage
                             }
                         }
-                        if !self.grayscalesCaughtUpCover,
+                        if !self.hidesNSFWCover, !self.grayscalesCaughtUpCover,
                            response.container.type == .gif,
                            let data = response.container.data {
                             self.imageView.animate(withGIFData: data)
                         }
                         if self.hidesNSFWCover {
-                            self.nsfwCoverView.configure(title: self.title, image: response.image)
+                            self.nsfwCoverView.configure(title: self.title, paletteURL: url.absoluteString)
                         }
                     }
                 case .failure(let error):
@@ -556,6 +562,14 @@ extension MangaGridCell {
                         await self?.loadImage(url: newUrl)
                     }
             }
+        }
+    }
+
+    private func observeCoverColor(_ image: UIImage, url: String, identifier: MangaIdentifier?) {
+        CoverPalette.observe(image, for: url, identifier: identifier) { [weak self] _ in
+            guard let self, self.identifier == identifier, self.paletteURL == url,
+                  self.hidesNSFWCover else { return }
+            self.nsfwCoverView.configure(title: self.title, paletteURL: url)
         }
     }
 }
@@ -610,6 +624,7 @@ final class NSFWCoverView: UIView {
     private let titleLabel = UILabel()
     private let stackView = UIStackView()
     private var coverColor = UIColor.secondarySystemBackground
+    private var coverURL: String?
     private var iconWidth: NSLayoutConstraint!
     private var iconHeight: NSLayoutConstraint!
 
@@ -656,9 +671,10 @@ final class NSFWCoverView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(title: String?, image: UIImage?) {
+    func configure(title: String?, paletteURL: String? = nil) {
         titleLabel.text = title ?? NSLocalizedString("UNTITLED")
-        coverColor = image?.dominantColor() ?? UIColor.secondarySystemBackground
+        coverURL = paletteURL
+        coverColor = paletteURL.flatMap(CoverPalette.color(for:)) ?? UIColor.secondarySystemBackground
         updatePresentation()
         updateAppearance()
     }
@@ -685,10 +701,12 @@ final class NSFWCoverView: UIView {
     private func updateAppearance() {
         let baseColor = coverColor.resolvedColor(with: traitCollection)
         let isDark = traitCollection.userInterfaceStyle == .dark
-        let background = Self.backgroundColor(for: baseColor, isDark: isDark)
+        let background = coverURL.flatMap { CoverPalette.hiddenColor(for: $0, dark: isDark) }
+            ?? Self.backgroundColor(for: baseColor, isDark: isDark)
         backgroundColor = background
 
-        let foreground = Self.foregroundColor(for: background)
+        let foreground = coverURL.flatMap { CoverPalette.hiddenForegroundColor(for: $0, dark: isDark) }
+            ?? Self.foregroundColor(for: background)
         iconView.tintColor = foreground
         titleLabel.textColor = foreground
 

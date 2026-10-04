@@ -453,6 +453,7 @@ extension OldMangaCollectionViewController {
                     return cell.contentView
                 }
             }
+            viewController.prepareForZoomTransition(in: navigationController)
         }
         navigationController?.pushViewController(viewController, animated: true)
     }

@@ -510,7 +510,7 @@ extension MangaView.ViewModel {
     }
 
     // refresh manga and chapter data from source, updating db
-    func refresh() async {
+    func refresh(forceCoverReload: Bool = false) async {
         guard Reachability.getConnectionType() != .none, let source else {
             return
         }
@@ -598,6 +598,34 @@ extension MangaView.ViewModel {
                 await LibraryPagePreviewCache.shared.invalidate(mangaId: mangaId)
 
                 NotificationCenter.default.post(name: .updateManga, object: newManga.identifier)
+            }
+
+            if forceCoverReload,
+               let oldCover = oldManga.cover,
+               let oldCoverURL = URL(string: oldCover) {
+                await LibraryPagePreviewCache.shared.invalidateCoverCache(
+                    for: oldCoverURL,
+                    sourceKey: oldManga.sourceKey
+                )
+                CoverPalette.forgetMemory(for: oldCover)
+                CoverPalette.invalidate(mangaId)
+
+                // The unique query forces SwiftUI/Nuke to request the cover again
+                // even when the source returns the same cover URL. This is a
+                // presentation-only value; the persisted source URL stays intact.
+                if newManga.cover == oldCover {
+                    if var components = URLComponents(string: oldCover) {
+                        var queryItems = components.queryItems ?? []
+                        queryItems.append(URLQueryItem(
+                            name: "edited",
+                            value: String(Date().timeIntervalSince1970)
+                        ))
+                        components.queryItems = queryItems
+                        newManga.cover = components.string ?? oldCover
+                    } else {
+                        newManga.cover = oldCover + "?edited=\(Date().timeIntervalSince1970)"
+                    }
+                }
             }
 
             await loadHistory()

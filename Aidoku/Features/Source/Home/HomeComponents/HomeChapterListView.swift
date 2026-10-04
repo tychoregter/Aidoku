@@ -114,6 +114,7 @@ struct HomeChapterListView: View {
                     width: 100 * 2/3,
                     height: 100,
                     downsampleWidth: 200,
+                    isNSFW: entry.manga.contentRating == .nsfw,
                     bookmarked: bookmarkedItems.contains(entry.manga.key)
                 )
 

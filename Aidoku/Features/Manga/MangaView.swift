@@ -28,7 +28,6 @@ struct MangaView: View {
     @State private var isOverHero = true
     @State private var heroBottom: CGFloat?
     @State private var backdropDominantColor: UIColor = .black
-    @State private var backdropIsDark = true
     @State private var roundsHeaderTopCorners = false
     @State private var originalNavigationTint: UIColor?
     @State private var statusBarStyleOwner = UUID()
@@ -55,17 +54,23 @@ struct MangaView: View {
 
     private var usesLightToolbarIcons: Bool {
         if isOverHero && !toolbarTransitionState.isLeaving {
-            return backdropIsDark
+            let headerColor = CoverPalette.headerColor(for: viewModel.manga.cover ?? "", dark: colorScheme == .dark)
+                ?? MangaDetailsBackdrop.darkenedBackgroundColor(
+                    from: backdropDominantColor, colorScheme: colorScheme
+                )
+            return !MangaDetailsBackdrop.shouldUseDarkToolbarIcons(over: headerColor)
         }
         return colorScheme == .dark
     }
 
     private var usesDarkHeaderText: Bool {
-        MangaDetailsBackdrop.shouldUseDarkHeaderText(backdropDominantColor, colorScheme: colorScheme)
+        CoverPalette.usesDarkHeaderText(for: viewModel.manga.cover ?? "", dark: colorScheme == .dark)
+            ?? MangaDetailsBackdrop.shouldUseDarkHeaderText(backdropDominantColor, colorScheme: colorScheme)
     }
 
     private var headerControlBackgroundColor: Color {
-        Color(uiColor: MangaDetailsBackdrop.controlBackgroundColor(
+        Color(uiColor: CoverPalette.controlColor(for: viewModel.manga.cover ?? "", dark: colorScheme == .dark)
+            ?? MangaDetailsBackdrop.controlBackgroundColor(
             from: backdropDominantColor,
             colorScheme: colorScheme,
             usesDarkText: usesDarkHeaderText
@@ -184,7 +189,6 @@ struct MangaView: View {
             }
             // decrease the min row height for the bottom separator/spacing
             .environment(\.defaultMinListRowHeight, 10)
-            .transition(.opacity)
             .listStyle(.plain)
             .contentMargins(.top, 0, for: .scrollContent)
             .navigationBarTitleDisplayMode(.inline)
@@ -271,10 +275,8 @@ struct MangaView: View {
             .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarBackground(.hidden, for: .tabBar)
             .toolbarColorScheme(usesLightToolbarIcons ? .dark : .light, for: .navigationBar)
-            .onChange(of: isOverHero) { _ in updateNavigationAppearance() }
-            .onChange(of: backdropIsDark) { _ in updateNavigationAppearance() }
+            .onChange(of: usesLightToolbarIcons) { _ in updateNavigationAppearance() }
             .onChange(of: colorScheme) { _ in
-                updateBackdropAppearance()
                 updateNavigationAppearance()
             }
             .navigationBarBackButtonHidden(editMode == .active)
@@ -322,7 +324,10 @@ struct MangaView: View {
             .onDisappear {
                 if let navigationController = path.navigationController as? NavigationController {
                     navigationController.setStatusBarStyleOverride(nil, owner: statusBarStyleOwner)
-                    if let originalNavigationTint {
+                    if #available(iOS 26.0, *) {
+                        navigationController.navigationBar.overrideUserInterfaceStyle = .unspecified
+                        navigationController.navigationBar.tintColor = nil
+                    } else if let originalNavigationTint {
                         navigationController.navigationBar.tintColor = originalNavigationTint
                     }
                 }
@@ -412,20 +417,20 @@ extension MangaView {
         if originalNavigationTint == nil {
             originalNavigationTint = navigationController.navigationBar.tintColor
         }
-        navigationController.navigationBar.tintColor = editMode == .active
-            ? UIColor(Color.accentColor)
-            : (usesLightToolbarIcons ? .white : .black)
+        if #available(iOS 26.0, *) {
+            // The navigation bar has no visible background, so SwiftUI's toolbar
+            // color scheme alone cannot select the light/dark glass appearance.
+            navigationController.navigationBar.overrideUserInterfaceStyle = usesLightToolbarIcons ? .dark : .light
+            navigationController.navigationBar.tintColor = nil
+        } else {
+            navigationController.navigationBar.tintColor = editMode == .active
+                ? UIColor(Color.accentColor)
+                : (usesLightToolbarIcons ? .white : .black)
+        }
         let style: UIStatusBarStyle = usesLightToolbarIcons ? .lightContent : .darkContent
         navigationController.setStatusBarStyleOverride(
             style,
             owner: statusBarStyleOwner
-        )
-    }
-
-    private func updateBackdropAppearance() {
-        backdropIsDark = MangaDetailsBackdrop.isDarkenedBackground(
-            backdropDominantColor,
-            colorScheme: colorScheme
         )
     }
 
@@ -466,7 +471,6 @@ extension MangaView {
             nsfwBaseColor: backdropDominantColor,
             onCoverDominantColorChange: { color in
                 backdropDominantColor = color
-                updateBackdropAppearance()
             },
             onHeroBottomChange: updateHeroPosition,
             onTitlePressed: {
@@ -712,13 +716,15 @@ extension MangaView {
     var rightNavbarButton: some View {
         RightNavbarButton(
             viewModel: viewModel,
-            refresh: { await viewModel.refresh() },
+            refresh: { await viewModel.refresh(forceCoverReload: true) },
             usesLightLabel: usesLightToolbarIcons,
             setEditing: { editing in
                 // Set the native bar tint before the selection button is created.
-                path.navigationController?.navigationBar.tintColor = editing
-                    ? UIColor(Color.accentColor)
-                    : (usesLightToolbarIcons ? .white : .black)
+                if #unavailable(iOS 26.0) {
+                    path.navigationController?.navigationBar.tintColor = editing
+                        ? UIColor(Color.accentColor)
+                        : (usesLightToolbarIcons ? .white : .black)
+                }
                 editMode = editing ? .active : .inactive
             },
             markAllRead: {
@@ -812,11 +818,19 @@ extension MangaView {
                     }
                 } label: {
                     if allSelected {
-                        Text(NSLocalizedString("DESELECT_ALL"))
-                            .foregroundStyle(usesLightToolbarIcons ? Color.white : Color.black)
+                        if #available(iOS 26.0, *) {
+                            Text(NSLocalizedString("DESELECT_ALL"))
+                        } else {
+                            Text(NSLocalizedString("DESELECT_ALL"))
+                                .foregroundStyle(usesLightToolbarIcons ? Color.white : Color.black)
+                        }
                     } else {
-                        Text(NSLocalizedString("SELECT_ALL"))
-                            .foregroundStyle(usesLightToolbarIcons ? Color.white : Color.black)
+                        if #available(iOS 26.0, *) {
+                            Text(NSLocalizedString("SELECT_ALL"))
+                        } else {
+                            Text(NSLocalizedString("SELECT_ALL"))
+                                .foregroundStyle(usesLightToolbarIcons ? Color.white : Color.black)
+                        }
                     }
                 }
                 .disabled(selectableCount == 0)
@@ -1289,7 +1303,7 @@ struct MangaDetailsBackdrop: View {
         colorScheme == .dark ? 0.50 : 0.05
     }
 
-    private static func darkenedBackgroundColor(from color: UIColor, colorScheme: ColorScheme) -> UIColor {
+    static func darkenedBackgroundColor(from color: UIColor, colorScheme: ColorScheme) -> UIColor {
         var red: CGFloat = 0
         var green: CGFloat = 0
         var blue: CGFloat = 0
@@ -1369,7 +1383,7 @@ struct MangaDetailsBackdrop: View {
         return lightColor(lower)
     }
 
-    private static func bottomGradientColor(from background: UIColor) -> UIColor {
+    static func bottomGradientColor(from background: UIColor) -> UIColor {
         var red: CGFloat = 0
         var green: CGFloat = 0
         var blue: CGFloat = 0
@@ -1377,7 +1391,10 @@ struct MangaDetailsBackdrop: View {
         guard background.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
             return .black
         }
-        return UIColor(red: red * 0.86, green: green * 0.86, blue: blue * 0.86, alpha: 1)
+        let brightness = min(max(luminance(background), 0), 1)
+        let darkening = 0.02 + 0.08 * (1 - brightness)
+        let multiplier = CGFloat(1 - darkening)
+        return UIColor(red: red * multiplier, green: green * multiplier, blue: blue * multiplier, alpha: 1)
     }
 
     private static func luminance(_ background: UIColor) -> Double {
@@ -1406,12 +1423,17 @@ struct MangaDetailsBackdrop: View {
     }
 
     static func isDarkenedBackground(_ color: UIColor, colorScheme: ColorScheme) -> Bool {
-        backgroundLuminance(color, colorScheme: colorScheme) <= 0.50
+        backgroundLuminance(color, colorScheme: colorScheme) <= 0.5
     }
 
     static func shouldUseDarkHeaderText(_ color: UIColor, colorScheme: ColorScheme) -> Bool {
-        // Keep text, controls, and navigation in the same cover-derived contrast mode.
+        // Keep header text and controls in the same cover-derived contrast mode.
         !isDarkenedBackground(color, colorScheme: colorScheme)
+    }
+
+    static func shouldUseDarkToolbarIcons(over headerColor: UIColor) -> Bool {
+        // Switch the top bar slightly before the header text and controls.
+        luminance(headerColor) > 0.4
     }
 
     static func controlBackgroundColor(
@@ -1448,12 +1470,15 @@ struct MangaDetailsBackdrop: View {
         GeometryReader { geometry in
             Group {
                 if style == .coverColor {
-                    let background = Self.darkenedBackgroundColor(from: baseColor, colorScheme: colorScheme)
+                    let background = CoverPalette.headerColor(for: coverImage, dark: colorScheme == .dark)
+                        ?? Self.darkenedBackgroundColor(from: baseColor, colorScheme: colorScheme)
                     LinearGradient(
                         stops: [
                             .init(color: Color(uiColor: background), location: 0),
                             .init(color: Color(uiColor: background), location: 0.56),
-                            .init(color: Color(uiColor: Self.bottomGradientColor(from: background)), location: 1)
+                            .init(color: Color(uiColor: CoverPalette.headerBottomColor(
+                                for: coverImage, dark: colorScheme == .dark
+                            ) ?? Self.bottomGradientColor(from: background)), location: 1)
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -1465,7 +1490,8 @@ struct MangaDetailsBackdrop: View {
                         width: geometry.size.width,
                         height: geometry.size.height,
                         downsampleWidth: 180,
-                        privacyPlaceholder: privacyPlaceholder
+                        privacyPlaceholder: privacyPlaceholder,
+                        samplesCoverColor: true
                     )
                     .scaleEffect(1.15)
                     .blur(radius: 45, opaque: true)

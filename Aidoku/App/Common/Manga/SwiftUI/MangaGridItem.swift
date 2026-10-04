@@ -15,7 +15,9 @@ struct MangaGridItem: View {
     var source: AidokuRunner.Source?
     let title: String
     let coverImage: String
+    var paletteIdentifier: MangaIdentifier?
     var bookmarked: Bool = false
+    var isNSFW = false
 
     static let gradient = Gradient(
         colors: (0...24).map { offset -> Color in
@@ -29,10 +31,13 @@ struct MangaGridItem: View {
             .fill(Color.clear)
             .aspectRatio(2/3, contentMode: .fill)
             .background {
-                SourceImageView(
+                MangaCoverView(
                     source: source,
-                    imageUrl: coverImage,
-                    coverDownsampleSide: 630
+                    coverImage: coverImage,
+                    paletteIdentifier: paletteIdentifier,
+                    coverDownsampleSide: 630,
+                    borderColor: .clear,
+                    isNSFW: isNSFW
                 )
             }
             .overlay(

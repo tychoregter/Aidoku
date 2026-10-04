@@ -483,6 +483,7 @@ extension SettingsView {
     }
 
     func clearNetworkCache() async {
+        CoverPalette.clearAll()
         URLCache.shared.removeAllCachedResponses()
         HTTPCookieStorage.shared.removeCookies(since: Date.distantPast)
         await WKWebsiteDataStore.default().clearRecords()

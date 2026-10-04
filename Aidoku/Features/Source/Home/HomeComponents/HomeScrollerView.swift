@@ -71,6 +71,10 @@ struct HomeScrollerView: View {
                     LazyHStack(alignment: .top, spacing: itemSpacing) {
                         ForEach(entries.indices, id: \.self) { offset in
                             let entry = entries[offset]
+                            let isNSFW: Bool = {
+                                guard case .manga(let manga) = entry.value else { return false }
+                                return manga.contentRating == .nsfw
+                            }()
                             let label = VStack(alignment: .leading) {
                                 let mangaKey: String? = switch entry.value {
                                     case .manga(let manga): manga.key
@@ -82,6 +86,7 @@ struct HomeScrollerView: View {
                                     width: Self.coverHeight * 2/3,
                                     height: Self.coverHeight,
                                     downsampleWidth: 400,
+                                    isNSFW: isNSFW,
                                     bookmarked: mangaKey.flatMap { bookmarkedItems.contains($0) } ?? false
                                 )
 

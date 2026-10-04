@@ -362,9 +362,11 @@ private struct HistoryEntryCell: View, @MainActor Equatable {
             HStack(spacing: 12) {
                 MangaCoverView(
                     coverImage: manga?.cover ?? "",
+                    paletteIdentifier: manga?.identifier,
                     width: Self.coverImageWidth,
                     height: Self.coverImageWidth * 3/2,
-                    downsampleWidth: Self.coverImageWidth
+                    downsampleWidth: Self.coverImageWidth,
+                    isNSFW: manga?.contentRating == .nsfw
                 )
                 VStack(alignment: .leading, spacing: 4) {
                     Text(manga?.title ?? "")

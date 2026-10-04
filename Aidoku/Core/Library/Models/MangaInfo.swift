@@ -128,7 +128,8 @@ struct MangaInfo: Hashable, Sendable {
             title: title,
             author: author,
             coverUrl: coverUrl,
-            url: url
+            url: url,
+            nsfw: isNSFW ? .nsfw : .safe
         )
     }
 }

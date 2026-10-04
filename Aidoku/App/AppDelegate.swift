@@ -198,6 +198,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
         performMigration()
         handleChaptersToBeDeleted()
+        Task(priority: .utility) { await CoverPalette.reconcileAll() }
+        for key in [
+            AppSettings.appearance.dedicatedContinueReadingSection.key,
+            AppSettings.library.continueReadingIncludeNonLibraryTitles.key
+        ] {
+            NotificationCenter.default.addObserver(
+                forName: Notification.Name(key), object: nil, queue: .main
+            ) { _ in
+                Task { await CoverPalette.reconcileAll() }
+            }
+        }
 
         application.applicationSupportsShakeToEdit = true
 
@@ -382,6 +393,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationWillTerminate(_ application: UIApplication) {
+        CoverPalette.flush()
         LibraryPagePreviewCache.removeSessionFiles()
         guard let networkObserverId else { return }
         Task {

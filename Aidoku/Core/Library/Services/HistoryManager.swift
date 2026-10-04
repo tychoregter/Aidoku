@@ -47,6 +47,7 @@ extension HistoryManager {
         }
         NotificationCenter.default.post(name: .historySet, object: (chapterId, progress))
         await LibraryPagePreviewCache.shared.invalidate(mangaId: mangaId)
+        await CoverPalette.persistIfEligible(mangaId)
         if !completed {
             Task {
                 // update page trackers with progress
@@ -114,6 +115,7 @@ extension HistoryManager {
         }
         guard success else { return }
         await LibraryPagePreviewCache.shared.invalidate(mangaId: mangaId)
+        await CoverPalette.persistIfEligible(mangaId)
         NotificationCenter.default.post(
             name: .historyAdded,
             object: chapters.map {
@@ -144,6 +146,9 @@ extension HistoryManager {
         guard !chapterIds.isEmpty else { return }
         await CoreDataManager.shared.removeHistory(chapterIds: chapterIds)
         await LibraryPagePreviewCache.shared.invalidate(mangaId: chapterIds[0].mangaIdentifier)
+        for identifier in Set(chapterIds.map(\.mangaIdentifier)) {
+            await CoverPalette.reconcile(identifier)
+        }
         NotificationCenter.default.post(name: .historyRemoved, object: chapterIds)
         Task {
             await TrackerManager.shared.setProgress(
@@ -160,6 +165,7 @@ extension HistoryManager {
             try? context.save()
         }
         await LibraryPagePreviewCache.shared.invalidate(mangaId: mangaId)
+        await CoverPalette.reconcile(mangaId)
         NotificationCenter.default.post(name: .historyRemoved, object: mangaId)
         Task {
             let chapters = await CoreDataManager.shared.getChapters(mangaId: mangaId)

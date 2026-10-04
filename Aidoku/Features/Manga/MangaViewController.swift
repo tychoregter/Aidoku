@@ -73,15 +73,26 @@ class MangaViewController: UIHostingController<MangaView> {
         fatalError("init(coder:) has not been implemented")
     }
 
+    /// Lay out SwiftUI's destination before UIKit snapshots it for the zoom.
+    /// Otherwise the first rendered frame can be the full-size page.
+    func prepareForZoomTransition(in navigationController: UINavigationController?) {
+        guard let navigationController else { return }
+        toolbarTransitionState.isEntering = true
+        loadViewIfNeeded()
+        view.frame = navigationController.view.bounds
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+    }
+
     override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
         toolbarTransitionState.isLeaving = false
         toolbarTransitionState.isEntering = animated
+        super.viewWillAppear(animated)
         if animated, let transitionCoordinator {
             transitionCoordinator.animate(alongsideTransition: nil) { [weak self] _ in
                 self?.toolbarTransitionState.isEntering = false
             }
-        } else {
+        } else if !animated {
             toolbarTransitionState.isEntering = false
         }
 
@@ -107,9 +118,26 @@ class MangaViewController: UIHostingController<MangaView> {
         tabBar.isTranslucent = true
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        toolbarTransitionState.isEntering = false
+    }
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         toolbarTransitionState.isLeaving = true
+
+        if #available(iOS 26.0, *), isMovingFromParent {
+            // SwiftUI's onDisappear can run before or during the pop. Clear the
+            // shared bar again when the transition finishes, after its toolbar
+            // items have been removed, so Library keeps its own appearance.
+            let navigationBar = navigationController?.navigationBar
+            transitionCoordinator?.animate(alongsideTransition: nil) { context in
+                guard !context.isCancelled else { return }
+                navigationBar?.overrideUserInterfaceStyle = .unspecified
+                navigationBar?.tintColor = nil
+            }
+        }
 
         if let previousTabBarAppearance, let tabBar = tabBarController?.tabBar {
             tabBar.standardAppearance = previousTabBarAppearance.standard

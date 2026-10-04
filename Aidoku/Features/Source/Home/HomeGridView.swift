@@ -131,7 +131,9 @@ struct HomeGridView: View {
                     source: source,
                     title: entry.title,
                     coverImage: entry.cover ?? "",
-                    bookmarked: inLibrary
+                    paletteIdentifier: entry.identifier,
+                    bookmarked: inLibrary,
+                    isNSFW: entry.contentRating == .nsfw
                 )
                 if selectionMode {
                     Image(systemName: selectedItems.contains(entry.key) ? "checkmark.circle.fill" : "circle")

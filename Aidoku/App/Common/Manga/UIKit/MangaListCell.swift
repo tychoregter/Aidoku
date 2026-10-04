@@ -13,6 +13,7 @@ import UIKit
 class MangaListCell: UICollectionViewCell {
     private var identifier: MangaIdentifier?
     private var url: String?
+    private var paletteURL: String?
     private var imageTask: ImageTask?
 
     private let nsfwCoverView = NSFWCoverView()
@@ -179,6 +180,7 @@ class MangaListCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         url = nil
+        paletteURL = nil
         coverImageView.image = UIImage(named: "MangaPlaceholder")
         originalCoverImage = nil
         grayscalesCaughtUpCover = false
@@ -310,6 +312,7 @@ extension MangaListCell {
         let hidesNSFW = isNSFW && AppSettings.appearance.blurNSFWCovers.get()
         hidesNSFWCover = hidesNSFW || developerMode
         nsfwCoverView.isHidden = !hidesNSFWCover
+        updateCoverImage()
         updateCoverBorderAppearance()
         guard hidesNSFWCover else { return }
         nsfwCoverView.presentation = hidesNSFW
@@ -317,7 +320,7 @@ extension MangaListCell {
             : .blank
         nsfwCoverView.layer.cornerRadius = coverImageView.layer.cornerRadius
         nsfwCoverView.layer.cornerCurve = .continuous
-        nsfwCoverView.configure(title: title, image: coverImageView.image)
+        nsfwCoverView.configure(title: title, paletteURL: paletteURL)
         coverImageView.bringSubviewToFront(nsfwCoverView)
     }
 
@@ -330,6 +333,11 @@ extension MangaListCell {
     }
 
     private func updateCoverImage() {
+        if hidesNSFWCover {
+            coverImageView.stopAnimatingGIF()
+            coverImageView.image = nil
+            return
+        }
         guard let originalCoverImage else { return }
         coverImageView.image = grayscalesCaughtUpCover
             ? MangaCoverImageAppearance.grayscale(originalCoverImage)
@@ -340,6 +348,7 @@ extension MangaListCell {
 extension MangaListCell {
     private func showCachedImage(url: URL?) {
         guard let url else { return }
+        paletteURL = url.absoluteString
         let imageURL = url.toAidokuFileUrl() ?? url
         self.url = imageURL.absoluteString
         let request = ImageRequest(
@@ -349,15 +358,14 @@ extension MangaListCell {
         guard let image = ImagePipeline.shared.cache.cachedImage(for: request, caches: [.memory])?.image else {
             return
         }
-        if CoverPalette.color(for: url.absoluteString) == nil, let color = image.dominantColor() {
-            CoverPalette.remember(color, for: url.absoluteString)
-        }
+        observeCoverColor(image, url: url.absoluteString, identifier: identifier)
         originalCoverImage = image
         updateCoverImage()
     }
 
     private func loadImage(url: URL?) async {
         guard let url else { return }
+        paletteURL = url.absoluteString
 
         if let imageTask, imageTask.state == .running {
             return
@@ -416,16 +424,14 @@ extension MangaListCell {
                         }
                     }
                     Task { @MainActor in
-                        if self.hidesNSFWCover,
-                           CoverPalette.color(for: url.absoluteString) == nil,
-                           let color = response.image.dominantColor() {
-                            CoverPalette.remember(color, for: url.absoluteString)
-                        }
+                        self.observeCoverColor(response.image, url: url.absoluteString, identifier: currentIdentifier)
                         self.originalCoverImage = response.image
                         let coverImage = self.grayscalesCaughtUpCover
                             ? MangaCoverImageAppearance.grayscale(response.image)
                             : response.image
-                        if cached || self.hidesNSFWCover {
+                        if self.hidesNSFWCover {
+                            self.coverImageView.image = nil
+                        } else if cached {
                             self.coverImageView.image = coverImage
                         } else {
                             UIView.transition(
@@ -436,13 +442,13 @@ extension MangaListCell {
                                 self.coverImageView.image = coverImage
                             }
                         }
-                        if !self.grayscalesCaughtUpCover,
+                        if !self.hidesNSFWCover, !self.grayscalesCaughtUpCover,
                            response.container.type == .gif,
                            let data = response.container.data {
                             self.coverImageView.animate(withGIFData: data)
                         }
                         if self.hidesNSFWCover {
-                            self.nsfwCoverView.configure(title: self.titleLabel.text, image: response.image)
+                            self.nsfwCoverView.configure(title: self.titleLabel.text, paletteURL: url.absoluteString)
                         }
                     }
                 case .failure(let error):
@@ -456,6 +462,14 @@ extension MangaListCell {
                         await self?.loadImage(url: newUrl)
                     }
             }
+        }
+    }
+
+    private func observeCoverColor(_ image: UIImage, url: String, identifier: MangaIdentifier?) {
+        CoverPalette.observe(image, for: url, identifier: identifier) { [weak self] _ in
+            guard let self, self.identifier == identifier, self.paletteURL == url,
+                  self.hidesNSFWCover else { return }
+            self.nsfwCoverView.configure(title: self.titleLabel.text, paletteURL: url)
         }
     }
 }
