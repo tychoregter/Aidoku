@@ -137,6 +137,9 @@ final class ReaderThumbnailScrubberView: UIControl {
     private var selectionGrabStartX: CGFloat?
     private var selectionGrabStartValue: CGFloat?
     private var selectionGrabHasMoved = false
+    // Webtoon drags use the immediate recognizer instead of UIControl tracking.
+    // Ignore the initial jump-to-position tap; percentage ticks begin on movement.
+    var isDraggingForHaptics: Bool { isActivelyScrubbing && selectionGrabHasMoved }
     private var isBlockingParentGestures = false
     private let selectionFeedbackGenerator = UISelectionFeedbackGenerator()
 

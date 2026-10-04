@@ -228,7 +228,9 @@ class ReaderToolbarView: UIView {
         } else if !usesWebtoonProgress || !showsWebtoonScrollPercentage {
             updatePageLabel(page: boundedPage, totalPages: totalPages)
         }
-        let isScrubberTracking = usesLegacyScrubber ? sliderView.isTracking : thumbnailScrubberView.isTracking
+        let isScrubberTracking = usesLegacyScrubber
+            ? sliderView.isTracking
+            : thumbnailScrubberView.isTracking || thumbnailScrubberView.isDraggingForHaptics
         if usesWebtoonProgress && showsWebtoonScrollPercentage && !usesLegacyScrubber {
             let percentage = Int((webtoonProgress * 100).rounded())
             if isScrubberTracking,
@@ -375,6 +377,9 @@ class ReaderToolbarView: UIView {
         webtoonProgress = min(max(progress, 0), 1)
         currentPage = page
         guard usesWebtoonProgress else { return }
+        if !thumbnailScrubberView.isDraggingForHaptics {
+            lastWebtoonHapticPercentage = Int((webtoonProgress * 100).rounded())
+        }
         thumbnailScrubberView.setCurrentPage(page)
         moveSlider(to: webtoonProgress)
         if showingTemporaryPagesLeft {

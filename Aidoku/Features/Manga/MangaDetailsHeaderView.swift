@@ -46,6 +46,7 @@ struct MangaDetailsHeaderView: View {
     @EnvironmentObject private var path: NavigationCoordinator
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
 
     @State private var readButtonTitle = NSLocalizedString("LOADING_ELLIPSIS")
     @State private var readButtonSubtitle: String?
@@ -61,6 +62,9 @@ struct MangaDetailsHeaderView: View {
     @StateObject private var developerMode = UserDefaultsBool(key: AppSettings.general.developerMode.key)
     @StateObject private var hideNSFWCovers = UserDefaultsBool(key: AppSettings.appearance.blurNSFWCovers.key)
     @StateObject private var showGenres = UserDefaultsBool(key: AppSettings.library.showMangaInfoGenres.key)
+    @StateObject private var limitGenresToEnabled = UserDefaultsBool(
+        key: AppSettings.library.limitMangaInfoGenresToEnabled.key
+    )
     @StateObject private var showTags = UserDefaultsBool(key: AppSettings.library.showMangaInfoTags.key)
 
     private static let coverDimensionBudget: CGFloat = 500
@@ -79,6 +83,7 @@ struct MangaDetailsHeaderView: View {
     }
 
     private var headerTextColor: Color { usesDarkHeaderText ? .black : .white }
+    private var controlOutlineColor: Color { headerTextColor.opacity(usesDarkHeaderText ? 0.085 : 0.15) }
     private var readButtonColor: Color { usesDarkHeaderText ? .black : .white }
     private var readButtonTextColor: Color { usesDarkHeaderText ? .white : .black }
     private var hidesNSFWCover: Bool { hideNSFWCovers.value && manga.contentRating == .nsfw }
@@ -150,6 +155,7 @@ struct MangaDetailsHeaderView: View {
 
                     ChapterListHeaderView(
                         allChapters: manga.chapters,
+                        visibleChapters: chapters,
                         sortOption: $chapterSortOption,
                         sortAscending: $chapterSortAscending,
                         filters: $filters,
@@ -385,6 +391,7 @@ struct MangaDetailsHeaderView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(headerTextColor.opacity(manga.url == nil ? 0.45 : 1))
                 .background(headerControlBackgroundColor, in: Circle())
+                .overlay(Circle().strokeBorder(controlOutlineColor, lineWidth: 1 / max(displayScale, 1)))
                 .disabled(manga.url == nil)
                 .accessibilityLabel(NSLocalizedString("OPEN_SOURCE_PAGE"))
                 .transaction {
@@ -396,31 +403,29 @@ struct MangaDetailsHeaderView: View {
                 Button {
                     onReadButtonPressed?()
                 } label: {
-                    Text(readButtonTitle)
-                        .font(.system(size: 16, weight: .semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
-                        .contentTransition(isEnteringTransition ? .identity : .interpolate)
-                        .animation(isEnteringTransition ? nil : loadingAnimation, value: readButtonTitle)
-                        .padding(.bottom, readButtonSubtitle == nil ? 0 : 17)
-                        .overlay(alignment: .bottom) {
-                            if let readButtonSubtitle {
-                                Text(developerMode.value
-                                    ? DeveloperMode.chapterTitle(for: String(describing: manga.identifier))
-                                    : readButtonSubtitle)
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(readButtonTextColor.opacity(0.62))
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                    .contentTransition(isEnteringTransition ? .identity : .interpolate)
-                                    .animation(isEnteringTransition ? nil : loadingAnimation, value: readButtonSubtitle)
-                                    .frame(maxWidth: .infinity)
-                                    .transition(.identity)
-                            }
+                    VStack(spacing: 0) {
+                        Text(readButtonTitle)
+                            .font(.system(size: 16, weight: .semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            .contentTransition(isEnteringTransition ? .identity : .interpolate)
+                            .animation(isEnteringTransition ? nil : loadingAnimation, value: readButtonTitle)
+                        if let readButtonSubtitle {
+                            Text(developerMode.value
+                                ? DeveloperMode.chapterTitle(for: String(describing: manga.identifier))
+                                : readButtonSubtitle)
+                                .font(.system(size: 13))
+                                .foregroundStyle(readButtonTextColor.opacity(0.62))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .contentTransition(isEnteringTransition ? .identity : .interpolate)
+                                .animation(isEnteringTransition ? nil : loadingAnimation, value: readButtonSubtitle)
+                                .transition(.identity)
                         }
-                        .padding(.horizontal, readButtonSubtitle == nil ? 18 : 24)
-                        .frame(minWidth: 168, minHeight: 48)
-                        .contentShape(Capsule())
+                    }
+                    .padding(.horizontal, readButtonSubtitle == nil ? 18 : 24)
+                    .frame(minWidth: 168, minHeight: 48)
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(readButtonTextColor.opacity(readButtonDisabled ? 0.78 : 1))
@@ -449,6 +454,7 @@ struct MangaDetailsHeaderView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(headerTextColor)
                 .background(headerControlBackgroundColor, in: Circle())
+                .overlay(Circle().strokeBorder(controlOutlineColor, lineWidth: 1 / max(displayScale, 1)))
                 .accessibilityLabel(bookmarked ? NSLocalizedString("REMOVE_FROM_LIBRARY") : NSLocalizedString("ADD_TO_LIBRARY"))
                 .transaction {
                     if descriptionExpansionAnimating || isEnteringTransition {
@@ -580,7 +586,8 @@ struct MangaDetailsHeaderView: View {
                         let label = TagView(
                             text: developerMode.value ? DeveloperMode.tag(for: tag) : tag,
                             foregroundColor: headerTextColor,
-                            backgroundColor: headerControlBackgroundColor
+                            backgroundColor: headerControlBackgroundColor,
+                            outlineColor: controlOutlineColor
                         )
                         if let source, let filter = source.matchingGenreFilter(for: tag) {
                             Button {
@@ -608,23 +615,67 @@ struct MangaDetailsHeaderView: View {
     }
 
     private var visibleTags: [String] {
-        guard let tags = manga.tags, !tags.isEmpty else { return [] }
+        guard let allLabels = manga.tags?.filter({
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }), !allLabels.isEmpty else { return [] }
 
         let sourceKey = manga.sourceKey
-        let genreCount: Int?
+        let genres: [String]
+        let tags: [String]
         if sourceKey.hasPrefix(KomgaSourceRunner.sourceKeyPrefix) {
-            genreCount = KomgaGenreStore.genres(sourceKey: sourceKey, mangaKey: manga.key).count
+            genres = KomgaGenreStore.genres(sourceKey: sourceKey, mangaKey: manga.key)
+            tags = Array(allLabels.dropFirst(min(genres.count, allLabels.count)))
         } else if sourceKey.hasPrefix(KavitaSourceRunner.sourceKeyPrefix) {
-            genreCount = KavitaGenreStore.genres(sourceKey: sourceKey, mangaKey: manga.key).count
+            genres = KavitaGenreStore.genres(sourceKey: sourceKey, mangaKey: manga.key)
+            tags = Array(allLabels.dropFirst(min(genres.count, allLabels.count)))
         } else {
             // Sources with only one label list expose those labels as genres.
-            genreCount = nil
+            genres = allLabels
+            tags = []
         }
 
-        return tags.enumerated().compactMap { index, tag in
-            let isGenre = genreCount.map { index < $0 } ?? true
-            return (isGenre ? showGenres.value : showTags.value) ? tag : nil
+        let configuration = LibraryGenreFilterSettings.load()
+        let genreIdentifiers = Set(genres.map(LibraryGenreFilterSettings.normalize))
+        var displayedIdentifiers: Set<String> = []
+        var visibleGenres: [String] = []
+        var visibleTags: [String] = []
+
+        if showGenres.value {
+            for genre in genres {
+                let root = LibraryGenreFilterSettings.rootIdentifier(
+                    for: genre,
+                    configuration: configuration
+                )
+                if limitGenresToEnabled.value,
+                   !LibraryGenreFilterSettings.isEnabled(genre, configuration: configuration) {
+                    continue
+                }
+                let identifier = limitGenresToEnabled.value
+                    ? root
+                    : LibraryGenreFilterSettings.normalize(genre)
+                guard displayedIdentifiers.insert(identifier).inserted else { continue }
+                let label = limitGenresToEnabled.value
+                    ? LibraryGenreFilterSettings.displayName(for: root, availableNames: genres)
+                    : genre
+                visibleGenres.append(label)
+            }
         }
+
+        if showTags.value {
+            for tag in tags {
+                let identifier = LibraryGenreFilterSettings.normalize(tag)
+                // A duplicate always uses its genre representation, even when
+                // the genre pill itself is hidden by the display settings.
+                guard !genreIdentifiers.contains(identifier),
+                      displayedIdentifiers.insert(identifier).inserted else { continue }
+                visibleTags.append(tag)
+            }
+        }
+
+        let alphabetical: (String, String) -> Bool = {
+            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+        }
+        return visibleGenres.sorted(by: alphabetical) + visibleTags.sorted(by: alphabetical)
     }
 
     func toggleBookmarked() async {
@@ -723,6 +774,8 @@ private struct TagView: View {
     let text: String
     let foregroundColor: Color
     let backgroundColor: Color
+    let outlineColor: Color
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         Text(text)
@@ -732,8 +785,8 @@ private struct TagView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
             .textSelection(.enabled)
-            .background(backgroundColor)
-            .clipShape(RoundedRectangle(cornerRadius: 100))
+            .background(backgroundColor, in: Capsule())
+            .overlay(Capsule().strokeBorder(outlineColor, lineWidth: 1 / max(displayScale, 1)))
     }
 }
 

@@ -24,9 +24,11 @@ struct ChapterListHeaderView: View {
     private var mangaId: MangaIdentifier
     private var usesLightMenuLabel: Bool
     private var onReset: () -> Void
+    private var missingBooksCount = 0
 
     init(
         allChapters: [AidokuRunner.Chapter]? = nil,
+        visibleChapters: [AidokuRunner.Chapter]? = nil,
         sortOption: Binding<ChapterSortOption>,
         sortAscending: Binding<Bool>,
         filters: Binding<[ChapterFilterOption]>,
@@ -46,6 +48,7 @@ struct ChapterListHeaderView: View {
         self.mangaId = mangaId
         self.usesLightMenuLabel = usesLightMenuLabel
         self.onReset = onReset
+        self.missingBooksCount = BookGapPresentation.totalMissingCount(in: visibleChapters ?? allChapters ?? [])
 
         if let allChapters, !allChapters.isEmpty {
             var languages: Set<String> = []
@@ -73,6 +76,18 @@ struct ChapterListHeaderView: View {
                 .font(.system(size: 20, weight: .semibold))
                 .id("chapters")
 
+            if missingBooksCount > 0 {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(BookGapPresentation.label(for: missingBooksCount))
+                        .font(.system(size: 13, weight: .bold))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(Color(uiColor: .systemOrange))
+                .padding(.leading, 6)
+            }
+
             Spacer()
 
         }
@@ -91,6 +106,74 @@ struct ChapterListHeaderView: View {
             onReset: onReset
         )
         .frame(width: 24, height: 24)
+    }
+}
+
+enum BookGapPresentation {
+    static func label(for count: Int) -> String {
+        count == 1
+            ? NSLocalizedString("MISSING_ONE_BOOK")
+            : String(format: NSLocalizedString("MISSING_BOOKS_COUNT"), count)
+    }
+
+    static func number(for chapter: AidokuRunner.Chapter) -> Float? {
+        guard let number = chapter.chapterNumber ?? chapter.volumeNumber,
+              number.isFinite else { return nil }
+        return number
+    }
+
+    static func isNumberedOrder(_ chapters: [AidokuRunner.Chapter]) -> Bool {
+        let numbers = chapters.compactMap { number(for: $0) }
+        return zip(numbers, numbers.dropFirst()).allSatisfy { $0.0 <= $0.1 }
+            || zip(numbers, numbers.dropFirst()).allSatisfy { $0.0 >= $0.1 }
+    }
+
+    static func missingCount(between first: AidokuRunner.Chapter, and second: AidokuRunner.Chapter) -> Int {
+        guard let firstNumber = number(for: first),
+              let secondNumber = number(for: second) else { return 0 }
+        return missingCount(between: firstNumber, and: secondNumber)
+    }
+
+    static func totalMissingCount(in chapters: [AidokuRunner.Chapter]) -> Int {
+        guard isNumberedOrder(chapters) else { return 0 }
+        return zip(chapters, chapters.dropFirst()).reduce(0) { total, pair in
+            total + missingCount(between: pair.0, and: pair.1)
+        }
+    }
+
+    private static func missingCount(between first: Float, and second: Float) -> Int {
+        let lower = min(first, second)
+        let upper = max(first, second)
+        guard lower >= 0, upper < 1_000_000, upper - lower <= 1_000 else { return 0 }
+
+        let firstMissing = Int(floor(lower)) + 1
+        // A .1 book starts a fractional sequence and fills its whole-number slot;
+        // later fractional entries such as .2 or .5 do not imply that start exists.
+        let startsFractionalSequence = abs(upper - floor(upper) - 0.1) < 0.005
+        let lastMissing = Int(ceil(upper)) - (startsFractionalSequence ? 2 : 1)
+        return max(lastMissing - firstMissing + 1, 0)
+    }
+}
+
+struct MissingBooksWarningRow: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .semibold))
+            Text(BookGapPresentation.label(for: count))
+                .font(.system(size: 14, weight: .semibold))
+        }
+        .foregroundStyle(Color(uiColor: .systemOrange))
+        .frame(maxWidth: .infinity)
+        .frame(height: 44)
+        .listRowInsets(.zero)
+        .listRowBackground(
+            Color(uiColor: .systemBackground)
+                .overlay(Color(uiColor: .systemOrange).opacity(0.16))
+        )
+        .listRowSeparator(.hidden, edges: .all)
     }
 }
 

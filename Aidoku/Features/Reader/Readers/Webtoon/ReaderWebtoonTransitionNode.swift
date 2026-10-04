@@ -10,16 +10,22 @@ import AsyncDisplayKit
 class ReaderWebtoonTransitionNode: BaseObservingCellNode {
     let transition: Transition
     let pillarboxLayoutState: ReaderPillarboxLayoutState
+    weak var reader: ReaderWebtoonViewController?
+    private let initialUsesDarkAppearance: Bool
 
     var pillarbox = UserDefaults.standard.bool(forKey: "Reader.pillarbox")
     var pillarboxAmount: CGFloat = CGFloat(UserDefaults.standard.double(forKey: "Reader.pillarboxAmount"))
     var pillarboxOrientation = UserDefaults.standard.string(forKey: "Reader.pillarboxOrientation")
 
-    private lazy var transitionNode = ReaderTransitionNode(transition: transition)
+    private lazy var transitionNode = ReaderTransitionNode(
+        transition: transition,
+        usesDarkAppearance: initialUsesDarkAppearance
+    )
 
-    init(transition: Transition, pillarboxLayoutState: ReaderPillarboxLayoutState) {
+    init(transition: Transition, pillarboxLayoutState: ReaderPillarboxLayoutState, usesDarkAppearance: Bool) {
         self.transition = transition
         self.pillarboxLayoutState = pillarboxLayoutState
+        self.initialUsesDarkAppearance = usesDarkAppearance
 
         super.init()
 
@@ -35,6 +41,16 @@ class ReaderWebtoonTransitionNode: BaseObservingCellNode {
         addObserver(forName: "Reader.pillarboxOrientation") { [weak self] notification in
             self?.pillarboxOrientation = notification.object as? String ?? "both"
         }
+    }
+
+    override func didEnterVisibleState() {
+        super.didEnterVisibleState()
+        updateAppearance()
+    }
+
+    func updateAppearance() {
+        guard let usesDarkAppearance = reader?.delegate?.readerCanvasUsesDarkAppearance else { return }
+        transitionNode.updateAppearance(usesDarkAppearance: usesDarkAppearance)
     }
 
     func isPillarboxOrientation() -> Bool {

@@ -93,6 +93,7 @@ struct MangaView: View {
     }
 
     var body: some View {
+        let isNumberedOrder = BookGapPresentation.isNumberedOrder(viewModel.chapters)
         let list = ScrollViewReader { proxy in
             List(selection: $selectedChapters) {
                 headerView(section: .cover)
@@ -137,7 +138,16 @@ struct MangaView: View {
 
                     ForEach(viewModel.chapters.indices, id: \.self) { index in
                         let chapter = viewModel.chapters[index]
-                        viewForChapter(chapter, index: index)
+                        let missingBefore = isNumberedOrder && index > 0
+                            ? BookGapPresentation.missingCount(between: viewModel.chapters[index - 1], and: chapter)
+                            : 0
+                        let missingAfter = isNumberedOrder && index + 1 < viewModel.chapters.count
+                            ? BookGapPresentation.missingCount(between: chapter, and: viewModel.chapters[index + 1])
+                            : 0
+                        if missingBefore > 0 {
+                            MissingBooksWarningRow(count: missingBefore)
+                        }
+                        viewForChapter(chapter, index: index, hideBottomSeparator: missingAfter > 0)
                     }
 
                 }
@@ -491,7 +501,12 @@ extension MangaView {
     }
 
     @ViewBuilder
-    func viewForChapter(_ chapter: AidokuRunner.Chapter, index: Int, secondSection: Bool = false) -> some View {
+    func viewForChapter(
+        _ chapter: AidokuRunner.Chapter,
+        index: Int,
+        secondSection: Bool = false,
+        hideBottomSeparator: Bool = false
+    ) -> some View {
         let last = index == (secondSection ? viewModel.otherDownloadedChapters : viewModel.chapters).count - 1
         let downloadStatus = viewModel.downloadStatus[chapter.key, default: .none]
         let downloaded = downloadStatus == .finished
@@ -541,7 +556,7 @@ extension MangaView {
         .id(chapter.key)
         .tag(chapter.key, selectable: !locked)
         .matchedTransitionSourcePlease(id: chapter, in: transitionNamespace)
-        .listRowSeparator(last ? .hidden : .visible)
+        .listRowSeparator(last || hideBottomSeparator ? .hidden : .visible)
     }
 
     @ViewBuilder
@@ -765,6 +780,7 @@ extension MangaView {
             let chapters = viewModel.manga.chapters ?? viewModel.chapters
             ChapterListHeaderView(
                 allChapters: chapters,
+                visibleChapters: viewModel.chapters,
                 sortOption: $viewModel.chapterSortOption,
                 sortAscending: $viewModel.chapterSortAscending,
                 filters: $viewModel.chapterFilters,
@@ -1270,7 +1286,7 @@ struct MangaDetailsBackdrop: View {
     var style: Style = .coverColor
 
     private static func darkening(for colorScheme: ColorScheme) -> CGFloat {
-        colorScheme == .dark ? 0.50 : 0.10
+        colorScheme == .dark ? 0.50 : 0.05
     }
 
     private static func darkenedBackgroundColor(from color: UIColor, colorScheme: ColorScheme) -> UIColor {
@@ -1281,33 +1297,76 @@ struct MangaDetailsBackdrop: View {
         guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
             return .black
         }
-        let multiplier = 1 - darkening(for: colorScheme)
-        let darkModeBackground = UIColor(red: red * 0.50, green: green * 0.50, blue: blue * 0.50, alpha: 1)
-        let background = UIColor(red: red * multiplier, green: green * multiplier, blue: blue * multiplier, alpha: 1)
-        guard luminance(darkModeBackground) < 0.02 || luminance(color) < 0.02 else {
-            return background
+        func scaledColor(_ multiplier: CGFloat) -> UIColor {
+            UIColor(red: red * multiplier, green: green * multiplier, blue: blue * multiplier, alpha: 1)
         }
-        // Raise both appearances together, so the light appearance stays lighter.
-        let minimumLuminance = colorScheme == .dark ? 0.045 : 0.10
-        guard luminance(background) < minimumLuminance else { return background }
+        let darkMultiplier = 1 - darkening(for: .dark)
+        let minimumDarkLuminance = 0.012
+        let usualDarkBackground = scaledColor(darkMultiplier)
+        let adjustedDarkBackground: UIColor
+        if luminance(usualDarkBackground) >= minimumDarkLuminance {
+            adjustedDarkBackground = usualDarkBackground
+        } else if luminance(color) >= minimumDarkLuminance {
+            // Back off the darkening only as far as needed, preserving the cover's hue.
+            var lower = darkMultiplier
+            var upper: CGFloat = 1
+            for _ in 0..<12 {
+                let middle = (lower + upper) / 2
+                if luminance(scaledColor(middle)) < minimumDarkLuminance { lower = middle } else { upper = middle }
+            }
+            adjustedDarkBackground = scaledColor(upper)
+        } else {
+            var lower: CGFloat = 0
+            var upper: CGFloat = 1
+            for _ in 0..<12 {
+                let mix = (lower + upper) / 2
+                let candidate = UIColor(
+                    red: red * (1 - mix) + mix,
+                    green: green * (1 - mix) + mix,
+                    blue: blue * (1 - mix) + mix,
+                    alpha: 1
+                )
+                if luminance(candidate) < minimumDarkLuminance { lower = mix } else { upper = mix }
+            }
+            adjustedDarkBackground = UIColor(
+                red: red * (1 - upper) + upper,
+                green: green * (1 - upper) + upper,
+                blue: blue * (1 - upper) + upper,
+                alpha: 1
+            )
+        }
+        guard colorScheme == .light else { return adjustedDarkBackground }
+
+        // Keep the light appearance linked to the adjusted dark color for this cover.
+        var darkRed: CGFloat = 0
+        var darkGreen: CGFloat = 0
+        var darkBlue: CGFloat = 0
+        guard adjustedDarkBackground.getRed(&darkRed, green: &darkGreen, blue: &darkBlue, alpha: &alpha) else {
+            return scaledColor(1 - darkening(for: .light))
+        }
+        let lightToDarkRatio = (1 - darkening(for: .light)) / darkMultiplier
+        let lightRed = min(darkRed * lightToDarkRatio, 1)
+        let lightGreen = min(darkGreen * lightToDarkRatio, 1)
+        let lightBlue = min(darkBlue * lightToDarkRatio, 1)
+        func lightColor(_ multiplier: CGFloat) -> UIColor {
+            UIColor(red: lightRed * multiplier, green: lightGreen * multiplier, blue: lightBlue * multiplier, alpha: 1)
+        }
+        let lightBackground = lightColor(1)
+        // Very pale covers need a ceiling rather than a minimum: darken only enough
+        // to keep the header from becoming nearly white.
+        let maximumLightLuminance = 0.75
+        guard luminance(lightBackground) > maximumLightLuminance else { return lightBackground }
         var lower: CGFloat = 0
         var upper: CGFloat = 1
         for _ in 0..<12 {
-            let mix = (lower + upper) / 2
-            let candidate = UIColor(
-                red: red * multiplier * (1 - mix) + mix,
-                green: green * multiplier * (1 - mix) + mix,
-                blue: blue * multiplier * (1 - mix) + mix,
-                alpha: 1
-            )
-            if luminance(candidate) < minimumLuminance { lower = mix } else { upper = mix }
+            let multiplier = (lower + upper) / 2
+            if luminance(lightColor(multiplier)) > maximumLightLuminance {
+                upper = multiplier
+            } else {
+                lower = multiplier
+            }
         }
-        return UIColor(
-            red: red * multiplier * (1 - upper) + upper,
-            green: green * multiplier * (1 - upper) + upper,
-            blue: blue * multiplier * (1 - upper) + upper,
-            alpha: 1
-        )
+        return lightColor(lower)
     }
 
     private static func bottomGradientColor(from background: UIColor) -> UIColor {
@@ -1347,7 +1406,7 @@ struct MangaDetailsBackdrop: View {
     }
 
     static func isDarkenedBackground(_ color: UIColor, colorScheme: ColorScheme) -> Bool {
-        backgroundLuminance(color, colorScheme: colorScheme) <= 0.45
+        backgroundLuminance(color, colorScheme: colorScheme) <= 0.50
     }
 
     static func shouldUseDarkHeaderText(_ color: UIColor, colorScheme: ColorScheme) -> Bool {

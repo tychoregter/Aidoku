@@ -21,6 +21,10 @@ struct Transition {
 class ReaderTransitionNode: ASDisplayNode {
     var transition: Transition
     var referenceWidth: CGFloat = 0
+    private var usesDarkAppearance: Bool
+
+    private var primaryTextColor: UIColor { usesDarkAppearance ? .white : .black }
+    private var secondaryTextColor: UIColor { primaryTextColor.withAlphaComponent(0.6) }
 
     private static let defaultFontSize: CGFloat = 16
     private lazy var fontSize = Self.defaultFontSize
@@ -33,7 +37,7 @@ class ReaderTransitionNode: ASDisplayNode {
                 ? NSLocalizedString("PREVIOUS_COLON")
                 : NSLocalizedString("FINISHED_COLON"),
             attributes: [
-                .foregroundColor: UIColor.label,
+                .foregroundColor: primaryTextColor,
                 .font: UIFont.systemFont(ofSize: Self.defaultFontSize, weight: .medium)
             ]
         )
@@ -50,9 +54,9 @@ class ReaderTransitionNode: ASDisplayNode {
             return node
         }
         node.attributedText = NSAttributedString(
-            string: chapter.formattedTitle(),
+            string: chapter.readerTransitionDisplayTitle,
             attributes: [
-                .foregroundColor: UIColor.secondaryLabel,
+                .foregroundColor: secondaryTextColor,
                 .font: UIFont.systemFont(ofSize: Self.defaultFontSize)
             ]
         )
@@ -67,7 +71,7 @@ class ReaderTransitionNode: ASDisplayNode {
                 ? NSLocalizedString("CURRENT_COLON")
                 : NSLocalizedString("NEXT_COLON"),
             attributes: [
-                .foregroundColor: UIColor.label,
+                .foregroundColor: primaryTextColor,
                 .font: UIFont.systemFont(ofSize: Self.defaultFontSize, weight: .medium)
             ]
         )
@@ -84,9 +88,9 @@ class ReaderTransitionNode: ASDisplayNode {
             return node
         }
         node.attributedText = NSAttributedString(
-            string: chapter.formattedTitle(),
+            string: chapter.readerTransitionDisplayTitle,
             attributes: [
-                .foregroundColor: UIColor.secondaryLabel,
+                .foregroundColor: secondaryTextColor,
                 .font: UIFont.systemFont(ofSize: Self.defaultFontSize)
             ]
         )
@@ -101,18 +105,70 @@ class ReaderTransitionNode: ASDisplayNode {
                 ? NSLocalizedString("NO_PREVIOUS_CHAPTER")
                 : NSLocalizedString("NO_NEXT_CHAPTER"),
             attributes: [
-                .foregroundColor: UIColor.secondaryLabel,
+                .foregroundColor: secondaryTextColor,
                 .font: UIFont.systemFont(ofSize: Self.defaultFontSize)
             ]
         )
         return node
     }()
 
-    init(transition: Transition) {
+    private var skippedBooksCount: Int {
+        guard let to = transition.to else { return 0 }
+        return BookGapPresentation.missingCount(between: transition.from, and: to)
+    }
+
+    private lazy var warningIconNode: ASImageNode = {
+        let node = ASImageNode()
+        if let symbol = UIImage(systemName: "exclamationmark.triangle.fill")?
+            .withTintColor(.systemOrange, renderingMode: .alwaysOriginal) {
+            // Texture does not reliably honor the tint of a vector SF Symbol.
+            // Rasterize it so the orange pixels survive its image rendering path.
+            node.image = UIGraphicsImageRenderer(size: symbol.size).image { _ in
+                symbol.draw(in: CGRect(origin: .zero, size: symbol.size))
+            }
+        }
+        node.style.preferredSize = CGSize(width: Self.defaultFontSize, height: Self.defaultFontSize)
+        return node
+    }()
+
+    private lazy var warningSpaceNode = ASDisplayNode()
+
+    private lazy var warningTextNode: ASTextNode = {
+        let node = ASTextNode()
+        let text = skippedBooksCount == 1
+            ? NSLocalizedString("SKIPPING_ONE_MISSING_BOOK")
+            : String(format: NSLocalizedString("SKIPPING_CHAPTERS"), skippedBooksCount)
+        node.attributedText = NSAttributedString(string: text, attributes: [
+            .foregroundColor: UIColor.systemOrange,
+            .font: UIFont.systemFont(ofSize: Self.defaultFontSize)
+        ])
+        node.maximumNumberOfLines = 2
+        return node
+    }()
+
+    init(transition: Transition, usesDarkAppearance: Bool) {
         self.transition = transition
+        self.usesDarkAppearance = usesDarkAppearance
         super.init()
         automaticallyManagesSubnodes = true
-        backgroundColor = .systemBackground
+        backgroundColor = .clear
+    }
+
+    func updateAppearance(usesDarkAppearance: Bool) {
+        guard self.usesDarkAppearance != usesDarkAppearance else { return }
+        self.usesDarkAppearance = usesDarkAppearance
+
+        for (node, color) in [
+            (topChapterTextNode, primaryTextColor),
+            (topChapterTitleTextNode, secondaryTextColor),
+            (bottomChapterTextNode, primaryTextColor),
+            (bottomChapterTitleTextNode, secondaryTextColor),
+            (noChapterTextNode, secondaryTextColor)
+        ] {
+            guard let text = node.attributedText?.mutableCopy() as? NSMutableAttributedString else { continue }
+            text.addAttribute(.foregroundColor, value: color, range: NSRange(location: 0, length: text.length))
+            node.attributedText = text
+        }
     }
 
     override func layout() {
@@ -135,6 +191,10 @@ class ReaderTransitionNode: ASDisplayNode {
             fixText(node: bottomChapterTextNode)
             fixText(node: bottomChapterTitleTextNode)
             fixText(node: noChapterTextNode)
+            if skippedBooksCount > 0 {
+                fixText(node: warningTextNode)
+                warningIconNode.style.preferredSize = CGSize(width: fontSize, height: fontSize)
+            }
         }
     }
 
@@ -147,41 +207,63 @@ class ReaderTransitionNode: ASDisplayNode {
                 child: noChapterTextNode
             )
         } else {
-            return ASInsetLayoutSpec(
-                insets: UIEdgeInsets(top: fontSize, left: fontSize * 2, bottom: fontSize, right: fontSize * 2),
-                child: ASCenterLayoutSpec(
-                    horizontalPosition: .center,
-                    verticalPosition: .center,
-                    sizingOption: .minimumWidth,
-                    child: ASStackLayoutSpec(
-                        direction: .vertical,
-                        spacing: fontSize * 7/8,
-                        justifyContent: .center,
-                        alignItems: .start,
-                        children: [
-                            ASStackLayoutSpec(
-                                direction: .vertical,
-                                spacing: 2,
-                                justifyContent: .center,
-                                alignItems: .start,
-                                children: [
-                                    topChapterTextNode,
-                                    topChapterTitleTextNode
-                                ]
-                            ),
-                            ASStackLayoutSpec(
-                                direction: .vertical,
-                                spacing: 2,
-                                justifyContent: .center,
-                                alignItems: .start,
-                                children: [
-                                    bottomChapterTextNode,
-                                    bottomChapterTitleTextNode
-                                ]
-                            )
-                        ]
+            var rows: [ASLayoutElement] = [
+                ASStackLayoutSpec(
+                    direction: .vertical,
+                    spacing: 2,
+                    justifyContent: .center,
+                    alignItems: .start,
+                    children: [topChapterTextNode, topChapterTitleTextNode]
+                )
+            ]
+            if skippedBooksCount > 0 {
+                warningSpaceNode.style.preferredSize = CGSize(width: 1, height: fontSize)
+                rows.append(warningSpaceNode)
+            }
+            rows.append(ASStackLayoutSpec(
+                direction: .vertical,
+                spacing: 2,
+                justifyContent: .center,
+                alignItems: .start,
+                children: [bottomChapterTextNode, bottomChapterTitleTextNode]
+            ))
+            let content = ASCenterLayoutSpec(
+                horizontalPosition: .center,
+                verticalPosition: .center,
+                sizingOption: skippedBooksCount > 0 ? [] : .minimumWidth,
+                child: ASStackLayoutSpec(
+                    direction: .vertical,
+                    spacing: fontSize * 7/8,
+                    justifyContent: .center,
+                    alignItems: .start,
+                    children: rows
+                )
+            )
+            let centeredContent: ASLayoutSpec
+            if skippedBooksCount > 0 {
+                content.style.width = ASDimensionMakeWithFraction(1)
+                let warning = ASStackLayoutSpec(
+                    direction: .horizontal,
+                    spacing: fontSize / 2,
+                    justifyContent: .center,
+                    alignItems: .center,
+                    children: [warningIconNode, warningTextNode]
+                )
+                centeredContent = ASOverlayLayoutSpec(
+                    child: content,
+                    overlay: ASCenterLayoutSpec(
+                        horizontalPosition: .center,
+                        verticalPosition: .center,
+                        sizingOption: [],
+                        child: warning
                     )
                 )
+            } else {
+                centeredContent = content
+            }
+            return ASInsetLayoutSpec(
+                insets: UIEdgeInsets(top: fontSize, left: fontSize * 2, bottom: fontSize, right: fontSize * 2),
+                child: centeredContent
             )
         }
     }

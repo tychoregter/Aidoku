@@ -86,6 +86,12 @@ class ReaderViewController: BaseObservingViewController {
 
     private lazy var activityIndicator = UIActivityIndicatorView(style: .medium)
     private lazy var toolbarView = ReaderToolbarView()
+    private lazy var openInSafariButton = UIBarButtonItem(
+        image: UIImage(systemName: "safari"),
+        style: .plain,
+        target: self,
+        action: #selector(openWebView)
+    )
     private var toolbarViewWidthConstraint: NSLayoutConstraint?
     private lazy var readerToolbar = UIView()
     private var readerToolbarLeadingConstraint: NSLayoutConstraint?
@@ -242,15 +248,9 @@ class ReaderViewController: BaseObservingViewController {
                 action: #selector(openChapterList)
             )
         ]
-        let moreButton = UIBarButtonItem(
-            image: UIImage(systemName: "safari"),
-            style: .plain,
-            target: self,
-            action: #selector(openWebView)
-        )
-        moreButton.isEnabled = chapter.url != nil
+        openInSafariButton.isEnabled = chapter.url != nil
         navigationItem.rightBarButtonItems = [
-            moreButton,
+            openInSafariButton,
             UIBarButtonItem(
                 image: UIImage(systemName: "textformat.size"),
                 style: .plain,
@@ -900,6 +900,7 @@ extension ReaderViewController {
         )
         view.chapterSet = { [weak self] chapter in
             guard let self else { return }
+            self.presentedViewController?.dismiss(animated: true)
             if chapter != self.chapter {
                 self.setChapter(chapter)
                 self.loadCurrentChapter()
@@ -1331,6 +1332,7 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         }
 
         self.chapter = chapter
+        openInSafariButton.isEnabled = chapter.url != nil
         currentPosition = nil
         self.chaptersToMark = [chapter]
         configureBarToggleTapGestures()

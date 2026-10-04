@@ -48,49 +48,65 @@ struct ReaderChapterListView: View {
     }
 
     var body: some View {
+        let visibleChapters = orderedChapterList
+        let isNumberedOrder = BookGapPresentation.isNumberedOrder(visibleChapters)
         PlatformNavigationStack {
             ScrollViewReader { proxy in
-                List(orderedChapterList) { chapter in
-                    Button {
-                        self.chapter = chapter
-                        chapterSet?(chapter)
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(chapter.sourceDisplayTitle)
-                                    .foregroundColor(.primary)
-                                    .font(.subheadline)
-                                if showPageCounts.value, supportsPageCounts {
-                                    Text(chapterPageCountSubtitle(
-                                        pageCount: pageCounts[chapter.key] ?? 0,
-                                        progressPage: progressPages[chapter.key]
-                                    ))
-                                        .foregroundColor(.secondary)
+                List {
+                    ForEach(Array(visibleChapters.enumerated()), id: \.element.id) { entry in
+                        let index = entry.offset
+                        let chapter = entry.element
+                        let missingBefore = isNumberedOrder && index > 0
+                            ? BookGapPresentation.missingCount(between: visibleChapters[index - 1], and: chapter)
+                            : 0
+                        let missingAfter = isNumberedOrder && index + 1 < visibleChapters.count
+                            ? BookGapPresentation.missingCount(between: chapter, and: visibleChapters[index + 1])
+                            : 0
+                        if missingBefore > 0 {
+                            MissingBooksWarningRow(count: missingBefore)
+                        }
+                        Button {
+                            self.chapter = chapter
+                            chapterSet?(chapter)
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(chapter.sourceDisplayTitle)
+                                        .foregroundColor(.primary)
                                         .font(.subheadline)
-                                        // Reserve the subtitle's final height while its
-                                        // page count loads so the list cannot shift.
-                                        .opacity(pageCounts[chapter.key] == nil ? 0 : 1)
-                                        .accessibilityHidden(pageCounts[chapter.key] == nil)
-                                } else if let subtitle = chapter.formattedSubtitle(
-                                    page: nil,
-                                    sourceKey: manga.sourceKey
-                                ) {
-                                    Text(subtitle)
-                                        .foregroundColor(.secondary)
-                                        .font(.subheadline)
+                                    if showPageCounts.value, supportsPageCounts {
+                                        Text(chapterPageCountSubtitle(
+                                            pageCount: pageCounts[chapter.key] ?? 0,
+                                            progressPage: progressPages[chapter.key]
+                                        ))
+                                            .foregroundColor(.secondary)
+                                            .font(.subheadline)
+                                            // Reserve the subtitle's final height while its
+                                            // page count loads so the list cannot shift.
+                                            .opacity(pageCounts[chapter.key] == nil ? 0 : 1)
+                                            .accessibilityHidden(pageCounts[chapter.key] == nil)
+                                    } else if let subtitle = chapter.formattedSubtitle(
+                                        page: nil,
+                                        sourceKey: manga.sourceKey
+                                    ) {
+                                        Text(subtitle)
+                                            .foregroundColor(.secondary)
+                                            .font(.subheadline)
+                                    }
+                                }
+                                Spacer()
+                                if chapter == self.chapter {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.accentColor)
                                 }
                             }
-                            Spacer()
-                            if chapter == self.chapter {
-                                Image(systemName: "checkmark")
-                                    .foregroundColor(.accentColor)
-                            }
+                            .padding(.vertical, 2)
                         }
-                        .padding(.vertical, 2)
-                    }
-                    .id(chapter.id)
-                    .task(id: "\(chapter.id)-\(showPageCounts.value)") {
-                        await loadPageCount(for: chapter)
+                        .id(chapter.id)
+                        .task(id: "\(chapter.id)-\(showPageCounts.value)") {
+                            await loadPageCount(for: chapter)
+                        }
+                        .listRowSeparator(missingAfter > 0 ? .hidden : .visible, edges: .bottom)
                     }
                 }
                 .onAppear {

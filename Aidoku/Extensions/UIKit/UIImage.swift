@@ -21,10 +21,70 @@ enum CoverPalette {
     }
 }
 
+private struct PerceptualColorKey: Hashable, Comparable {
+    let lightness: Int
+    let redGreen: Int
+    let yellowBlue: Int
+
+    static func < (lhs: Self, rhs: Self) -> Bool {
+        if lhs.lightness != rhs.lightness { return lhs.lightness < rhs.lightness }
+        if lhs.redGreen != rhs.redGreen { return lhs.redGreen < rhs.redGreen }
+        return lhs.yellowBlue < rhs.yellowBlue
+    }
+}
+
+private struct PerceptualColorBucket {
+    var count = 0
+    var red = 0.0
+    var green = 0.0
+    var blue = 0.0
+    var lightness = 0.0
+    var redGreen = 0.0
+    var yellowBlue = 0.0
+
+    mutating func add(red: Double, green: Double, blue: Double, lightness: Double, redGreen: Double, yellowBlue: Double) {
+        count += 1
+        self.red += red
+        self.green += green
+        self.blue += blue
+        self.lightness += lightness
+        self.redGreen += redGreen
+        self.yellowBlue += yellowBlue
+    }
+
+    mutating func add(_ other: Self) {
+        count += other.count
+        red += other.red
+        green += other.green
+        blue += other.blue
+        lightness += other.lightness
+        redGreen += other.redGreen
+        yellowBlue += other.yellowBlue
+    }
+}
+
+private struct CoverColorSample {
+    let red: Double
+    let green: Double
+    let blue: Double
+    let lightness: Double
+    let redGreen: Double
+    let yellowBlue: Double
+    let chroma: Double
+    let hue: Double
+
+    var rgb: Int {
+        let redByte = Int((red * 255).rounded())
+        let greenByte = Int((green * 255).rounded())
+        let blueByte = Int((blue * 255).rounded())
+        return (redByte << 16) | (greenByte << 8) | blueByte
+    }
+}
+
 extension UIImage {
-    /// Returns the most common quantized color in a small sample of the image.
-    /// This preserves a cover's overall identity without exposing its artwork.
-    func dominantColor(sampleSize: Int = 24) -> UIColor? {
+    /// Ranks color families across a small cover sample, then returns an actual sampled color.
+    /// Meaningful colored areas still take priority over neutral backgrounds.
+    func dominantColor(sampleSize: Int = 32) -> UIColor? {
         guard let cgImage, sampleSize > 0 else { return nil }
 
         let bytesPerPixel = 4
@@ -40,73 +100,176 @@ extension UIImage {
                 space: CGColorSpaceCreateDeviceRGB(),
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             ) else { return false }
-            context.interpolationQuality = .low
+            context.interpolationQuality = .medium
             context.draw(cgImage, in: CGRect(x: 0, y: 0, width: sampleSize, height: sampleSize))
             return true
         }
         guard rendered else { return nil }
 
-        struct Bucket {
-            var count = 0
-            var red = 0
-            var green = 0
-            var blue = 0
+        func linearComponent(_ component: Double) -> Double {
+            component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
         }
-        var buckets: [Int: Bucket] = [:]
-        var chromaticBuckets: [Int: Bucket] = [:]
-        var chromaticPixelCount = 0
+
+        var buckets: [PerceptualColorKey: PerceptualColorBucket] = [:]
+        var coloredSamples: [CoverColorSample] = []
         var sampledPixelCount = 0
         for offset in stride(from: 0, to: pixels.count, by: bytesPerPixel) {
             guard pixels[offset + 3] > 32 else { continue }
-            let red = Int(pixels[offset])
-            let green = Int(pixels[offset + 1])
-            let blue = Int(pixels[offset + 2])
+            let alpha = Double(pixels[offset + 3]) / 255
+            let red = min(Double(pixels[offset]) / (255 * alpha), 1)
+            let green = min(Double(pixels[offset + 1]) / (255 * alpha), 1)
+            let blue = min(Double(pixels[offset + 2]) / (255 * alpha), 1)
+
+            let linearRed = linearComponent(red)
+            let linearGreen = linearComponent(green)
+            let linearBlue = linearComponent(blue)
+            let l = pow(0.4122214708 * linearRed + 0.5363325363 * linearGreen + 0.0514459929 * linearBlue, 1.0 / 3)
+            let m = pow(0.2119034982 * linearRed + 0.6806995451 * linearGreen + 0.1073969566 * linearBlue, 1.0 / 3)
+            let s = pow(0.0883024619 * linearRed + 0.2817188376 * linearGreen + 0.6299787005 * linearBlue, 1.0 / 3)
+            let lightness = 0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s
+            let redGreen = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s
+            let yellowBlue = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s
+            let key = PerceptualColorKey(
+                lightness: Int(floor(lightness / 0.045)),
+                redGreen: Int(floor(redGreen / 0.045)),
+                yellowBlue: Int(floor(yellowBlue / 0.045))
+            )
+
             sampledPixelCount += 1
-            let key = (red >> 4) << 8 | (green >> 4) << 4 | (blue >> 4)
-            var bucket = buckets[key, default: Bucket()]
-            bucket.count += 1
-            bucket.red += red
-            bucket.green += green
-            bucket.blue += blue
+            var bucket = buckets[key, default: PerceptualColorBucket()]
+            bucket.add(red: red, green: green, blue: blue, lightness: lightness, redGreen: redGreen, yellowBlue: yellowBlue)
             buckets[key] = bucket
 
             let maximum = max(red, green, blue)
             let minimum = min(red, green, blue)
-            let saturation = maximum == 0 ? 0 : Double(maximum - minimum) / Double(maximum)
-            // Treat low-chroma (near-gray) pixels as neutral, including JPEG noise.
-            if saturation >= 0.18 && maximum - minimum >= 12 {
-                chromaticPixelCount += 1
-                var chromaticBucket = chromaticBuckets[key, default: Bucket()]
-                chromaticBucket.count += 1
-                chromaticBucket.red += red
-                chromaticBucket.green += green
-                chromaticBucket.blue += blue
-                chromaticBuckets[key] = chromaticBucket
+            let saturation = maximum == 0 ? 0 : (maximum - minimum) / maximum
+            let chroma = hypot(redGreen, yellowBlue)
+            // OKLab chroma keeps nearly black or gray pixels with noisy RGB ratios out.
+            if saturation >= 0.18 && chroma >= 0.035 && maximum - minimum >= 12.0 / 255 {
+                coloredSamples.append(CoverColorSample(
+                    red: red,
+                    green: green,
+                    blue: blue,
+                    lightness: lightness,
+                    redGreen: redGreen,
+                    yellowBlue: yellowBlue,
+                    chroma: chroma,
+                    hue: atan2(yellowBlue, redGreen)
+                ))
             }
         }
 
-        // A small but meaningful colored area should win over a large gray background.
-        // Fall back to gray only when the sampled cover is almost entirely neutral.
-        let hasMeaningfulColor = chromaticPixelCount * 50 >= sampledPixelCount
-        let candidateBuckets = hasMeaningfulColor ? chromaticBuckets : buckets
-        func score(_ bucket: Bucket) -> Double {
-            guard hasMeaningfulColor else { return Double(bucket.count) }
-            let maximum = max(bucket.red, bucket.green, bucket.blue)
-            let minimum = min(bucket.red, bucket.green, bucket.blue)
-            let saturation = maximum == 0 ? 0 : Double(maximum - minimum) / Double(maximum)
-            return Double(bucket.count) * (1 + saturation * 0.75)
+        // Group across lightness so bright and dark shades of the same hue compete together.
+        if !coloredSamples.isEmpty && coloredSamples.count * 50 >= sampledPixelCount {
+            let familyCount = 24
+            let halfWidth = Double.pi / 8 // 22.5 degrees on either side of the center
+            var bestFamily: [CoverColorSample] = []
+            var bestFamilyScore = 0.0
+            for index in 0..<familyCount {
+                let center = -Double.pi + (Double(index) + 0.5) * 2 * Double.pi / Double(familyCount)
+                let family = coloredSamples.filter { sample in
+                    let distance = abs(sample.hue - center)
+                    return min(distance, 2 * Double.pi - distance) <= halfWidth
+                }
+                guard !family.isEmpty else { continue }
+                let averageChroma = family.reduce(0) { $0 + $1.chroma } / Double(family.count)
+                let averageLightness = family.reduce(0) { $0 + $1.lightness } / Double(family.count)
+                let colorStrength = 0.45 + 1.9 * pow(min(averageChroma / 0.18, 1), 1.3)
+                let brightness = 0.5 + 0.5 * sqrt(max(averageLightness, 0))
+                let score = pow(Double(family.count), 0.84) * colorStrength * brightness
+                if score > bestFamilyScore {
+                    bestFamily = family
+                    bestFamilyScore = score
+                }
+            }
+
+            if !bestFamily.isEmpty {
+                func vibrancyBonus(_ sample: CoverColorSample) -> Double {
+                    1 + 0.12 * min(sample.chroma / 0.18, 1)
+                }
+                func distanceSquared(_ first: CoverColorSample, _ second: CoverColorSample) -> Double {
+                    let lightness = first.lightness - second.lightness
+                    let redGreen = first.redGreen - second.redGreen
+                    let yellowBlue = first.yellowBlue - second.yellowBlue
+                    return lightness * lightness + redGreen * redGreen + yellowBlue * yellowBlue
+                }
+
+                // Count nearby shades before choosing an exact RGB value, so a small
+                // repeated highlight cannot beat a large patch of slightly varied pixels.
+                let shadeRadiusSquared = 0.045 * 0.045
+                var shadeCenter = bestFamily[0]
+                var bestShadeScore = 0.0
+                for sample in bestFamily {
+                    let support = bestFamily.reduce(0) { count, neighbor in
+                        count + (distanceSquared(sample, neighbor) <= shadeRadiusSquared ? 1 : 0)
+                    }
+                    let score = Double(support) * vibrancyBonus(sample)
+                    if score > bestShadeScore {
+                        shadeCenter = sample
+                        bestShadeScore = score
+                    }
+                }
+                let shadeSamples = bestFamily.filter { distanceSquared($0, shadeCenter) <= shadeRadiusSquared }
+                var frequencies: [Int: Int] = [:]
+                for sample in shadeSamples { frequencies[sample.rgb, default: 0] += 1 }
+                let mostFrequent = frequencies.values.max() ?? 0
+                let representative = shadeSamples
+                    .max { first, second in
+                        let firstBonus = vibrancyBonus(first)
+                        let secondBonus = vibrancyBonus(second)
+                        let firstScore = mostFrequent == 1 ? 1 : Double(frequencies[first.rgb] ?? 0) * firstBonus
+                        let secondScore = mostFrequent == 1 ? 1 : Double(frequencies[second.rgb] ?? 0) * secondBonus
+                        if firstScore != secondScore { return firstScore < secondScore }
+                        let firstDistance = distanceSquared(first, shadeCenter) / firstBonus
+                        let secondDistance = distanceSquared(second, shadeCenter) / secondBonus
+                        return firstDistance == secondDistance
+                            ? first.rgb > second.rgb
+                            : firstDistance > secondDistance
+                    }
+                if let representative {
+                    return UIColor(
+                        red: CGFloat(representative.red),
+                        green: CGFloat(representative.green),
+                        blue: CGFloat(representative.blue),
+                        alpha: 1
+                    )
+                }
+            }
         }
-        guard let dominant = candidateBuckets.max(by: { lhs, rhs in
-            let leftScore = score(lhs.value)
-            let rightScore = score(rhs.value)
-            return leftScore == rightScore ? lhs.key < rhs.key : leftScore < rightScore
-        })?.value, dominant.count > 0 else {
-            return nil
+
+        // Covers that are almost entirely neutral still use the largest perceptual group.
+        let orderedBuckets = buckets.sorted { $0.key < $1.key }.map { $0.value }
+        var bestGroup = PerceptualColorBucket()
+        var bestScore = 0.0
+        let maximumDistanceSquared = 0.07 * 0.07
+
+        for center in orderedBuckets {
+            let centerLightness = center.lightness / Double(center.count)
+            let centerRedGreen = center.redGreen / Double(center.count)
+            let centerYellowBlue = center.yellowBlue / Double(center.count)
+            var group = PerceptualColorBucket()
+            for neighbor in orderedBuckets {
+                let lightnessDifference = centerLightness - neighbor.lightness / Double(neighbor.count)
+                let redGreenDifference = centerRedGreen - neighbor.redGreen / Double(neighbor.count)
+                let yellowBlueDifference = centerYellowBlue - neighbor.yellowBlue / Double(neighbor.count)
+                let distanceSquared = lightnessDifference * lightnessDifference
+                    + redGreenDifference * redGreenDifference
+                    + yellowBlueDifference * yellowBlueDifference
+                if distanceSquared <= maximumDistanceSquared {
+                    group.add(neighbor)
+                }
+            }
+            let score = Double(group.count)
+            if score > bestScore {
+                bestGroup = group
+                bestScore = score
+            }
         }
+        guard bestGroup.count > 0 else { return nil }
         return UIColor(
-            red: CGFloat(dominant.red / dominant.count) / 255,
-            green: CGFloat(dominant.green / dominant.count) / 255,
-            blue: CGFloat(dominant.blue / dominant.count) / 255,
+            red: CGFloat(bestGroup.red / Double(bestGroup.count)),
+            green: CGFloat(bestGroup.green / Double(bestGroup.count)),
+            blue: CGFloat(bestGroup.blue / Double(bestGroup.count)),
             alpha: 1
         )
     }

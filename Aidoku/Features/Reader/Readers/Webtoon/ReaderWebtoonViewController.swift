@@ -181,6 +181,9 @@ class ReaderWebtoonViewController: ZoomableCollectionViewController {
     }
 
     override func observe() {
+        addObserver(forName: "Reader.backgroundColor") { [weak self] _ in
+            self?.updateVisibleTransitionAppearance()
+        }
         addObserver(forName: "Reader.verticalInfiniteScroll") { [weak self] notification in
             self?.infinite = notification.object as? Bool ?? UserDefaults.standard.bool(forKey: "Reader.verticalInfiniteScroll")
         }
@@ -201,9 +204,11 @@ class ReaderWebtoonViewController: ZoomableCollectionViewController {
         }
         addObserver(forName: .readerShowingBars) { [weak self] _ in
             self?.setLiveTextButtonHidden(false)
+            self?.updateVisibleTransitionAppearance()
         }
         addObserver(forName: .readerHidingBars) { [weak self] _ in
             self?.setLiveTextButtonHidden(true)
+            self?.updateVisibleTransitionAppearance()
         }
 
         addObserver(forName: UIApplication.didReceiveMemoryWarningNotification.rawValue) { _ in
@@ -211,6 +216,19 @@ class ReaderWebtoonViewController: ZoomableCollectionViewController {
 
             // clear image memory cache
             ImagePipeline.shared.configuration.imageCache?.removeAll()
+        }
+    }
+
+    private func updateVisibleTransitionAppearance() {
+        for case let node as ReaderWebtoonTransitionNode in collectionNode.visibleNodes {
+            node.updateAppearance()
+        }
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if previousTraitCollection?.userInterfaceStyle != traitCollection.userInterfaceStyle {
+            updateVisibleTransitionAppearance()
         }
     }
 
@@ -1162,15 +1180,20 @@ extension ReaderWebtoonViewController: ASCollectionDataSource {
             let to = page.type == .prevInfoPage
                 ? self.delegate?.getPreviousChapter()
                 : self.delegate?.getNextChapter()
+            let usesDarkAppearance = delegate?.readerCanvasUsesDarkAppearance
+                ?? (traitCollection.userInterfaceStyle == .dark)
             return {
-                ReaderWebtoonTransitionNode(
+                let node = ReaderWebtoonTransitionNode(
                     transition: .init(
                         type: page.type == .prevInfoPage ? .prev : .next,
                         from: chapter,
                         to: to
                     ),
-                    pillarboxLayoutState: self.pillarboxLayoutState
+                    pillarboxLayoutState: self.pillarboxLayoutState,
+                    usesDarkAppearance: usesDarkAppearance
                 )
+                node.reader = self
+                return node
             }
         }
     }

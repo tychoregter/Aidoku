@@ -574,6 +574,15 @@ extension Settings {
                     value: .toggle(.init())
                 ),
                 .init(
+                    key: AppSettings.library.limitMangaInfoGenresToEnabled.key,
+                    title: NSLocalizedString(
+                        "LIMIT_TO_ENABLED_GENRES",
+                        value: "Limit to Enabled Genres",
+                        comment: "Only show enabled library genres on manga info screens"
+                    ),
+                    value: .toggle(.init())
+                ),
+                .init(
                     key: AppSettings.library.showMangaInfoTags.key,
                     title: NSLocalizedString("SHOW_TAGS", value: "Show Tags", comment: "Show tag pills on manga info screens"),
                     value: .toggle(.init())

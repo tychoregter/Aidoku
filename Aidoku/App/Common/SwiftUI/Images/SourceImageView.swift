@@ -45,11 +45,13 @@ struct SourceImageView: View {
             request: imageRequest,
             transaction: .init(animation: .default)
         ) { state in
-            let sampledColor = privacyPlaceholder || onDominantColorChange != nil
+            let needsColor = privacyPlaceholder || onDominantColorChange != nil
+            let cachedColor = needsColor ? CoverPalette.color(for: imageUrl) : nil
+            let sampledColor = needsColor && cachedColor == nil
                 ? state.imageContainer?.image.dominantColor()
                 : nil
-            let dominantColor = privacyPlaceholder || onDominantColorChange != nil
-                ? CoverPalette.color(for: imageUrl) ?? sampledColor ?? DeveloperMode.color(for: imageUrl)
+            let dominantColor = needsColor
+                ? (cachedColor ?? sampledColor ?? DeveloperMode.color(for: imageUrl))
                 : nil
             Group {
                 if privacyPlaceholder {

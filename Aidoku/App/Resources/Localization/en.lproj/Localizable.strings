@@ -76,6 +76,7 @@
 "REMOVE_FROM_LIBRARY" = "Remove from Library";
 "MANGA_INFO" = "Manga Info";
 "SHOW_GENRES" = "Show Genres";
+"LIMIT_TO_ENABLED_GENRES" = "Limit to Enabled Genres";
 "SHOW_TAGS" = "Show Tags";
 "LIST_ORDER" = "List Order";
 "DEFAULT_LIST_ORDER" = "Default List Order";
@@ -379,6 +380,8 @@
 "CH_SPACE_X" = "Bk. %g";
 "NO_CHAPTERS" = "No Books";
 "NO_CHAPTERS_AVAILABLE" = "No Books Available";
+"MISSING_ONE_BOOK" = "Missing 1 book";
+"MISSING_BOOKS_COUNT" = "Missing %i books";
 "CHAPTERS_ADJUST_FILTERS" = "Adjust your book filters to see more books.";
 "CHAPTERS_EMPTY_DESCRIPTION" = "Books will appear here when they become available.";
 "START_READING" = "Start Reading";
@@ -397,7 +400,8 @@
 "CURRENT_COLON" = "Current:";
 "NO_NEXT_CHAPTER" = "There is no next book";
 "NO_PREVIOUS_CHAPTER" = "There is no previous book";
-"SKIPPING_CHAPTERS" = "Skipping %i books, either the source is missing them or they have been filtered out";
+"SKIPPING_ONE_MISSING_BOOK" = "Skipping 1 missing book";
+"SKIPPING_CHAPTERS" = "Skipping %i missing books";
 "READER_SETTINGS" = "Reader Settings";
 "READING_MODE" = "Reading Mode";
 "DEFAULT" = "Default";

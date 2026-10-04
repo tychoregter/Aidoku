@@ -29,6 +29,7 @@ struct ExpandableTextView: View {
     private var moreLabel: String { NSLocalizedString("MORE").uppercased() }
 
     private var moreFont: UIFont { .systemFont(ofSize: 13, weight: .semibold) }
+    private var collapsedLineHeight: CGFloat { UIFont.systemFont(ofSize: 15).lineHeight }
 
     private func setExpanded(_ value: Bool) {
         guard expanded != value else { return }
@@ -113,7 +114,7 @@ struct ExpandableTextView: View {
             }
             .frame(
                 height: expanded && expandedHeight > 0
-                    ? expandedHeight : (collapsedHeight > 0 ? collapsedHeight : nil),
+                    ? expandedHeight + 2 : (collapsedHeight > 0 ? collapsedHeight + 2 : nil),
                 alignment: .top
             )
             .clipped()
@@ -151,7 +152,7 @@ struct ExpandableTextView: View {
                                 .frame(width: fadeWidth)
                                 Color.clear
                             }
-                            .frame(height: min(22, geometry.size.height))
+                            .frame(height: min(collapsedLineHeight, geometry.size.height))
                         }
                     }
                 } else {

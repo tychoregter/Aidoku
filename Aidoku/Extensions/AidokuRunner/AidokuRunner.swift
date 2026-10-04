@@ -258,7 +258,17 @@ extension AidokuRunner.Chapter {
         return formattedTitle()
     }
 
-    func formattedTitle(forceMode: ChapterTitleDisplayMode = .default) -> String {
+    var readerTransitionDisplayTitle: String {
+        if let title = title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            return title
+        }
+        return formattedTitle(useFullBookLabel: true)
+    }
+
+    func formattedTitle(
+        forceMode: ChapterTitleDisplayMode = .default,
+        useFullBookLabel: Bool = false
+    ) -> String {
         if forceMode == .default {
             if volumeNumber == nil && (title?.isEmpty ?? true) {
                 // Chapter X
@@ -280,7 +290,7 @@ extension AidokuRunner.Chapter {
                 // Ch.X
                 if let chapterNumber {
                     components.append(
-                        String(format: NSLocalizedString("CH_X"), chapterNumber)
+                        String(format: NSLocalizedString(useFullBookLabel ? "CHAPTER_X" : "CH_X"), chapterNumber)
                     )
                 }
                 // title
