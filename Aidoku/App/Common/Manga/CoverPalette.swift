@@ -8,7 +8,7 @@ import UIKit
 @MainActor
 enum CoverPalette {
     // Increment whenever the picker or any derived color formula changes.
-    private static let version = 9
+    private static let version = 12
     private static let fileURL = FileManager.default.applicationSupportDirectory
         .appendingPathComponent("CoverPalette.json")
     private static let writeQueue = DispatchQueue(label: "Aidoku.CoverPalette.disk", qos: .utility)

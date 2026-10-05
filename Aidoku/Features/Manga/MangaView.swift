@@ -1423,7 +1423,7 @@ struct MangaDetailsBackdrop: View {
     }
 
     static func isDarkenedBackground(_ color: UIColor, colorScheme: ColorScheme) -> Bool {
-        backgroundLuminance(color, colorScheme: colorScheme) <= 0.5
+        backgroundLuminance(color, colorScheme: colorScheme) <= 0.4
     }
 
     static func shouldUseDarkHeaderText(_ color: UIColor, colorScheme: ColorScheme) -> Bool {
