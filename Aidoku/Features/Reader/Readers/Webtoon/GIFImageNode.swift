@@ -75,6 +75,7 @@ class GIFImageNode: ASControlNode {
     }
 
     func reset() {
+        image = nil
         animatedData = nil
         image = nil
 

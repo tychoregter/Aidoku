@@ -12,7 +12,8 @@ struct ReaderSettings: Sendable {
             autoScrollPosition,
             useLegacyScrubber,
             scrubberDataSaver,
-            showWebtoonScrollPercentage
+            showWebtoonScrollPercentage,
+            upscaleQuality
         ]
     }
 
@@ -21,4 +22,5 @@ struct ReaderSettings: Sendable {
     let useLegacyScrubber = SettingsKey<Bool>("Reader.useLegacyScrubber", default: false)
     let scrubberDataSaver = SettingsKey<Bool>("Reader.scrubberDataSaver", default: false)
     let showWebtoonScrollPercentage = SettingsKey<Bool>("Reader.showWebtoonScrollPercentage", default: true)
+    let upscaleQuality = SettingsKey<UpscaleQuality>("Reader.upscaleQuality", default: .fast)
 }
