@@ -91,6 +91,12 @@ struct MangaDetailsHeaderView: View {
     private var readButtonColor: Color { usesDarkHeaderText ? .black : .white }
     private var readButtonTextColor: Color { usesDarkHeaderText ? .white : .black }
     private var hidesNSFWCover: Bool { hideNSFWCovers.value && manga.contentRating == .nsfw }
+    private var canSetThemeColor: Bool {
+        bookmarked
+            || manga.sourceKey.hasPrefix(KomgaSourceRunner.sourceKeyPrefix)
+            || manga.sourceKey.hasPrefix(SuwayomiSourceRunner.sourceKeyPrefix)
+            || manga.sourceKey.hasPrefix(KavitaSourceRunner.sourceKeyPrefix)
+    }
     private var displayedTitle: String {
         developerMode.value ? DeveloperMode.title(for: String(describing: manga.identifier)) : manga.title
     }
@@ -595,19 +601,21 @@ struct MangaDetailsHeaderView: View {
             }
         }
 
-        Divider()
+        if canSetThemeColor {
+            Divider()
 
-        Button {
-            themeColorSheet = .cover
-        } label: {
-            Label(NSLocalizedString("SET_THEME_COLOR"), systemImage: "paintpalette")
-        }
-        if hasCustomThemeColor {
             Button {
-                CoverPalette.setCustomColor(nil, for: manga.identifier)
-                hasCustomThemeColor = false
+                themeColorSheet = .cover
             } label: {
-                Label(NSLocalizedString("RESET_THEME_COLOR"), systemImage: "arrow.uturn.backward")
+                Label(NSLocalizedString("SET_THEME_COLOR"), systemImage: "paintpalette")
+            }
+            if hasCustomThemeColor {
+                Button {
+                    CoverPalette.setCustomColor(nil, for: manga.identifier)
+                    hasCustomThemeColor = false
+                } label: {
+                    Label(NSLocalizedString("RESET_THEME_COLOR"), systemImage: "arrow.uturn.backward")
+                }
             }
         }
     }
@@ -864,6 +872,7 @@ private struct ThemeColorEditor: View {
     @State private var lensImage: UIImage?
     @State private var touchLocation: CGPoint?
     @State private var isSampling = false
+    @State private var isNavigatingCover = false
 
     init(source: AidokuRunner.Source?, coverURL: String?,
          initialColor: UIColor, onSave: @escaping (UIColor) -> Void) {
@@ -879,18 +888,23 @@ private struct ThemeColorEditor: View {
             VStack(spacing: 16) {
                 if let coverImage {
                     GeometryReader { geometry in
-                        ThemeCoverCanvasView(image: coverImage, selection: $selection) { point, location, active in
-                            isSampling = active
-                            guard active else { return }
-                            let coverOrigin = geometry.frame(in: .global).origin
-                            touchLocation = CGPoint(x: coverOrigin.x + location.x, y: coverOrigin.y + location.y)
-                            lensImage = magnifiedPatch(from: coverImage, at: point)
-                            if let color = sampleColor(from: coverImage, at: point),
-                               let value = CoverPalette.hexString(for: color) {
-                                hex = value
-                                wheelColor = Color(uiColor: color)
-                            }
-                        }
+                        ThemeCoverCanvasView(
+                            image: coverImage,
+                            selection: $selection,
+                            onSample: { point, location, active in
+                                isSampling = active
+                                guard active else { return }
+                                let coverOrigin = geometry.frame(in: .global).origin
+                                touchLocation = CGPoint(x: coverOrigin.x + location.x, y: coverOrigin.y + location.y)
+                                lensImage = magnifiedPatch(from: coverImage, at: point)
+                                if let color = sampleColor(from: coverImage, at: point),
+                                   let value = CoverPalette.hexString(for: color) {
+                                    hex = value
+                                    wheelColor = Color(uiColor: color)
+                                }
+                            },
+                            onNavigationChange: { isNavigatingCover = $0 }
+                        )
                     }
                 } else if coverLoadFailed {
                     ContentUnavailableView("Cover Unavailable", systemImage: "photo")
@@ -1010,7 +1024,7 @@ private struct ThemeColorEditor: View {
         .interactiveDismissDisabled()
         .overlay {
             GeometryReader { geometry in
-                if isSampling, let lensImage, let touchLocation {
+                if isSampling, !isNavigatingCover, let lensImage, let touchLocation {
                     let origin = geometry.frame(in: .global).origin
                     let localTouch = CGPoint(x: touchLocation.x - origin.x, y: touchLocation.y - origin.y)
                     magnifier(for: lensImage)
@@ -1120,6 +1134,7 @@ private struct ThemeCoverCanvasView: UIViewRepresentable {
     let image: UIImage
     @Binding var selection: UnitPoint?
     let onSample: (UnitPoint, CGPoint, Bool) -> Void
+    let onNavigationChange: (Bool) -> Void
 
     func makeUIView(context: Context) -> ThemeCoverCanvas {
         ThemeCoverCanvas(image: image)
@@ -1127,6 +1142,7 @@ private struct ThemeCoverCanvasView: UIViewRepresentable {
 
     func updateUIView(_ view: ThemeCoverCanvas, context: Context) {
         view.onSample = onSample
+        view.onNavigationChange = onNavigationChange
         view.setSelection(selection)
     }
 }
@@ -1137,7 +1153,9 @@ private final class ThemeCoverCanvas: UIView, UIScrollViewDelegate, UIGestureRec
     let borderView = UIView()
     let marker = UIView(frame: CGRect(x: 0, y: 0, width: 22, height: 22))
     var onSample: ((UnitPoint, CGPoint, Bool) -> Void)?
+    var onNavigationChange: ((Bool) -> Void)?
     private var lastViewportSize: CGSize = .zero
+    private var isNavigating = false
     private let image: UIImage
 
     init(image: UIImage) {
@@ -1150,6 +1168,8 @@ private final class ThemeCoverCanvas: UIView, UIScrollViewDelegate, UIGestureRec
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.showsVerticalScrollIndicator = false
         scrollView.panGestureRecognizer.minimumNumberOfTouches = 2
+        scrollView.panGestureRecognizer.addTarget(self, action: #selector(handleNavigationGesture(_:)))
+        scrollView.pinchGestureRecognizer?.addTarget(self, action: #selector(handleNavigationGesture(_:)))
         scrollView.layer.cornerRadius = 16
         scrollView.layer.cornerCurve = .continuous
         scrollView.clipsToBounds = true
@@ -1216,6 +1236,17 @@ private final class ThemeCoverCanvas: UIView, UIScrollViewDelegate, UIGestureRec
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
 
     func scrollViewDidZoom(_ scrollView: UIScrollView) { centerImage() }
+
+    @objc private func handleNavigationGesture(_ gesture: UIGestureRecognizer) {
+        let panState = scrollView.panGestureRecognizer.state
+        let panIsActive = panState == .began || panState == .changed
+        let pinchState = scrollView.pinchGestureRecognizer?.state
+        let pinchIsActive = pinchState == .began || pinchState == .changed
+        let active = panIsActive || pinchIsActive
+        guard active != isNavigating else { return }
+        isNavigating = active
+        onNavigationChange?(active)
+    }
 
     private func centerImage() {
         let horizontal = max(0, (scrollView.bounds.width - scrollView.contentSize.width) / 2)
