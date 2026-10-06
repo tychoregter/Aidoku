@@ -54,7 +54,8 @@ struct MangaView: View {
 
     private var usesLightToolbarIcons: Bool {
         if isOverHero && !toolbarTransitionState.isLeaving {
-            let headerColor = CoverPalette.headerColor(for: viewModel.manga.cover ?? "", dark: colorScheme == .dark)
+            let headerColor = CoverPalette.headerColor(for: viewModel.manga.cover ?? "", dark: colorScheme == .dark,
+                                                       identifier: viewModel.manga.identifier)
                 ?? MangaDetailsBackdrop.darkenedBackgroundColor(
                     from: backdropDominantColor, colorScheme: colorScheme
                 )
@@ -64,12 +65,14 @@ struct MangaView: View {
     }
 
     private var usesDarkHeaderText: Bool {
-        CoverPalette.usesDarkHeaderText(for: viewModel.manga.cover ?? "", dark: colorScheme == .dark)
+        CoverPalette.usesDarkHeaderText(for: viewModel.manga.cover ?? "", dark: colorScheme == .dark,
+                                            identifier: viewModel.manga.identifier)
             ?? MangaDetailsBackdrop.shouldUseDarkHeaderText(backdropDominantColor, colorScheme: colorScheme)
     }
 
     private var headerControlBackgroundColor: Color {
-        Color(uiColor: CoverPalette.controlColor(for: viewModel.manga.cover ?? "", dark: colorScheme == .dark)
+        Color(uiColor: CoverPalette.controlColor(for: viewModel.manga.cover ?? "", dark: colorScheme == .dark,
+                                                identifier: viewModel.manga.identifier)
             ?? MangaDetailsBackdrop.controlBackgroundColor(
             from: backdropDominantColor,
             colorScheme: colorScheme,
@@ -88,7 +91,7 @@ struct MangaView: View {
     ) {
         let source = source ?? SourceManager.shared.store.source(for: manga.sourceKey)
         self._viewModel = StateObject(wrappedValue: ViewModel(source: source, manga: manga))
-        self._backdropDominantColor = State(initialValue: CoverPalette.color(for: manga.cover ?? "")
+        self._backdropDominantColor = State(initialValue: CoverPalette.color(for: manga.cover ?? "", identifier: manga.identifier)
             ?? DeveloperMode.color(for: manga.cover ?? ""))
         self.path = path
         self.readerTransitionSource = readerTransitionSource
@@ -256,6 +259,7 @@ struct MangaView: View {
                         MangaDetailsBackdrop(
                             source: viewModel.source,
                             coverImage: viewModel.manga.cover ?? "",
+                            paletteIdentifier: viewModel.manga.identifier,
                             baseColor: backdropDominantColor,
                             privacyPlaceholder: developerMode.value,
                             roundsTopCorners: roundsHeaderTopCorners && !incognitoMode.value
@@ -277,6 +281,13 @@ struct MangaView: View {
             .toolbarColorScheme(usesLightToolbarIcons ? .dark : .light, for: .navigationBar)
             .onChange(of: usesLightToolbarIcons) { _ in updateNavigationAppearance() }
             .onChange(of: colorScheme) { _ in
+                updateNavigationAppearance()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: CoverPalette.customColorDidChange)) { notification in
+                guard let identifier = notification.object as? MangaIdentifier,
+                      identifier == viewModel.manga.identifier else { return }
+                backdropDominantColor = CoverPalette.color(for: viewModel.manga.cover ?? "", identifier: identifier)
+                    ?? DeveloperMode.color(for: viewModel.manga.cover ?? "")
                 updateNavigationAppearance()
             }
             .navigationBarBackButtonHidden(editMode == .active)
@@ -325,7 +336,8 @@ struct MangaView: View {
                 if let navigationController = path.navigationController as? NavigationController {
                     navigationController.setStatusBarStyleOverride(nil, owner: statusBarStyleOwner)
                     if #available(iOS 26.0, *) {
-                        navigationController.navigationBar.overrideUserInterfaceStyle = .unspecified
+                        navigationController.navigationBar.overrideUserInterfaceStyle =
+                            navigationController.navigationBar.window?.traitCollection.userInterfaceStyle ?? .unspecified
                         navigationController.navigationBar.tintColor = nil
                     } else if let originalNavigationTint {
                         navigationController.navigationBar.tintColor = originalNavigationTint
@@ -470,7 +482,8 @@ extension MangaView {
             headerControlBackgroundColor: headerControlBackgroundColor,
             nsfwBaseColor: backdropDominantColor,
             onCoverDominantColorChange: { color in
-                backdropDominantColor = color
+                backdropDominantColor = CoverPalette.color(for: viewModel.manga.cover ?? "",
+                                                           identifier: viewModel.manga.identifier) ?? color
             },
             onHeroBottomChange: updateHeroPosition,
             onTitlePressed: {
@@ -716,7 +729,7 @@ extension MangaView {
     var rightNavbarButton: some View {
         RightNavbarButton(
             viewModel: viewModel,
-            refresh: { await viewModel.refresh(forceCoverReload: true) },
+            refresh: { await viewModel.refresh() },
             usesLightLabel: usesLightToolbarIcons,
             setEditing: { editing in
                 // Set the native bar tint before the selection button is created.
@@ -1032,6 +1045,14 @@ private struct ChapterCellView<T: View>: View, Equatable {
         chapter.locked && !(downloadStatus == .finished)
     }
 
+    private var lockedIndicator: some View {
+        Image(systemName: "lock.fill")
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(Color(uiColor: .secondaryLabel))
+            .frame(width: 36, height: 44)
+            .padding(.trailing, 11)
+    }
+
     var body: some View {
         let view = ChapterTableCell(
             source: source,
@@ -1045,7 +1066,10 @@ private struct ChapterCellView<T: View>: View, Equatable {
             displayMode: displayMode
         )
         if isEditing {
-            view
+            HStack(spacing: 0) {
+                view
+                if locked { lockedIndicator }
+            }
         } else {
             HStack(spacing: 0) {
                 Button {
@@ -1070,7 +1094,9 @@ private struct ChapterCellView<T: View>: View, Equatable {
                     }
                 }
 
-                if !locked {
+                if locked {
+                    lockedIndicator
+                } else {
                     Menu {
                         contextMenu?()
                     } label: {
@@ -1293,6 +1319,7 @@ struct MangaDetailsBackdrop: View {
 
     let source: AidokuRunner.Source?
     let coverImage: String
+    var paletteIdentifier: MangaIdentifier?
     var baseColor: UIColor
     var privacyPlaceholder = false
     var roundsTopCorners = false
@@ -1315,11 +1342,13 @@ struct MangaDetailsBackdrop: View {
             UIColor(red: red * multiplier, green: green * multiplier, blue: blue * multiplier, alpha: 1)
         }
         let darkMultiplier = 1 - darkening(for: .dark)
-        let minimumDarkLuminance = 0.012
+        let minimumDarkLuminance = 0.015
         let usualDarkBackground = scaledColor(darkMultiplier)
         let adjustedDarkBackground: UIColor
+        let darkBackgroundWasLightened: Bool
         if luminance(usualDarkBackground) >= minimumDarkLuminance {
             adjustedDarkBackground = usualDarkBackground
+            darkBackgroundWasLightened = false
         } else if luminance(color) >= minimumDarkLuminance {
             // Back off the darkening only as far as needed, preserving the cover's hue.
             var lower = darkMultiplier
@@ -1329,6 +1358,7 @@ struct MangaDetailsBackdrop: View {
                 if luminance(scaledColor(middle)) < minimumDarkLuminance { lower = middle } else { upper = middle }
             }
             adjustedDarkBackground = scaledColor(upper)
+            darkBackgroundWasLightened = true
         } else {
             var lower: CGFloat = 0
             var upper: CGFloat = 1
@@ -1348,20 +1378,27 @@ struct MangaDetailsBackdrop: View {
                 blue: blue * (1 - upper) + upper,
                 alpha: 1
             )
+            darkBackgroundWasLightened = true
         }
         guard colorScheme == .light else { return adjustedDarkBackground }
 
-        // Keep the light appearance linked to the adjusted dark color for this cover.
-        var darkRed: CGFloat = 0
-        var darkGreen: CGFloat = 0
-        var darkBlue: CGFloat = 0
-        guard adjustedDarkBackground.getRed(&darkRed, green: &darkGreen, blue: &darkBlue, alpha: &alpha) else {
-            return scaledColor(1 - darkening(for: .light))
+        // Normally derive light mode directly from the sampled cover color.
+        // Only link it to dark mode when dark mode had to be lifted to clear its floor.
+        var lightRed = red * (1 - darkening(for: .light))
+        var lightGreen = green * (1 - darkening(for: .light))
+        var lightBlue = blue * (1 - darkening(for: .light))
+        if darkBackgroundWasLightened {
+            var darkRed: CGFloat = 0
+            var darkGreen: CGFloat = 0
+            var darkBlue: CGFloat = 0
+            guard adjustedDarkBackground.getRed(&darkRed, green: &darkGreen, blue: &darkBlue, alpha: &alpha) else {
+                return scaledColor(1 - darkening(for: .light))
+            }
+            let lightToDarkRatio = (1 - darkening(for: .light)) / darkMultiplier
+            lightRed = min(darkRed * lightToDarkRatio, 1)
+            lightGreen = min(darkGreen * lightToDarkRatio, 1)
+            lightBlue = min(darkBlue * lightToDarkRatio, 1)
         }
-        let lightToDarkRatio = (1 - darkening(for: .light)) / darkMultiplier
-        let lightRed = min(darkRed * lightToDarkRatio, 1)
-        let lightGreen = min(darkGreen * lightToDarkRatio, 1)
-        let lightBlue = min(darkBlue * lightToDarkRatio, 1)
         func lightColor(_ multiplier: CGFloat) -> UIColor {
             UIColor(red: lightRed * multiplier, green: lightGreen * multiplier, blue: lightBlue * multiplier, alpha: 1)
         }
@@ -1418,21 +1455,24 @@ struct MangaDetailsBackdrop: View {
         return luminance
     }
 
-    private static func backgroundLuminance(_ color: UIColor, colorScheme: ColorScheme) -> Double {
-        luminance(darkenedBackgroundColor(from: color, colorScheme: colorScheme))
-    }
-
-    static func isDarkenedBackground(_ color: UIColor, colorScheme: ColorScheme) -> Bool {
-        backgroundLuminance(color, colorScheme: colorScheme) <= 0.4
+    private static func shouldUseDarkForeground(over background: UIColor) -> Bool {
+        let minimumWhiteContrast = 4.5
+        let minimumDarkContrast = 4.5
+        let darkContrastAdvantage = 6.0
+        let backgroundLuminance = luminance(background)
+        let whiteContrast = 1.05 / (backgroundLuminance + 0.05)
+        let darkContrast = (backgroundLuminance + 0.05) / 0.05
+        return whiteContrast < minimumWhiteContrast
+            && darkContrast >= minimumDarkContrast
+            && darkContrast >= whiteContrast * darkContrastAdvantage
     }
 
     static func shouldUseDarkHeaderText(_ color: UIColor, colorScheme: ColorScheme) -> Bool {
-        // Keep header text and controls in the same cover-derived contrast mode.
-        !isDarkenedBackground(color, colorScheme: colorScheme)
+        let background = darkenedBackgroundColor(from: color, colorScheme: colorScheme)
+        return shouldUseDarkForeground(over: background)
     }
 
     static func shouldUseDarkToolbarIcons(over headerColor: UIColor) -> Bool {
-        // Switch the top bar slightly before the header text and controls.
         luminance(headerColor) > 0.4
     }
 
@@ -1470,14 +1510,15 @@ struct MangaDetailsBackdrop: View {
         GeometryReader { geometry in
             Group {
                 if style == .coverColor {
-                    let background = CoverPalette.headerColor(for: coverImage, dark: colorScheme == .dark)
+                    let background = CoverPalette.headerColor(for: coverImage, dark: colorScheme == .dark,
+                                                               identifier: paletteIdentifier)
                         ?? Self.darkenedBackgroundColor(from: baseColor, colorScheme: colorScheme)
                     LinearGradient(
                         stops: [
                             .init(color: Color(uiColor: background), location: 0),
                             .init(color: Color(uiColor: background), location: 0.56),
                             .init(color: Color(uiColor: CoverPalette.headerBottomColor(
-                                for: coverImage, dark: colorScheme == .dark
+                                for: coverImage, dark: colorScheme == .dark, identifier: paletteIdentifier
                             ) ?? Self.bottomGradientColor(from: background)), location: 1)
                         ],
                         startPoint: .top,

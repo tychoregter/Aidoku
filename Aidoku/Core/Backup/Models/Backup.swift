@@ -12,6 +12,7 @@ struct Backup: Codable, Hashable, Identifiable, Sendable {
 
     var library: [BackupLibraryManga]?
     var stacks: [BackupLibraryStack]?
+    var customThemeColors: [String: String]?
     var history: [BackupHistory]?
     var manga: [BackupManga]?
     var chapters: [BackupChapter]?

@@ -119,6 +119,11 @@ actor BackupManager {
         } else {
             []
         }
+        let customThemeColors: [String: String]? = if options.libraryEntries {
+            await MainActor.run { CoverPalette.customColorsForBackup() }
+        } else {
+            nil
+        }
         return await CoreDataManager.shared.container.performBackgroundTask { context in
             let library: [BackupLibraryManga] = if options.libraryEntries {
                 CoreDataManager.shared.getLibraryManga(context: context).map {
@@ -186,6 +191,7 @@ actor BackupManager {
             return Backup(
                 library: library,
                 stacks: stacks,
+                customThemeColors: customThemeColors,
                 history: history,
                 manga: manga,
                 chapters: chapters,
@@ -626,6 +632,13 @@ extension BackupManager {
             try await sourceTask.value
         } catch {
             backupError = error
+        }
+
+        if backupError == nil, let customThemeColors = backup.customThemeColors {
+            let validIdentifiers = Set((backup.library ?? []).map(\.identifier))
+            await MainActor.run {
+                CoverPalette.restoreCustomColors(customThemeColors, validIdentifiers: validIdentifiers)
+            }
         }
 
         // Restore application and currently installed source settings as part of the initial restore.

@@ -320,7 +320,7 @@ extension MangaListCell {
             : .blank
         nsfwCoverView.layer.cornerRadius = coverImageView.layer.cornerRadius
         nsfwCoverView.layer.cornerCurve = .continuous
-        nsfwCoverView.configure(title: title, paletteURL: paletteURL)
+        nsfwCoverView.configure(title: title, paletteURL: paletteURL, identifier: identifier)
         coverImageView.bringSubviewToFront(nsfwCoverView)
     }
 
@@ -448,7 +448,8 @@ extension MangaListCell {
                             self.coverImageView.animate(withGIFData: data)
                         }
                         if self.hidesNSFWCover {
-                            self.nsfwCoverView.configure(title: self.titleLabel.text, paletteURL: url.absoluteString)
+                            self.nsfwCoverView.configure(title: self.titleLabel.text, paletteURL: url.absoluteString,
+                                                         identifier: currentIdentifier)
                         }
                     }
                 case .failure(let error):
@@ -466,10 +467,15 @@ extension MangaListCell {
     }
 
     private func observeCoverColor(_ image: UIImage, url: String, identifier: MangaIdentifier?) {
-        CoverPalette.observe(image, for: url, identifier: identifier) { [weak self] _ in
+        CoverPalette.observe(
+            image,
+            for: url,
+            identifier: identifier,
+            priority: hidesNSFWCover ? .hiddenCover : .normal
+        ) { [weak self] _ in
             guard let self, self.identifier == identifier, self.paletteURL == url,
                   self.hidesNSFWCover else { return }
-            self.nsfwCoverView.configure(title: self.titleLabel.text, paletteURL: url)
+            self.nsfwCoverView.configure(title: self.titleLabel.text, paletteURL: url, identifier: identifier)
         }
     }
 }

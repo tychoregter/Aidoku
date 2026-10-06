@@ -7,8 +7,32 @@ import UIKit
 
 @MainActor
 enum CoverPalette {
+    enum SamplingPriority: Int {
+        case normal
+        case hiddenCover
+        case infoView
+
+        var queuePriority: Operation.QueuePriority {
+            switch self {
+            case .normal: .normal
+            case .hiddenCover: .high
+            case .infoView: .veryHigh
+            }
+        }
+
+        var qualityOfService: QualityOfService {
+            switch self {
+            case .normal: .utility
+            case .hiddenCover: .utility
+            case .infoView: .userInitiated
+            }
+        }
+    }
+
     // Increment whenever the picker or any derived color formula changes.
-    private static let version = 12
+    private static let version = 28
+    static let customColorDidChange = Notification.Name("CoverPalette.customColorDidChange")
+    private static let customColorsKey = "CoverPalette.customBaseColors"
     private static let fileURL = FileManager.default.applicationSupportDirectory
         .appendingPathComponent("CoverPalette.json")
     private static let writeQueue = DispatchQueue(label: "Aidoku.CoverPalette.disk", qos: .utility)
@@ -127,6 +151,8 @@ enum CoverPalette {
         let imageID: ObjectIdentifier
         var callbacks: [(UIColor) -> Void]
         var identifiers: Set<MangaIdentifier>
+        var priority: SamplingPriority
+        var operation: BlockOperation?
     }
 
     @MainActor private final class State {
@@ -138,6 +164,8 @@ enum CoverPalette {
         var generations: [String: UInt64] = [:]
         var epoch: UInt64 = 0
         var pendingWrite: DispatchWorkItem?
+        var customColors: [String: String] = UserDefaults.standard.dictionary(forKey: customColorsKey) as? [String: String] ?? [:]
+        var derivedCustomColors: [String: Colors] = [:]
 
         init() {
             if let data = try? Data(contentsOf: fileURL),
@@ -171,18 +199,89 @@ enum CoverPalette {
             && AppSettings.library.continueReadingIncludeNonLibraryTitles.get()
     }
 
-    static func color(for url: String) -> UIColor? { state.colors(for: url)?.base.color }
-    static func headerColor(for url: String, dark: Bool) -> UIColor? { state.colors(for: url)?.header(dark: dark) }
-    static func headerBottomColor(for url: String, dark: Bool) -> UIColor? {
-        state.colors(for: url)?.headerBottom(dark: dark)
+    private static func colors(for url: String, identifier: MangaIdentifier?) -> Colors? {
+        if let identifier, let custom = customColors(for: identifier) { return custom }
+        return state.colors(for: url)
     }
-    static func controlColor(for url: String, dark: Bool) -> UIColor? { state.colors(for: url)?.control(dark: dark) }
-    static func usesDarkHeaderText(for url: String, dark: Bool) -> Bool? {
-        state.colors(for: url)?.darkHeaderText(dark: dark)
+
+    private static func customColors(for identifier: MangaIdentifier) -> Colors? {
+        let key = identifier.description
+        if let colors = state.derivedCustomColors[key] { return colors }
+        guard let hex = state.customColors[key], let color = color(fromHex: hex) else { return nil }
+        let colors = Colors(base: color)
+        state.derivedCustomColors[key] = colors
+        return colors
     }
-    static func hiddenColor(for url: String, dark: Bool) -> UIColor? { state.colors(for: url)?.hidden(dark: dark) }
-    static func hiddenForegroundColor(for url: String, dark: Bool) -> UIColor? {
-        state.colors(for: url)?.hiddenForeground(dark: dark)
+
+    static func customColor(for identifier: MangaIdentifier) -> UIColor? {
+        guard let hex = state.customColors[identifier.description] else { return nil }
+        return color(fromHex: hex)
+    }
+
+    static func customColorsForBackup() -> [String: String] {
+        state.customColors
+    }
+
+    static func restoreCustomColors(_ colors: [String: String], validIdentifiers: Set<MangaIdentifier>) {
+        let validKeys = Set(validIdentifiers.map(\.description))
+        state.customColors = colors.filter { validKeys.contains($0.key) }
+        state.derivedCustomColors.removeAll()
+        UserDefaults.standard.set(state.customColors, forKey: customColorsKey)
+        for identifier in validIdentifiers {
+            NotificationCenter.default.post(name: customColorDidChange, object: identifier)
+        }
+    }
+
+    static func setCustomColor(_ color: UIColor?, for identifier: MangaIdentifier) {
+        let key = identifier.description
+        if let color, let hex = hexString(for: color) {
+            state.customColors[key] = hex
+        } else {
+            state.customColors.removeValue(forKey: key)
+        }
+        state.derivedCustomColors.removeValue(forKey: key)
+        UserDefaults.standard.set(state.customColors, forKey: customColorsKey)
+        NotificationCenter.default.post(name: customColorDidChange, object: identifier)
+    }
+
+    static func color(fromHex text: String) -> UIColor? {
+        let hex = text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "#", with: "")
+        guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return nil }
+        return UIColor(red: CGFloat((value >> 16) & 0xff) / 255,
+                       green: CGFloat((value >> 8) & 0xff) / 255,
+                       blue: CGFloat(value & 0xff) / 255, alpha: 1)
+    }
+
+    static func hexString(for color: UIColor) -> String? {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return nil }
+        return String(format: "#%02X%02X%02X", Int((red * 255).rounded()),
+                      Int((green * 255).rounded()), Int((blue * 255).rounded()))
+    }
+
+    static func color(for url: String, identifier: MangaIdentifier? = nil) -> UIColor? {
+        colors(for: url, identifier: identifier)?.base.color
+    }
+    static func headerColor(for url: String, dark: Bool, identifier: MangaIdentifier? = nil) -> UIColor? {
+        colors(for: url, identifier: identifier)?.header(dark: dark)
+    }
+    static func headerBottomColor(for url: String, dark: Bool, identifier: MangaIdentifier? = nil) -> UIColor? {
+        colors(for: url, identifier: identifier)?.headerBottom(dark: dark)
+    }
+    static func controlColor(for url: String, dark: Bool, identifier: MangaIdentifier? = nil) -> UIColor? {
+        colors(for: url, identifier: identifier)?.control(dark: dark)
+    }
+    static func usesDarkHeaderText(for url: String, dark: Bool, identifier: MangaIdentifier? = nil) -> Bool? {
+        colors(for: url, identifier: identifier)?.darkHeaderText(dark: dark)
+    }
+    static func hiddenColor(for url: String, dark: Bool, identifier: MangaIdentifier? = nil) -> UIColor? {
+        colors(for: url, identifier: identifier)?.hidden(dark: dark)
+    }
+    static func hiddenForegroundColor(for url: String, dark: Bool, identifier: MangaIdentifier? = nil) -> UIColor? {
+        colors(for: url, identifier: identifier)?.hiddenForeground(dark: dark)
     }
 
     /// Called for every decoded cover, including ordinary visible covers. The
@@ -191,6 +290,7 @@ enum CoverPalette {
         _ image: UIImage,
         for url: String,
         identifier: MangaIdentifier? = nil,
+        priority: SamplingPriority = .normal,
         onColor: ((UIColor) -> Void)? = nil
     ) {
         guard !url.isEmpty else { return }
@@ -200,6 +300,13 @@ enum CoverPalette {
         if var pending = state.inFlight[url], pending.imageID == imageID {
             if let onColor { pending.callbacks.append(onColor) }
             if let identifier { pending.identifiers.insert(identifier) }
+            if priority.rawValue > pending.priority.rawValue {
+                pending.priority = priority
+                if let operation = pending.operation, !operation.isExecuting {
+                    operation.queuePriority = priority.queuePriority
+                    operation.qualityOfService = priority.qualityOfService
+                }
+            }
             state.inFlight[url] = pending
             return
         }
@@ -214,17 +321,13 @@ enum CoverPalette {
             return
         }
         state.activeImages[url] = WeakImage(image)
-        if state.inFlight[url] != nil {
+        if let previous = state.inFlight[url] {
+            previous.operation?.cancel()
             state.generations[url, default: 0] &+= 1
         }
-        state.inFlight[url] = Pending(
-            imageID: imageID,
-            callbacks: onColor.map { [$0] } ?? [],
-            identifiers: identifier.map { [$0] } ?? []
-        )
         let generation = state.generations[url, default: 0]
         let epoch = state.epoch
-        samplingQueue.addOperation {
+        let operation = BlockOperation {
             let sample = image.dominantColorSample()
             Task { @MainActor in
                 guard generation == state.generations[url, default: 0], epoch == state.epoch,
@@ -255,6 +358,16 @@ enum CoverPalette {
                 }
             }
         }
+        operation.queuePriority = priority.queuePriority
+        operation.qualityOfService = priority.qualityOfService
+        state.inFlight[url] = Pending(
+            imageID: imageID,
+            callbacks: onColor.map { [$0] } ?? [],
+            identifiers: identifier.map { [$0] } ?? [],
+            priority: priority,
+            operation: operation
+        )
+        samplingQueue.addOperation(operation)
     }
 
     private static func retainIfEligible(

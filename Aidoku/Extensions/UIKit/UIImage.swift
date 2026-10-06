@@ -58,6 +58,7 @@ private struct CoverColorSample {
     let redGreen: Double
     let yellowBlue: Double
     let chroma: Double
+    let saturation: Double
     let hue: Double
 
     var rgb: Int {
@@ -71,30 +72,36 @@ private struct CoverColorSample {
 extension UIImage {
     /// Ranks color families across a small cover sample, then returns an actual sampled color.
     /// Meaningful colored areas still take priority over neutral backgrounds.
-    func dominantColor(sampleSize: Int = 32) -> UIColor? {
+    func dominantColor(sampleSize: Int = 96) -> UIColor? {
         dominantColorSample(sampleSize: sampleSize)?.color
     }
 
     /// The fingerprint is of the exact pixels used by the picker. It detects
     /// updated artwork even when a source keeps the same cover URL.
-    func dominantColorSample(sampleSize: Int = 32) -> (color: UIColor, fingerprint: UInt64)? {
+    func dominantColorSample(sampleSize: Int = 96) -> (color: UIColor, fingerprint: UInt64)? {
         guard let cgImage, sampleSize > 0 else { return nil }
 
+        let scale = min(
+            CGFloat(sampleSize) / CGFloat(cgImage.width),
+            CGFloat(sampleSize) / CGFloat(cgImage.height)
+        )
+        let sampleWidth = max(1, Int((CGFloat(cgImage.width) * scale).rounded()))
+        let sampleHeight = max(1, Int((CGFloat(cgImage.height) * scale).rounded()))
         let bytesPerPixel = 4
-        let bytesPerRow = sampleSize * bytesPerPixel
-        var pixels = [UInt8](repeating: 0, count: sampleSize * bytesPerRow)
+        let bytesPerRow = sampleWidth * bytesPerPixel
+        var pixels = [UInt8](repeating: 0, count: sampleHeight * bytesPerRow)
         let rendered = pixels.withUnsafeMutableBytes { buffer in
             guard let context = CGContext(
                 data: buffer.baseAddress,
-                width: sampleSize,
-                height: sampleSize,
+                width: sampleWidth,
+                height: sampleHeight,
                 bitsPerComponent: 8,
                 bytesPerRow: bytesPerRow,
                 space: CGColorSpaceCreateDeviceRGB(),
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             ) else { return false }
             context.interpolationQuality = .medium
-            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: sampleSize, height: sampleSize))
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: sampleWidth, height: sampleHeight))
             return true
         }
         guard rendered else { return nil }
@@ -105,6 +112,19 @@ extension UIImage {
 
         func linearComponent(_ component: Double) -> Double {
             component <= 0.04045 ? component / 12.92 : pow((component + 0.055) / 1.055, 2.4)
+        }
+
+        func usesWhiteHeaderTextInLightMode(_ sample: CoverColorSample) -> Bool {
+            // Light headers normally use 95% of the sampled RGB value. Covers
+            // brightened by the dark-mode floor remain well below this cutoff.
+            let red = linearComponent(sample.red * 0.95)
+            let green = linearComponent(sample.green * 0.95)
+            let blue = linearComponent(sample.blue * 0.95)
+            return 0.2126 * red + 0.7152 * green + 0.0722 * blue <= 0.4
+        }
+
+        func whiteHeaderTextBonus(_ sample: CoverColorSample) -> Double {
+            usesWhiteHeaderTextInLightMode(sample) ? 1.08 : 1
         }
 
         var buckets: [PerceptualColorKey: PerceptualColorBucket] = [:]
@@ -151,6 +171,7 @@ extension UIImage {
                     redGreen: redGreen,
                     yellowBlue: yellowBlue,
                     chroma: chroma,
+                    saturation: saturation,
                     hue: atan2(yellowBlue, redGreen)
                 ))
             }
@@ -170,10 +191,13 @@ extension UIImage {
                 }
                 guard !family.isEmpty else { continue }
                 let averageChroma = family.reduce(0) { $0 + $1.chroma } / Double(family.count)
-                let averageLightness = family.reduce(0) { $0 + $1.lightness } / Double(family.count)
-                let colorStrength = 0.45 + 1.9 * pow(min(averageChroma / 0.18, 1), 1.3)
-                let brightness = 0.5 + 0.5 * sqrt(max(averageLightness, 0))
-                let score = pow(Double(family.count), 0.84) * colorStrength * brightness
+                let averageSaturation = family.reduce(0) { $0 + $1.saturation } / Double(family.count)
+                let colorStrength = 0.45 + 1.75 * pow(min(averageChroma / 0.18, 1), 1.3)
+                let saturationBias = 0.5 + 0.5 * sqrt(max(averageSaturation, 0))
+                let whiteTextFraction = Double(family.filter(usesWhiteHeaderTextInLightMode).count)
+                    / Double(family.count)
+                let score = pow(Double(family.count), 0.84) * colorStrength * saturationBias
+                    * (1 + 0.05 * whiteTextFraction)
                 if score > bestFamilyScore {
                     bestFamily = family
                     bestFamilyScore = score
@@ -182,7 +206,13 @@ extension UIImage {
 
             if !bestFamily.isEmpty {
                 func vibrancyBonus(_ sample: CoverColorSample) -> Double {
-                    1 + 0.12 * min(sample.chroma / 0.18, 1)
+                    1 + 0.10 * min(sample.chroma / 0.18, 1)
+                }
+                func saturationBonus(_ sample: CoverColorSample) -> Double {
+                    0.4 + 0.6 * sqrt(max(sample.saturation, 0))
+                }
+                func finalColorBonus(_ sample: CoverColorSample) -> Double {
+                    vibrancyBonus(sample) * whiteHeaderTextBonus(sample) * saturationBonus(sample)
                 }
                 func distanceSquared(_ first: CoverColorSample, _ second: CoverColorSample) -> Double {
                     let lightness = first.lightness - second.lightness
@@ -200,7 +230,7 @@ extension UIImage {
                     let support = bestFamily.reduce(0) { count, neighbor in
                         count + (distanceSquared(sample, neighbor) <= shadeRadiusSquared ? 1 : 0)
                     }
-                    let score = Double(support) * vibrancyBonus(sample)
+                    let score = Double(support) * finalColorBonus(sample)
                     if score > bestShadeScore {
                         shadeCenter = sample
                         bestShadeScore = score
@@ -212,8 +242,8 @@ extension UIImage {
                 let mostFrequent = frequencies.values.max() ?? 0
                 let representative = shadeSamples
                     .max { first, second in
-                        let firstBonus = vibrancyBonus(first)
-                        let secondBonus = vibrancyBonus(second)
+                        let firstBonus = finalColorBonus(first)
+                        let secondBonus = finalColorBonus(second)
                         let firstScore = mostFrequent == 1 ? 1 : Double(frequencies[first.rgb] ?? 0) * firstBonus
                         let secondScore = mostFrequent == 1 ? 1 : Double(frequencies[second.rgb] ?? 0) * secondBonus
                         if firstScore != secondScore { return firstScore < secondScore }
@@ -256,6 +286,9 @@ extension UIImage {
                     group.add(neighbor)
                 }
             }
+            let averageRed = group.red / Double(group.count)
+            let averageGreen = group.green / Double(group.count)
+            let averageBlue = group.blue / Double(group.count)
             let score = Double(group.count)
             if score > bestScore {
                 bestGroup = group

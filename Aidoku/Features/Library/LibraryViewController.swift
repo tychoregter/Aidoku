@@ -171,6 +171,7 @@ class LibraryViewController: OldMangaCollectionViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.isToolbarHidden = true
+        restoreNavigationBarAppearance()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -185,6 +186,11 @@ class LibraryViewController: OldMangaCollectionViewController {
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
 
+        // The info view customizes this shared bar during its zoom transition.
+        // Reassert Library's current appearance after the pop has finished too,
+        // since SwiftUI can update the bar after viewWillAppear.
+        restoreNavigationBarAppearance()
+
         // fix refresh control snapping height
         refreshControl.didMoveToSuperview()
 
@@ -193,8 +199,22 @@ class LibraryViewController: OldMangaCollectionViewController {
         view.window?.endEditing(true)
     }
 
+    private func restoreNavigationBarAppearance() {
+        guard #available(iOS 26.0, *), let navigationBar = navigationController?.navigationBar else { return }
+        // Read from the window, not the shared bar: the bar may still carry the
+        // info view's override when the system theme changed behind that view.
+        navigationBar.overrideUserInterfaceStyle = view.window?.traitCollection.userInterfaceStyle
+            ?? traitCollection.userInterfaceStyle
+        navigationBar.tintColor = nil
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
+
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (library: LibraryViewController, _) in
+            guard library.navigationController?.topViewController === library else { return }
+            library.restoreNavigationBarAppearance()
+        }
 
         // load stored download queue state on first load
         Task {
@@ -473,7 +493,7 @@ class LibraryViewController: OldMangaCollectionViewController {
         addObserver(forName: .downloadRemoved, using: updateDownloadCounts)
         addObserver(forName: .downloadsRemoved, using: updateDownloadCounts)
 
-        addObserver(forName: .updateLibrary) { [weak self] _ in
+        addObserver(forName: .updateLibrary) { [weak self] notification in
             guard let self else { return }
             Task { @MainActor in
                 if let stackID = self.viewModel.stackID,
@@ -484,7 +504,7 @@ class LibraryViewController: OldMangaCollectionViewController {
                 self.viewModel.synchronizeSharedLibraryOptions()
                 await self.viewModel.loadLibrary()
                 self.updateEmptyStack()
-                self.updateDataSource()
+                self.updateDataSource(reloadCells: notification.object is MangaIdentifier)
                 self.updateMoreMenu()
                 if self.shouldRestoreLargeTitleAfterRefresh {
                     self.shouldRestoreLargeTitleAfterRefresh = false

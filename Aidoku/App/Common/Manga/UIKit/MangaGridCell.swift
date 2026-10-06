@@ -339,7 +339,7 @@ class MangaGridCell: UICollectionViewCell {
             : .blank
         nsfwCoverView.layer.cornerRadius = coverView.layer.cornerRadius
         nsfwCoverView.layer.cornerCurve = .continuous
-        nsfwCoverView.configure(title: title, paletteURL: paletteURL)
+        nsfwCoverView.configure(title: title, paletteURL: paletteURL, identifier: identifier)
         coverView.bringSubviewToFront(nsfwCoverView)
         coverView.bringSubviewToFront(highlightView)
         coverView.bringSubviewToFront(shadowOverlayView)
@@ -463,7 +463,7 @@ extension MangaGridCell {
         originalCoverImage = image
         updateCoverImage()
         if hidesNSFWCover {
-            nsfwCoverView.configure(title: title, paletteURL: url.absoluteString)
+            nsfwCoverView.configure(title: title, paletteURL: url.absoluteString, identifier: identifier)
         }
     }
 
@@ -548,7 +548,8 @@ extension MangaGridCell {
                             self.imageView.animate(withGIFData: data)
                         }
                         if self.hidesNSFWCover {
-                            self.nsfwCoverView.configure(title: self.title, paletteURL: url.absoluteString)
+                            self.nsfwCoverView.configure(title: self.title, paletteURL: url.absoluteString,
+                                                         identifier: currentIdentifier)
                         }
                     }
                 case .failure(let error):
@@ -566,10 +567,15 @@ extension MangaGridCell {
     }
 
     private func observeCoverColor(_ image: UIImage, url: String, identifier: MangaIdentifier?) {
-        CoverPalette.observe(image, for: url, identifier: identifier) { [weak self] _ in
+        CoverPalette.observe(
+            image,
+            for: url,
+            identifier: identifier,
+            priority: hidesNSFWCover ? .hiddenCover : .normal
+        ) { [weak self] _ in
             guard let self, self.identifier == identifier, self.paletteURL == url,
                   self.hidesNSFWCover else { return }
-            self.nsfwCoverView.configure(title: self.title, paletteURL: url)
+            self.nsfwCoverView.configure(title: self.title, paletteURL: url, identifier: identifier)
         }
     }
 }
@@ -625,6 +631,8 @@ final class NSFWCoverView: UIView {
     private let stackView = UIStackView()
     private var coverColor = UIColor.secondarySystemBackground
     private var coverURL: String?
+    private var identifier: MangaIdentifier?
+    private var colorChangeObserver: NSObjectProtocol?
     private var iconWidth: NSLayoutConstraint!
     private var iconHeight: NSLayoutConstraint!
 
@@ -632,6 +640,18 @@ final class NSFWCoverView: UIView {
         super.init(frame: frame)
         isUserInteractionEnabled = false
         isHidden = true
+        colorChangeObserver = NotificationCenter.default.addObserver(
+            forName: CoverPalette.customColorDidChange, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let identifier = notification.object as? MangaIdentifier else { return }
+            Task { @MainActor [weak self] in
+                guard let self, identifier == self.identifier else { return }
+                self.coverColor = self.coverURL.flatMap {
+                    CoverPalette.color(for: $0, identifier: identifier)
+                } ?? UIColor.secondarySystemBackground
+                self.updateAppearance()
+            }
+        }
 
         iconView.contentMode = .scaleAspectFit
         iconView.image = UIImage(
@@ -671,10 +691,16 @@ final class NSFWCoverView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(title: String?, paletteURL: String? = nil) {
+    deinit {
+        if let colorChangeObserver { NotificationCenter.default.removeObserver(colorChangeObserver) }
+    }
+
+    func configure(title: String?, paletteURL: String? = nil, identifier: MangaIdentifier? = nil) {
         titleLabel.text = title ?? NSLocalizedString("UNTITLED")
         coverURL = paletteURL
-        coverColor = paletteURL.flatMap(CoverPalette.color(for:)) ?? UIColor.secondarySystemBackground
+        self.identifier = identifier
+        coverColor = paletteURL.flatMap { CoverPalette.color(for: $0, identifier: identifier) }
+            ?? UIColor.secondarySystemBackground
         updatePresentation()
         updateAppearance()
     }
@@ -701,11 +727,13 @@ final class NSFWCoverView: UIView {
     private func updateAppearance() {
         let baseColor = coverColor.resolvedColor(with: traitCollection)
         let isDark = traitCollection.userInterfaceStyle == .dark
-        let background = coverURL.flatMap { CoverPalette.hiddenColor(for: $0, dark: isDark) }
+        let background = coverURL.flatMap { CoverPalette.hiddenColor(for: $0, dark: isDark, identifier: identifier) }
             ?? Self.backgroundColor(for: baseColor, isDark: isDark)
         backgroundColor = background
 
-        let foreground = coverURL.flatMap { CoverPalette.hiddenForegroundColor(for: $0, dark: isDark) }
+        let foreground = coverURL.flatMap {
+            CoverPalette.hiddenForegroundColor(for: $0, dark: isDark, identifier: identifier)
+        }
             ?? Self.foregroundColor(for: background)
         iconView.tintColor = foreground
         titleLabel.textColor = foreground

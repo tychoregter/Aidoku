@@ -188,6 +188,7 @@ actor LibraryPagePreviewCache {
         }
 
         for urlRequest in urlRequests {
+            URLCache.shared.removeCachedResponse(for: urlRequest)
             ImagePipeline.shared.cache.removeCachedImage(for: ImageRequest(urlRequest: urlRequest))
             var processors: [ImageProcessing] = [await CoverDownsampleProcessor(shortestSide: 630)]
             if let source, source.features.processesCovers {

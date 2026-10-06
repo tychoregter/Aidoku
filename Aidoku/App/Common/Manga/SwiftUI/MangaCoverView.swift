@@ -35,6 +35,7 @@ struct MangaCoverView: View {
     @Environment(\.displayScale) private var displayScale
     @Environment(\.colorScheme) private var colorScheme
     @State private var sampledNSFWColor: UIColor?
+    @State private var customColorRevision = 0
     @StateObject private var hideNSFWCovers = UserDefaultsBool(key: AppSettings.appearance.blurNSFWCovers.key)
 
     var source: AidokuRunner.Source?
@@ -52,6 +53,7 @@ struct MangaCoverView: View {
     var privacyPlaceholder = false
     var usesHiddenCoverColorPlaceholder = false
     var showsCachedCoverImmediately = false
+    var paletteSamplingPriority: CoverPalette.SamplingPriority?
     var hideNSFW = false
     var isNSFW = false
     var nsfwBaseColor: UIColor?
@@ -62,15 +64,17 @@ struct MangaCoverView: View {
     private var hidesCover: Bool { hideNSFW || (isNSFW && hideNSFWCovers.value) }
 
     private var hiddenCoverColor: UIColor {
-        CoverPalette.hiddenColor(for: coverImage, dark: colorScheme == .dark)
+        CoverPalette.hiddenColor(for: coverImage, dark: colorScheme == .dark, identifier: paletteIdentifier)
             ?? NSFWCoverView.backgroundColor(
-            for: nsfwBaseColor ?? sampledNSFWColor ?? CoverPalette.color(for: coverImage)
+            for: CoverPalette.color(for: coverImage, identifier: paletteIdentifier)
+                ?? nsfwBaseColor ?? sampledNSFWColor
                 ?? DeveloperMode.color(for: coverImage),
             isDark: colorScheme == .dark
         )
     }
 
     var body: some View {
+        let _ = customColorRevision
         SourceImageView(
             source: source,
             imageUrl: coverImage,
@@ -85,6 +89,8 @@ struct MangaCoverView: View {
             usesHiddenCoverColorPlaceholder: usesHiddenCoverColorPlaceholder,
             showsCachedCoverImmediately: showsCachedCoverImmediately,
             paletteIdentifier: paletteIdentifier,
+            paletteSamplingPriority: paletteSamplingPriority
+                ?? ((hidesCover || privacyPlaceholder) ? .hiddenCover : .normal),
             onDominantColorChange: hidesCover || privacyPlaceholder || onDominantColorChange != nil ? { color in
                 if hidesCover || privacyPlaceholder { sampledNSFWColor = color }
                 onDominantColorChange?(color)
@@ -101,7 +107,7 @@ struct MangaCoverView: View {
                 Image(systemName: "eye.slash")
                     .font(.system(size: (width ?? 150) < 80 ? 19 : 32, weight: .semibold))
                     .foregroundStyle(Color(uiColor: CoverPalette.hiddenForegroundColor(
-                        for: coverImage, dark: colorScheme == .dark
+                        for: coverImage, dark: colorScheme == .dark, identifier: paletteIdentifier
                     ) ?? NSFWCoverView.foregroundColor(for: hiddenCoverColor)))
             }
         }
@@ -118,6 +124,11 @@ struct MangaCoverView: View {
                 )
         )
         .onChange(of: coverImage) { _ in sampledNSFWColor = nil }
+        .onReceive(NotificationCenter.default.publisher(for: CoverPalette.customColorDidChange)) { notification in
+            guard let identifier = notification.object as? MangaIdentifier,
+                  identifier == paletteIdentifier else { return }
+            customColorRevision &+= 1
+        }
     }
 
     @ViewBuilder

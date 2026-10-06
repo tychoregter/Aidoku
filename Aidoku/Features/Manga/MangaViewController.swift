@@ -134,7 +134,8 @@ class MangaViewController: UIHostingController<MangaView> {
             let navigationBar = navigationController?.navigationBar
             transitionCoordinator?.animate(alongsideTransition: nil) { context in
                 guard !context.isCancelled else { return }
-                navigationBar?.overrideUserInterfaceStyle = .unspecified
+                navigationBar?.overrideUserInterfaceStyle = navigationBar?.window?.traitCollection.userInterfaceStyle
+                    ?? .unspecified
                 navigationBar?.tintColor = nil
             }
         }

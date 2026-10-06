@@ -84,9 +84,6 @@ struct ChapterTableCell: View {
             } else if let progress {
                 DownloadProgressView(progress: progress)
                     .frame(width: 13, height: 13)
-            } else if locked {
-                Image(systemName: "lock.fill")
-                    .imageScale(.small)
             }
         }
         .foregroundStyle(.primary)

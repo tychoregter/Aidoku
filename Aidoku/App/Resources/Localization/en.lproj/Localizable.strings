@@ -416,6 +416,11 @@
 "OPEN_WEBSITE" = "Open Website";
 "SET_COVER_IMAGE" = "Set Cover Image";
 "UPLOAD_CUSTOM_COVER" = "Upload Custom Cover";
+"SET_CUSTOM_COVER" = "Set Custom Cover";
+"REFRESH_COVER" = "Refresh Cover";
+"THEME_COLOR" = "Theme Color";
+"SET_THEME_COLOR" = "Set Theme Color";
+"RESET_THEME_COLOR" = "Reset Theme Color";
 "RESET_COVER" = "Reset Cover";
 
 // History

@@ -28,6 +28,7 @@ struct SourceImageView: View {
     var usesHiddenCoverColorPlaceholder = false
     var showsCachedCoverImmediately = false
     var paletteIdentifier: MangaIdentifier?
+    var paletteSamplingPriority: CoverPalette.SamplingPriority = .normal
     var onDominantColorChange: ((UIColor) -> Void)?
     var onImageSizeChange: ((CGSize) -> Void)?
 
@@ -74,7 +75,7 @@ struct SourceImageView: View {
             transaction: .init(animation: .default)
         ) { state in
             let cachedImage = state.image == nil && !privacyPlaceholder ? cachedCoverImage() : nil
-            let dominantColor = CoverPalette.color(for: imageUrl)
+            let dominantColor = CoverPalette.color(for: imageUrl, identifier: paletteIdentifier)
                 ?? (sampledColorURL == imageUrl ? sampledColor : nil)
                 ?? DeveloperMode.color(for: imageUrl)
             Group {
@@ -100,10 +101,11 @@ struct SourceImageView: View {
                                 .resizable()
                                 .aspectRatio(contentMode: contentMode)
                         } else if usesHiddenCoverColorPlaceholder,
-                                  let baseColor = CoverPalette.color(for: imageUrl)
+                                  let baseColor = CoverPalette.color(for: imageUrl, identifier: paletteIdentifier)
                                     ?? (sampledColorURL == imageUrl ? sampledColor : nil) {
                             let dark = colorScheme == .dark
-                            let placeholderColor = CoverPalette.hiddenColor(for: imageUrl, dark: dark)
+                            let placeholderColor = CoverPalette.hiddenColor(for: imageUrl, dark: dark,
+                                                                            identifier: paletteIdentifier)
                                 ?? NSFWCoverView.backgroundColor(for: baseColor, isDark: dark)
                             Color(uiColor: placeholderColor)
                         } else {
@@ -119,10 +121,15 @@ struct SourceImageView: View {
             .task(id: state.imageContainer.map { ObjectIdentifier($0.image) }) {
                 guard samplesCoverColor || privacyPlaceholder || onDominantColorChange != nil,
                       let image = state.imageContainer?.image else { return }
-                CoverPalette.observe(image, for: imageUrl, identifier: paletteIdentifier) { color in
+                CoverPalette.observe(
+                    image,
+                    for: imageUrl,
+                    identifier: paletteIdentifier,
+                    priority: paletteSamplingPriority
+                ) { color in
                     sampledColorURL = imageUrl
                     sampledColor = color
-                    onDominantColorChange?(color)
+                    onDominantColorChange?(CoverPalette.color(for: imageUrl, identifier: paletteIdentifier) ?? color)
                 }
             }
             .task(id: state.imageContainer?.image.size ?? cachedImage?.size) {
