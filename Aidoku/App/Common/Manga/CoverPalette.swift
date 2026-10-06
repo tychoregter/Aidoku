@@ -30,7 +30,7 @@ enum CoverPalette {
     }
 
     // Increment whenever the picker or any derived color formula changes.
-    private static let version = 28
+    private static let version = 32
     static let customColorDidChange = Notification.Name("CoverPalette.customColorDidChange")
     private static let customColorsKey = "CoverPalette.customBaseColors"
     private static let fileURL = FileManager.default.applicationSupportDirectory

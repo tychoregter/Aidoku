@@ -1492,7 +1492,7 @@ struct MangaDetailsBackdrop: View {
 
         // Light headers need a stronger, more opaque shade for their controls;
         // preserve the softer treatment on dark headers.
-        let adjustment: CGFloat = usesDarkText ? 0.225 : 0.17
+        let adjustment: CGFloat = 0.17
         func adjusted(_ component: CGFloat) -> CGFloat {
             return usesDarkText
                 ? component * (1 - adjustment)
@@ -1502,7 +1502,7 @@ struct MangaDetailsBackdrop: View {
             red: adjusted(red),
             green: adjusted(green),
             blue: adjusted(blue),
-            alpha: usesDarkText ? 0.76 : 0.68
+            alpha: usesDarkText ? 0.92 : 0.68
         )
     }
 
