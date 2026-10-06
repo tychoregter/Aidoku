@@ -872,6 +872,8 @@ private struct ThemeColorEditor: View {
     @State private var lensImage: UIImage?
     @State private var touchLocation: CGPoint?
     @State private var isSampling = false
+    @State private var isMagnifierVisible = false
+    @State private var magnifierRequestID = UUID()
     @State private var isNavigatingCover = false
 
     init(source: AidokuRunner.Source?, coverURL: String?,
@@ -892,8 +894,13 @@ private struct ThemeColorEditor: View {
                             image: coverImage,
                             selection: $selection,
                             onSample: { point, location, active in
+                                let wasSampling = isSampling
                                 isSampling = active
-                                guard active else { return }
+                                guard active else {
+                                    magnifierRequestID = UUID()
+                                    isMagnifierVisible = false
+                                    return
+                                }
                                 let coverOrigin = geometry.frame(in: .global).origin
                                 touchLocation = CGPoint(x: coverOrigin.x + location.x, y: coverOrigin.y + location.y)
                                 lensImage = magnifiedPatch(from: coverImage, at: point)
@@ -902,8 +909,17 @@ private struct ThemeColorEditor: View {
                                     hex = value
                                     wheelColor = Color(uiColor: color)
                                 }
+                                if !wasSampling { scheduleMagnifierAppearance() }
                             },
-                            onNavigationChange: { isNavigatingCover = $0 }
+                            onNavigationChange: {
+                                isNavigatingCover = $0
+                                if $0 {
+                                    magnifierRequestID = UUID()
+                                    isMagnifierVisible = false
+                                } else if isSampling {
+                                    scheduleMagnifierAppearance()
+                                }
+                            }
                         )
                     }
                 } else if coverLoadFailed {
@@ -1024,7 +1040,7 @@ private struct ThemeColorEditor: View {
         .interactiveDismissDisabled()
         .overlay {
             GeometryReader { geometry in
-                if isSampling, !isNavigatingCover, let lensImage, let touchLocation {
+                if isSampling, isMagnifierVisible, !isNavigatingCover, let lensImage, let touchLocation {
                     let origin = geometry.frame(in: .global).origin
                     let localTouch = CGPoint(x: touchLocation.x - origin.x, y: touchLocation.y - origin.y)
                     magnifier(for: lensImage)
@@ -1036,6 +1052,17 @@ private struct ThemeColorEditor: View {
     }
 
     private var selectedColor: UIColor? { CoverPalette.color(fromHex: hex) }
+
+    private func scheduleMagnifierAppearance() {
+        magnifierRequestID = UUID()
+        let requestID = magnifierRequestID
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            guard magnifierRequestID == requestID,
+                  isSampling,
+                  !isNavigatingCover else { return }
+            isMagnifierVisible = true
+        }
+    }
 
     private func choose(_ color: UIColor) {
         guard let value = CoverPalette.hexString(for: color) else { return }
