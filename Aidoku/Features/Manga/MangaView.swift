@@ -578,7 +578,6 @@ extension MangaView {
                 chapter: chapter,
                 downloadStatus: downloadStatus,
                 index: index,
-                last: last,
                 secondSection: secondSection
             )
         }
@@ -599,7 +598,6 @@ extension MangaView {
         chapter: AidokuRunner.Chapter,
         downloadStatus: DownloadStatus,
         index: Int,
-        last: Bool,
         secondSection: Bool
     ) -> some View {
         let identifier = ChapterIdentifier(
@@ -607,6 +605,9 @@ extension MangaView {
             mangaKey: viewModel.manga.key,
             chapterKey: chapter.key
         )
+        let previousChapters = viewModel.chapterListIsAscending
+            ? Array(viewModel.chapters.prefix(index))
+            : Array(viewModel.chapters.dropFirst(index + 1))
 
         let hasDownloadButton = viewModel.source != nil && !viewModel.manga.isLocal() && downloadStatus != .finished && downloadStatus != .downloading
         let hasShareButton = downloadStatus == .finished || chapter.url != nil
@@ -683,28 +684,24 @@ extension MangaView {
                     Label(NSLocalizedString("MARK_READ"), systemImage: "checkmark.circle")
                 }
             }
-            if !last && !secondSection {
-                Menu(NSLocalizedString("MARK_PREVIOUS")) {
+            if !previousChapters.isEmpty && !secondSection {
+                Menu {
                     Button {
-                        let chapters = [AidokuRunner.Chapter](viewModel.chapters[
-                            index + 1..<viewModel.chapters.count
-                        ])
                         Task {
-                            await viewModel.markRead(chapters: chapters)
+                            await viewModel.markRead(chapters: previousChapters)
                         }
                     } label: {
                         Label(NSLocalizedString("READ"), systemImage: "checkmark.circle")
                     }
                     Button {
-                        let chapters = [AidokuRunner.Chapter](viewModel.chapters[
-                            index + 1..<viewModel.chapters.count
-                        ])
                         Task {
-                            await viewModel.markUnread(chapters: chapters)
+                            await viewModel.markUnread(chapters: previousChapters)
                         }
                     } label: {
                         Label(NSLocalizedString("UNREAD"), systemImage: "minus.circle")
                     }
+                } label: {
+                    Label(NSLocalizedString("MARK_PREVIOUS"), systemImage: "checkmark.arrow.trianglehead.counterclockwise")
                 }
             }
         }
@@ -1200,28 +1197,53 @@ private struct RightNavbarButton: View, Equatable {
             Menu {
                 if bookmarked || hasAvailableTrackers || url != nil {
                     Section {
-                        if let url {
-                            Button {
-                                showShareSheet(url)
-                            } label: {
-                                Label(NSLocalizedString("SHARE"), systemImage: "square.and.arrow.up")
-                            }
-                        }
-                        if bookmarked {
-                            Button {
-                                let identifier = mangaId.description
-                                var favoriteIds = Set(UserDefaults.standard.stringArray(forKey: "library.favoriteMangaIdentifiers") ?? [])
-                                if !favoriteIds.insert(identifier).inserted {
-                                    favoriteIds.remove(identifier)
+                        if bookmarked, let url {
+                            ControlGroup {
+                                Button {
+                                    let identifier = mangaId.description
+                                    var favoriteIds = Set(UserDefaults.standard.stringArray(forKey: "library.favoriteMangaIdentifiers") ?? [])
+                                    if !favoriteIds.insert(identifier).inserted {
+                                        favoriteIds.remove(identifier)
+                                    }
+                                    UserDefaults.standard.set(Array(favoriteIds), forKey: "library.favoriteMangaIdentifiers")
+                                    isFavorite.toggle()
+                                    NotificationCenter.default.post(name: .favoriteChanged, object: mangaId)
+                                } label: {
+                                    Label(
+                                        NSLocalizedString(isFavorite ? "UNFAVORITE" : "FAVORITE"),
+                                        systemImage: isFavorite ? "star.slash.fill" : "star.fill"
+                                    )
                                 }
-                                UserDefaults.standard.set(Array(favoriteIds), forKey: "library.favoriteMangaIdentifiers")
-                                isFavorite.toggle()
-                                NotificationCenter.default.post(name: .favoriteChanged, object: mangaId)
-                            } label: {
-                                Label(
-                                    NSLocalizedString(isFavorite ? "UNFAVORITE" : "FAVORITE"),
-                                    systemImage: isFavorite ? "star.slash" : "star"
-                                )
+                                Button {
+                                    showShareSheet(url)
+                                } label: {
+                                    Label(NSLocalizedString("SHARE"), systemImage: "square.and.arrow.up.fill")
+                                }
+                            }
+                        } else {
+                            if let url {
+                                Button {
+                                    showShareSheet(url)
+                                } label: {
+                                    Label(NSLocalizedString("SHARE"), systemImage: "square.and.arrow.up.fill")
+                                }
+                            }
+                            if bookmarked {
+                                Button {
+                                    let identifier = mangaId.description
+                                    var favoriteIds = Set(UserDefaults.standard.stringArray(forKey: "library.favoriteMangaIdentifiers") ?? [])
+                                    if !favoriteIds.insert(identifier).inserted {
+                                        favoriteIds.remove(identifier)
+                                    }
+                                    UserDefaults.standard.set(Array(favoriteIds), forKey: "library.favoriteMangaIdentifiers")
+                                    isFavorite.toggle()
+                                    NotificationCenter.default.post(name: .favoriteChanged, object: mangaId)
+                                } label: {
+                                    Label(
+                                        NSLocalizedString(isFavorite ? "UNFAVORITE" : "FAVORITE"),
+                                        systemImage: isFavorite ? "star.slash.fill" : "star.fill"
+                                    )
+                                }
                             }
                         }
                         if hasAvailableTrackers {
@@ -1235,7 +1257,7 @@ private struct RightNavbarButton: View, Equatable {
                 }
 
                 Section {
-                    Menu(NSLocalizedString("MARK_ALL")) {
+                    Menu {
                         Button {
                             markAllRead()
                         } label: {
@@ -1246,6 +1268,8 @@ private struct RightNavbarButton: View, Equatable {
                         } label: {
                             Label(NSLocalizedString("UNREAD"), systemImage: "minus.circle")
                         }
+                    } label: {
+                        Label(NSLocalizedString("MARK_ALL"), systemImage: "checkmark.arrow.trianglehead.clockwise")
                     }
                     Button {
                         setEditing(true)

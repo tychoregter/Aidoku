@@ -38,6 +38,17 @@ extension MangaView {
             didSet { refilterChapters() }
         }
 
+        var chapterListIsAscending: Bool {
+            switch chapterSortOption {
+                case .default:
+                    ChapterListOrder.current.isAscending(for: manga)
+                case .automatic:
+                    ChapterListOrder.automatic.isAscending(for: manga)
+                case .sourceOrder, .chapter, .uploadDate:
+                    chapterSortAscending
+            }
+        }
+
         @Published var chapterFilters: [ChapterFilterOption] = [] {
             didSet { refilterChapters() }
         }

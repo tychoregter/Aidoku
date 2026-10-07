@@ -41,6 +41,13 @@ enum ChapterListOrder: String, CaseIterable {
         }
     }
 
+    @MainActor
+    func isAscending(for manga: AidokuRunner.Manga) -> Bool {
+        self == .automatic
+            ? Self.effectiveReadingMode(for: manga) != .rtl
+            : sortAscending
+    }
+
     var localizedTitle: String {
         switch self {
             case .automatic: NSLocalizedString("AUTOMATIC")

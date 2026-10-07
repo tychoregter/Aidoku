@@ -16,6 +16,7 @@ class LibraryViewController: OldMangaCollectionViewController {
     private static let selectionEnabled = false
 
     private var horizontalRowScrollViewObservations: [NSKeyValueObservation] = []
+    private var isOpeningLibraryItem = false
 
 
     typealias Scope = LibraryViewModel.Scope
@@ -170,6 +171,7 @@ class LibraryViewController: OldMangaCollectionViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        isOpeningLibraryItem = false
         navigationController?.isToolbarHidden = true
         restoreNavigationBarAppearance()
     }
@@ -2668,6 +2670,12 @@ extension LibraryViewController {
             return
         }
 
+        // A two-finger drag can deliver selection callbacks for several cells
+        // in quick succession. Only the first item should open; otherwise each
+        // callback can push another info view onto the navigation stack.
+        guard !isOpeningLibraryItem else { return }
+        isOpeningLibraryItem = true
+
         if LibraryBundleFeature.isEnabled, let stackID = info.stackID {
             let controller = LibraryViewController(scope: .stack(stackID))
             navigationController?.pushViewController(controller, animated: true)
@@ -2711,6 +2719,7 @@ extension LibraryViewController {
                 if let chapter {
                     // open reader view
                     guard let source = await SourceManager.shared.source(for: info.id.sourceKey) else {
+                        self.isOpeningLibraryItem = false
                         return
                     }
                     let manga = AidokuRunner.Manga(
@@ -2868,58 +2877,16 @@ extension LibraryViewController {
         let previewIdentifier: NSString? = contextPreviewController == nil ? nil : manga.id.description as NSString
         return UIContextMenuConfiguration(identifier: previewIdentifier, previewProvider: previewProvider) { _ -> UIMenu? in
             var actions: [UIMenuElement] = []
+            var topActions: [UIMenuElement] = []
             let singleAttributes = mangaInfo.count > 1
                 ? .disabled
                 : UIMenuElement.Attributes()
 
-            if let url = manga.url {
-                actions.append(UIMenu(identifier: .share, options: .displayInline, children: [
-                    UIAction(
-                        title: NSLocalizedString("SHARE"),
-                        image: UIImage(systemName: "square.and.arrow.up"),
-                        attributes: singleAttributes
-                    ) { _ in
-                        let activityViewController = UIActivityViewController(
-                            activityItems: [url],
-                            applicationActivities: nil
-                        )
-                        activityViewController.popoverPresentationController?.sourceView = self.view
-                        activityViewController.popoverPresentationController?.sourceRect = collectionView.cellForItem(at: indexPath)?.frame ?? .zero
-
-                        self.present(activityViewController, animated: true)
-                    }
-                ]))
-            }
-
-            if mangaInfo.count == 1 {
-                actions.append(UIMenu(options: .displayInline, children: [
-                    UIAction(
-                        title: NSLocalizedString("READ_INCOGNITO"),
-                        image: UIImage(systemName: "eye.slash")
-                    ) { _ in
-                        self.openReaderIncognito(
-                            for: manga,
-                            isContinueReadingItem: section == .continueReading
-                        )
-                    }
-                ]))
-            }
-
-            if (AppSettings.library.opensReaderView.get() || section == .continueReading), mangaInfo.count == 1 {
-                actions.append(UIAction(
-                    title: NSLocalizedString("MANGA_INFO"),
-                    image: UIImage(systemName: "info.circle"),
-                    attributes: singleAttributes
-                ) { _ in
-                    self.openInfoView(info: mangaInfo[0], zoom: false)
-                })
-            }
-
             if mangaInfo.count == 1 {
                 let isFavorite = self.viewModel.isFavorite(manga.id)
-                actions.append(UIAction(
+                topActions.append(UIAction(
                     title: NSLocalizedString(isFavorite ? "UNFAVORITE" : "FAVORITE"),
-                    image: UIImage(systemName: isFavorite ? "star.slash" : "star")
+                    image: UIImage(systemName: isFavorite ? "star.slash.fill" : "star.fill")
                 ) { _ in
                     self.viewModel.toggleFavorite(manga.id)
                     Task {
@@ -2927,6 +2894,58 @@ extension LibraryViewController {
                         self.updateDataSource()
                     }
                 })
+            }
+
+            if let url = manga.url {
+                topActions.append(UIAction(
+                    title: NSLocalizedString("SHARE"),
+                    image: UIImage(systemName: "square.and.arrow.up.fill"),
+                    attributes: singleAttributes
+                ) { _ in
+                    let activityViewController = UIActivityViewController(
+                        activityItems: [url],
+                        applicationActivities: nil
+                    )
+                    activityViewController.popoverPresentationController?.sourceView = self.view
+                    activityViewController.popoverPresentationController?.sourceRect = collectionView.cellForItem(at: indexPath)?.frame ?? .zero
+
+                    self.present(activityViewController, animated: true)
+                })
+            }
+            if !topActions.isEmpty {
+                actions.append(UIMenu(
+                    options: .displayInline,
+                    preferredElementSize: .medium,
+                    children: topActions
+                ))
+            }
+
+            var mangaActions: [UIMenuElement] = []
+            if (AppSettings.library.opensReaderView.get() || section == .continueReading), mangaInfo.count == 1 {
+                mangaActions.append(UIAction(
+                    title: NSLocalizedString("MANGA_INFO"),
+                    image: UIImage(systemName: "info.circle"),
+                    attributes: singleAttributes
+                ) { _ in
+                    self.openInfoView(info: mangaInfo[0], zoom: false)
+                })
+            }
+            if mangaInfo.count == 1 {
+                mangaActions.append(UIAction(
+                    title: NSLocalizedString("READ_INCOGNITO"),
+                    image: UIImage(systemName: "eye.slash")
+                ) { _ in
+                    self.openReaderIncognito(
+                        for: manga,
+                        isContinueReadingItem: section == .continueReading
+                    )
+                })
+            }
+            if !mangaActions.isEmpty {
+                actions.append(UIMenu(options: .displayInline, children: mangaActions))
+            }
+
+            if mangaInfo.count == 1 {
                 if LibraryBundleFeature.isEnabled,
                    CoreDataManager.shared.hasLibraryManga(mangaId: manga.id, context: viewContext) {
                     actions.append(self.makeStackMembershipMenu(for: manga))
@@ -2951,24 +2970,9 @@ extension LibraryViewController {
                 })
             }
 
-            actions.append(UIAction(
-                title: NSLocalizedString("MIGRATE"),
-                image: UIImage(systemName: "arrow.left.arrow.right")
-            ) { _ in
-                let manga = mangaInfo.map { $0.toManga().toNew() }
-                let migrateView = MigrateSelectDestinationView(
-                    selectedSeries: manga,
-                    selectedSources: manga.count == 1
-                        ? SourceManager.shared.store.source(for: manga[0].sourceKey).flatMap { [$0.toInfo()] } ?? []
-                        : []
-                )
-                let viewController = SwiftUINavigationViewController(rootView: migrateView)
-                self.present(viewController, animated: true)
-            })
-
             var bottomMenuChildren: [UIMenuElement] = []
 
-            bottomMenuChildren.append(UIMenu(title: NSLocalizedString("MARK_ALL"), image: UIImage(systemName: "checkmark.circle"), children: [
+            bottomMenuChildren.append(UIMenu(title: NSLocalizedString("MARK_ALL"), image: UIImage(systemName: "checkmark.arrow.trianglehead.clockwise"), children: [
                 // read chapters
                 UIAction(title: NSLocalizedString("READ"), image: UIImage(systemName: "checkmark.circle")) { _ in
                     UIApplication.shared.appDelegate?.showLoadingIndicator()
@@ -3046,6 +3050,21 @@ extension LibraryViewController {
                     children: [downloadAllAction, downloadUnreadAction]
                 ))
             }
+
+            bottomMenuChildren.append(UIAction(
+                title: NSLocalizedString("MIGRATE"),
+                image: UIImage(systemName: "arrow.left.arrow.right")
+            ) { _ in
+                let manga = mangaInfo.map { $0.toManga().toNew() }
+                let migrateView = MigrateSelectDestinationView(
+                    selectedSeries: manga,
+                    selectedSources: manga.count == 1
+                        ? SourceManager.shared.store.source(for: manga[0].sourceKey).flatMap { [$0.toInfo()] } ?? []
+                        : []
+                )
+                let viewController = SwiftUINavigationViewController(rootView: migrateView)
+                self.present(viewController, animated: true)
+            })
 
             if self.viewModel.isInRealCategory {
                 bottomMenuChildren.append(UIAction(
