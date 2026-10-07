@@ -1225,7 +1225,7 @@ private struct RightNavbarButton: View, Equatable {
                                 Button {
                                     showShareSheet(url)
                                 } label: {
-                                    Label(NSLocalizedString("SHARE"), systemImage: "square.and.arrow.up.fill")
+                                    Label(NSLocalizedString("SHARE"), systemImage: "square.and.arrow.up")
                                 }
                             }
                             if bookmarked {
@@ -1241,7 +1241,7 @@ private struct RightNavbarButton: View, Equatable {
                                 } label: {
                                     Label(
                                         NSLocalizedString(isFavorite ? "UNFAVORITE" : "FAVORITE"),
-                                        systemImage: isFavorite ? "star.slash.fill" : "star.fill"
+                                        systemImage: isFavorite ? "star.slash" : "star"
                                     )
                                 }
                             }
@@ -1586,10 +1586,10 @@ struct MangaDetailsBackdrop: View {
             .clipped()
             .clipShape(
                 UnevenRoundedRectangle(
-                    topLeadingRadius: roundsTopCorners ? 39 : 0,
+                    topLeadingRadius: roundsTopCorners ? 29 : 0,
                     bottomLeadingRadius: 0,
                     bottomTrailingRadius: 0,
-                    topTrailingRadius: roundsTopCorners ? 39 : 0,
+                    topTrailingRadius: roundsTopCorners ? 29 : 0,
                     style: .continuous
                 )
             )
@@ -1598,8 +1598,8 @@ struct MangaDetailsBackdrop: View {
     }
 }
 
-/// Enables screen-corner rounding only when the info view occupies the full display
-/// on a device with a system gesture area (rather than a physical Home button).
+/// Enables screen-corner rounding on devices with a system gesture area, including
+/// windowed layouts such as iPad Stage Manager.
 private struct MangaHeaderDisplayModeProbe: UIViewRepresentable {
     var onChange: (Bool) -> Void
 
@@ -1635,24 +1635,16 @@ private final class MangaHeaderDisplayModeProbeView: UIView {
     }
 
     func updateEligibility() {
-        guard let window, let screen = window.windowScene?.screen else {
+        guard let window else {
             publish(false)
             return
         }
 
-        let screenBounds = screen.coordinateSpace.bounds
-        let windowBoundsOnScreen = window.convert(window.bounds, to: screen.coordinateSpace)
-        let tolerance: CGFloat = 1
-        let fillsDisplay = abs(windowBoundsOnScreen.minX - screenBounds.minX) <= tolerance
-            && abs(windowBoundsOnScreen.minY - screenBounds.minY) <= tolerance
-            && abs(windowBoundsOnScreen.maxX - screenBounds.maxX) <= tolerance
-            && abs(windowBoundsOnScreen.maxY - screenBounds.maxY) <= tolerance
-
         // A gesture-indicator inset is present at the bottom in portrait and may
-        // move to either side in landscape. The threshold excludes Home-button safe areas.
+        // move to either side in landscape. iPad's inset is smaller than iPhone's.
         let safeArea = window.safeAreaInsets
-        let hasGestureIndicator = max(safeArea.bottom, max(safeArea.left, safeArea.right)) >= 24
-        publish(fillsDisplay && hasGestureIndicator)
+        let hasGestureIndicator = max(safeArea.bottom, max(safeArea.left, safeArea.right)) >= 16
+        publish(hasGestureIndicator)
     }
 
     private func publish(_ eligible: Bool) {

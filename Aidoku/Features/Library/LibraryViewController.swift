@@ -2881,12 +2881,33 @@ extension LibraryViewController {
             let singleAttributes = mangaInfo.count > 1
                 ? .disabled
                 : UIMenuElement.Attributes()
+            let canShowFavorite = mangaInfo.count == 1 && CoreDataManager.shared.hasLibraryManga(
+                mangaId: manga.id,
+                context: viewContext
+            )
+            let canShare = manga.url != nil
+            let canShowInfo = mangaInfo.count == 1
+                && (AppSettings.library.opensReaderView.get() || section == .continueReading)
+            let topActionCount = [canShowInfo, canShowFavorite, canShare].filter { $0 }.count
+            let hasMultipleTopActions = topActionCount > 1
 
-            if mangaInfo.count == 1 {
+            if canShowInfo {
+                topActions.append(UIAction(
+                    title: NSLocalizedString("INFO"),
+                    image: UIImage(systemName: hasMultipleTopActions ? "info.circle.fill" : "info.circle"),
+                    attributes: singleAttributes
+                ) { _ in
+                    self.openInfoView(info: mangaInfo[0], zoom: false)
+                })
+            }
+
+            if canShowFavorite {
                 let isFavorite = self.viewModel.isFavorite(manga.id)
                 topActions.append(UIAction(
                     title: NSLocalizedString(isFavorite ? "UNFAVORITE" : "FAVORITE"),
-                    image: UIImage(systemName: isFavorite ? "star.slash.fill" : "star.fill")
+                    image: UIImage(systemName: isFavorite
+                        ? (hasMultipleTopActions ? "star.slash.fill" : "star.slash")
+                        : (hasMultipleTopActions ? "star.fill" : "star"))
                 ) { _ in
                     self.viewModel.toggleFavorite(manga.id)
                     Task {
@@ -2899,7 +2920,7 @@ extension LibraryViewController {
             if let url = manga.url {
                 topActions.append(UIAction(
                     title: NSLocalizedString("SHARE"),
-                    image: UIImage(systemName: "square.and.arrow.up.fill"),
+                    image: UIImage(systemName: hasMultipleTopActions ? "square.and.arrow.up.fill" : "square.and.arrow.up"),
                     attributes: singleAttributes
                 ) { _ in
                     let activityViewController = UIActivityViewController(
@@ -2912,24 +2933,17 @@ extension LibraryViewController {
                     self.present(activityViewController, animated: true)
                 })
             }
-            if !topActions.isEmpty {
+            if topActions.count > 1 {
                 actions.append(UIMenu(
                     options: .displayInline,
                     preferredElementSize: .medium,
                     children: topActions
                 ))
+            } else {
+                actions.append(contentsOf: topActions)
             }
 
             var mangaActions: [UIMenuElement] = []
-            if (AppSettings.library.opensReaderView.get() || section == .continueReading), mangaInfo.count == 1 {
-                mangaActions.append(UIAction(
-                    title: NSLocalizedString("MANGA_INFO"),
-                    image: UIImage(systemName: "info.circle"),
-                    attributes: singleAttributes
-                ) { _ in
-                    self.openInfoView(info: mangaInfo[0], zoom: false)
-                })
-            }
             if mangaInfo.count == 1 {
                 mangaActions.append(UIAction(
                     title: NSLocalizedString("READ_INCOGNITO"),

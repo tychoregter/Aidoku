@@ -102,6 +102,7 @@ class ReaderViewController: BaseObservingViewController {
     private var readerToolbarMaximumTrailingConstraint: NSLayoutConstraint?
     private var readerToolbarCenterConstraint: NSLayoutConstraint?
     private var readerToolbarWidthConstraint: NSLayoutConstraint?
+    private var readerToolbarUsesCenteredLayout: Bool?
     private var readerToolbarHeightConstraint: NSLayoutConstraint?
     private var readerToolbarBottomConstraint: NSLayoutConstraint?
     private weak var readerToolbarHost: UIView?
@@ -666,9 +667,7 @@ class ReaderViewController: BaseObservingViewController {
         super.viewDidLayoutSubviews()
         if #available(iOS 26.0, *) {
             readerToolbar.superview?.bringSubviewToFront(readerToolbar)
-            updateReaderToolbarWidth(toolbarView.usesThumbnailScrubber
-                ? toolbarView.thumbnailScrubberView.preferredWidth
-                : nil)
+            updateReaderToolbarMetrics(usesThumbnailScrubber: toolbarView.usesThumbnailScrubber)
         }
     }
 
@@ -1777,14 +1776,18 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
 
     private func updateReaderToolbarMetrics(usesThumbnailScrubber: Bool) {
         guard #available(iOS 26.0, *), readerToolbar.superview != nil else { return }
-        let usesCompactThumbnailScrubber = usesThumbnailScrubber
+        let hostWidth = readerToolbarHost?.bounds.width ?? 0
+        let usesCenteredLayout = usesThumbnailScrubber || hostWidth > 500
         let height: CGFloat = usesThumbnailScrubber ? 48 : 44
         readerToolbarLeadingConstraint?.constant = usesThumbnailScrubber ? 28 : 21
         readerToolbarTrailingConstraint?.constant = usesThumbnailScrubber ? -28 : -21
         readerToolbarHeightConstraint?.constant = height
-        // The thumbnail style sits 7pt lower, matching the roughly 82px
-        // bottom clearance of the Books reader on a 3x display.
-        readerToolbarBottomConstraint?.constant = usesThumbnailScrubber ? 6 : 0
+        // Preserve the existing full-screen thumbnail placement. In windowed
+        // layouts and on devices without a gesture area, move the bar 6pt above
+        // the safe-area edge (a negative constant moves it inward).
+        readerToolbarBottomConstraint?.constant = needsAdditionalReaderToolbarBottomMargin
+            ? -6
+            : (usesThumbnailScrubber ? 6 : 0)
         readerToolbar.layer.cornerRadius = height / 2
         readerToolbarBackgroundEffectView.layer.cornerRadius = height / 2
 
@@ -1803,24 +1806,59 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         // each constraint's isActive independently briefly left both layouts
         // installed when the scrubber setting changed, which can abort inside
         // NSLayoutConstraint before Auto Layout gets a chance to resolve them.
-        if usesCompactThumbnailScrubber {
-            NSLayoutConstraint.deactivate(edgeConstraints)
-            updateReaderToolbarWidth(toolbarView.thumbnailScrubberView.preferredWidth)
-            NSLayoutConstraint.activate(compactConstraints)
-        } else {
-            NSLayoutConstraint.deactivate(compactConstraints)
-            NSLayoutConstraint.activate(edgeConstraints)
+        if readerToolbarUsesCenteredLayout != usesCenteredLayout {
+            readerToolbarUsesCenteredLayout = usesCenteredLayout
+            if usesCenteredLayout {
+                NSLayoutConstraint.deactivate(edgeConstraints)
+                NSLayoutConstraint.activate(compactConstraints)
+            } else {
+                NSLayoutConstraint.deactivate(compactConstraints)
+                NSLayoutConstraint.activate(edgeConstraints)
+            }
+        }
+
+        if usesCenteredLayout {
+            updateReaderToolbarWidth(usesThumbnailScrubber
+                ? toolbarView.thumbnailScrubberView.preferredWidth
+                : nil)
         }
     }
 
     private func updateReaderToolbarWidth(_ preferredWidth: CGFloat?) {
-        guard #available(iOS 26.0, *), toolbarView.usesThumbnailScrubber,
-              let readerToolbarHost, let preferredWidth else {
+        guard #available(iOS 26.0, *),
+              readerToolbarUsesCenteredLayout == true,
+              let readerToolbarHost else {
             return
         }
         let minimumSideMargin: CGFloat = 28
         let availableWidth = max(0, readerToolbarHost.bounds.width - minimumSideMargin * 2)
-        readerToolbarWidthConstraint?.constant = min(preferredWidth, availableWidth)
+        let maximumWidth = readerToolbarHost.bounds.width > 500
+            ? min(560, availableWidth)
+            : availableWidth
+        let targetWidth = preferredWidth ?? maximumWidth
+        readerToolbarWidthConstraint?.constant = min(targetWidth, maximumWidth)
+    }
+
+    private var needsAdditionalReaderToolbarBottomMargin: Bool {
+        guard let window = readerToolbarHost?.window else { return false }
+        let safeArea = window.safeAreaInsets
+        let hasGestureIndicator = max(safeArea.bottom, max(safeArea.left, safeArea.right)) >= 24
+
+        let isWindowedIPad: Bool
+        if window.traitCollection.userInterfaceIdiom == .pad,
+           let screen = window.windowScene?.screen {
+            let screenBounds = screen.coordinateSpace.bounds
+            let windowBounds = window.convert(window.bounds, to: screen.coordinateSpace)
+            let tolerance: CGFloat = 1
+            isWindowedIPad = abs(windowBounds.minX - screenBounds.minX) > tolerance
+                || abs(windowBounds.minY - screenBounds.minY) > tolerance
+                || abs(windowBounds.maxX - screenBounds.maxX) > tolerance
+                || abs(windowBounds.maxY - screenBounds.maxY) > tolerance
+        } else {
+            isWindowedIPad = false
+        }
+
+        return !hasGestureIndicator || isWindowedIPad
     }
 
     private func scheduleReaderProgressContrastUpdate() {
