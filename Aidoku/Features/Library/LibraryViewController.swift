@@ -2759,6 +2759,51 @@ extension LibraryViewController {
         collectionView.deselectItem(at: indexPath, animated: true)
     }
 
+    private func openReaderIncognito(for info: MangaInfo, isContinueReadingItem: Bool) {
+        Task { @MainActor in
+            let (chapters, nextChapter) = await MangaManager.shared.getNextChapter(
+                mangaId: info.id,
+                fetchIfNeeded: true
+            )
+            let chapter: AidokuRunner.Chapter?
+            if nextChapter == nil && isContinueReadingItem {
+                let history = await CoreDataManager.shared.getReadingHistory(mangaId: info.id)
+                chapter = chapters
+                    .filter { history[$0.id] != nil }
+                    .max { (history[$0.id]?.date ?? -1) < (history[$1.id]?.date ?? -1) }
+            } else {
+                chapter = nextChapter
+            }
+
+            guard let chapter,
+                  let source = await SourceManager.shared.source(for: info.id.sourceKey) else { return }
+            let manga = AidokuRunner.Manga(
+                sourceKey: info.id.sourceKey,
+                key: info.id.mangaKey,
+                title: info.title ?? "",
+                chapters: chapters
+            )
+            let readerController = ReaderViewController(
+                source: source,
+                manga: manga,
+                chapter: chapter,
+                darkensIncognitoBanner: scope == .library,
+                isIncognitoSession: true
+            )
+            let navigationController = ReaderNavigationController(
+                readerViewController: readerController,
+                mangaInfo: info
+            )
+            if #available(iOS 18.0, *) {
+                navigationController.preferredTransition = .zoom { [weak self] _ in
+                    self?.libraryTransitionSourceView(for: info.id)
+                }
+            }
+            navigationController.modalPresentationStyle = .fullScreen
+            present(navigationController, animated: true)
+        }
+    }
+
     func collectionView(_ collectionView: UICollectionView, didDeselectItemAt indexPath: IndexPath) {
         if isEditing {
             let cell = collectionView.cellForItem(at: indexPath)
@@ -2842,6 +2887,20 @@ extension LibraryViewController {
                         activityViewController.popoverPresentationController?.sourceRect = collectionView.cellForItem(at: indexPath)?.frame ?? .zero
 
                         self.present(activityViewController, animated: true)
+                    }
+                ]))
+            }
+
+            if mangaInfo.count == 1 {
+                actions.append(UIMenu(options: .displayInline, children: [
+                    UIAction(
+                        title: NSLocalizedString("READ_INCOGNITO"),
+                        image: UIImage(systemName: "eye.slash")
+                    ) { _ in
+                        self.openReaderIncognito(
+                            for: manga,
+                            isContinueReadingItem: section == .continueReading
+                        )
                     }
                 ]))
             }

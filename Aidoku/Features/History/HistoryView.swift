@@ -42,25 +42,18 @@ struct HistoryView: View {
                 .ignoresSafeArea()
             } else {
                 List(selection: $listSelection) {
-                    let sections = viewModel.filteredHistory.values.sorted { $0.daysAgo < $1.daysAgo }
-                    ForEach(sections, id: \.daysAgo) { section in
-                        if !section.entries.isEmpty {
-                            Section {
-                                ForEach(section.entries, id: \.chapterId) { entry in
-                                    cellView(entry: entry)
-                                }
-                            } header: {
-                                headerView(daysAgo: section.daysAgo)
-                            }
-                        }
+                    let rows = viewModel.filteredHistory.values
+                        .sorted { $0.daysAgo < $1.daysAgo }
+                        .flatMap(\.entries)
+                    let lastEntryId = rows.last?.chapterId
+                    ForEach(rows, id: \.chapterId) { row in
+                        cellView(entry: row, isLast: row.chapterId == lastEntryId)
                     }
-
                     loadMoreView
                 }
-                .listStyle(.grouped)
+                .listStyle(.plain)
                 .environment(\.defaultMinListRowHeight, 1)
                 .environment(\.defaultMinListHeaderHeight, 1) // for ios 15
-                .listSectionSpacingPlease(10)
                 .scrollBackgroundHiddenPlease()
                 .scrollDismissesKeyboardImmediately()
                 .background(Color(uiColor: .systemBackground))
@@ -171,16 +164,7 @@ struct HistoryView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    func headerView(daysAgo: Int) -> some View {
-        Text(Date.makeRelativeDate(days: daysAgo))
-            .font(.body.weight(.medium))
-            .foregroundStyle(.primary)
-            .foregroundColor(.primary) // for ios 15
-            .textCase(.none)
-            .listRowInsets(EdgeInsets(top: 0, leading: 20, bottom: 0, trailing: 20))
-    }
-
-    func cellView(entry: HistoryEntry) -> some View {
+    func cellView(entry: HistoryEntry, isLast: Bool) -> some View {
         let source = viewModel.sourceCache[entry.chapterId.sourceKey]
         let manga = viewModel.mangaCache[entry.chapterId.mangaIdentifier]
         return HistoryEntryCell(
@@ -196,7 +180,7 @@ struct HistoryView: View {
         .equatable()
         .contentShape(Rectangle())
         .listRowSeparator(.hidden, edges: .top)
-        .listRowSeparator(.visible, edges: .bottom)
+        .listRowSeparator(isLast ? .hidden : .visible, edges: .bottom)
         .introspect(.listCell, on: .iOS(.v16, .v17, .v18, .v26, .v27)) { entity in
             // match cell background color to list background color when not selected (plain cell style)
             guard let cell = entity as? UICollectionViewListCell, cell.tag != 1 else { return }
@@ -374,62 +358,62 @@ private struct HistoryEntryCell: View, @MainActor Equatable {
                 )
                 VStack(alignment: .leading, spacing: 4) {
                     Text(manga?.title ?? "")
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .foregroundStyle(.primary)
-                    Text(makeSubtitle())
-                        .foregroundStyle(.secondary)
-                        .font(.subheadline)
                         .lineLimit(1)
-                    if let additionalEntryCount = entry.additionalEntryCount, additionalEntryCount > 0 {
-                        let text = Text(String(format: NSLocalizedString("%lld_PLUS_MORE"), additionalEntryCount))
+                        .foregroundStyle(.primary)
+                    if let chapterName {
+                        Text(chapterName)
                             .foregroundStyle(.secondary)
-                            .font(.footnote)
+                            .font(.subheadline)
                             .lineLimit(1)
-                        if #available(iOS 16.0, *) {
-                            text.contentTransition(.numericText())
-                        } else {
-                            text
-                        }
                     }
+                    Text(timeText)
+                        .foregroundStyle(.secondary)
+                        .font(.footnote)
+                        .lineLimit(1)
                 }
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .buttonStyle(.plain)
         .tint(.primary)
     }
 
-    func makeSubtitle() -> String {
-        var components: [String] = []
-        if let volumeNum = chapter?.volumeNumber, volumeNum >= 0 {
-            if let chapterNum = chapter?.chapterNumber, chapterNum >= 0 {
-                // both volume number and chapter number
-                components.append([
-                    String(format: NSLocalizedString("VOL_X"), volumeNum),
-                    String(format: NSLocalizedString("CH_X"), chapterNum)
-                ].joined(separator: " "))
-            } else {
-                // only volume number
-                components.append(String(format: NSLocalizedString("VOL_SPACE_X"), volumeNum))
-            }
-        } else if let chapterNum = chapter?.chapterNumber, chapterNum >= 0 {
-            // no volume number, just use chapter number
-            components.append(String(format: NSLocalizedString("CH_SPACE_X"), chapterNum))
-        } else if let title = chapter?.title, chapter?.chapterNumber == nil && chapter?.volumeNumber == nil {
-            // no volume or chapter number, just use the title
-            components.append(title)
+    private var chapterName: String? {
+        guard let chapter else { return nil }
+        if let title = chapter.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            return title
         }
-        if let currentPage = entry.currentPage, let totalPages = entry.totalPages, currentPage > 0, currentPage < totalPages {
-            components.append(String(format: NSLocalizedString("PAGE_X_OF_X"), currentPage, totalPages))
+        return chapter.sourceDisplayTitle
+    }
+
+    private var timeText: String {
+        let calendar = Calendar.autoupdatingCurrent
+        let dayDifference = calendar.dateComponents(
+            [.day],
+            from: calendar.startOfDay(for: entry.date),
+            to: calendar.startOfDay(for: Date())
+        ).day ?? 0
+        guard dayDifference > 0 else {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .none
+            formatter.timeStyle = .short
+            return formatter.string(from: entry.date)
         }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .short
-        components.append(formatter.string(from: entry.date))
-        return components.joined(separator: " - ")
+        if dayDifference == 1 {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.dateTimeStyle = .named
+            formatter.unitsStyle = .full
+            return formatter.localizedString(from: DateComponents(day: -1))
+        }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .numeric
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: entry.date, relativeTo: Date())
     }
 
     static func == (lhs: HistoryEntryCell, rhs: HistoryEntryCell) -> Bool {
-        lhs.entry == rhs.entry && lhs.manga == rhs.manga && lhs.chapter == rhs.chapter
+        lhs.entry == rhs.entry
+            && lhs.manga == rhs.manga
+            && lhs.chapter == rhs.chapter
     }
 }

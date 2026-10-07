@@ -388,6 +388,7 @@
 "CONTINUE_READING" = "Continue Reading";
 "RECENTLY_UPDATED" = "Recently Updated";
 "READ" = "Read";
+"READ_INCOGNITO" = "Read Incognito";
 "UNREAD" = "Unread";
 "MARK" = "Mark";
 "MARK_ALL" = "Mark All";

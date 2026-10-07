@@ -487,40 +487,14 @@ extension HistoryView.ViewModel {
         return historyObj.count
     }
 
-    // filter a day's worth of history entries based on the search query
-    // also deduplicates entries by manga, only showing the most recent entry for each manga (with additional count)
+    // Filter a day's history by manga title. Keep every book entry visible.
     private func filterDay(entries: [HistoryEntry]) -> [HistoryEntry] {
-        var newEntries: [HistoryEntry] = []
-
-        var counts: [MangaIdentifier: Int] = [:]  // keyed by manga key
-
-        for entry in entries {
-            let mangaId = entry.chapterId.mangaIdentifier
-            if let existingCount = counts[mangaId] {
-                counts[mangaId] = existingCount + 1
-                continue
-            }
-            if !searchQuery.isEmpty {
-                let query = searchQuery.lowercased()
-                let manga = mangaCache[mangaId]
-                if let manga, manga.title.lowercased().contains(query) {
-                    newEntries.append(entry)
-                }
-            } else {
-                newEntries.append(entry)
-            }
-            counts[mangaId] = 0
+        guard !searchQuery.isEmpty else { return entries }
+        let query = searchQuery.lowercased()
+        return entries.filter { entry in
+            guard let manga = mangaCache[entry.chapterId.mangaIdentifier] else { return false }
+            return manga.title.lowercased().contains(query)
         }
-
-        for (i, entry) in newEntries.enumerated() {
-            if let additionalCount = counts[entry.chapterId.mangaIdentifier], additionalCount > 0 {
-                newEntries[i].additionalEntryCount = additionalCount
-            } else {
-                newEntries[i].additionalEntryCount = nil
-            }
-        }
-
-        return newEntries
     }
 }
 

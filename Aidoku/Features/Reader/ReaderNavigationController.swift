@@ -56,6 +56,7 @@ struct SwiftUIReaderNavigationController: View {
     let chapter: AidokuRunner.Chapter
     var startPage: Int?
     var transitionSource: ReaderTransitionSource?
+    var isIncognitoSession = false
 
     @State private var interfaceOrientations: UIInterfaceOrientationMask?
 
@@ -64,13 +65,15 @@ struct SwiftUIReaderNavigationController: View {
         manga: AidokuRunner.Manga,
         chapter: AidokuRunner.Chapter,
         startPage: Int? = nil,
-        transitionSource: ReaderTransitionSource? = nil
+        transitionSource: ReaderTransitionSource? = nil,
+        isIncognitoSession: Bool = false
     ) {
         self.source = source
         self.manga = manga
         self.chapter = chapter
         self.startPage = startPage
         self.transitionSource = transitionSource
+        self.isIncognitoSession = isIncognitoSession
 
         let interfaceOrientations: UIInterfaceOrientationMask
         switch UserDefaults.standard.string(forKey: "Reader.orientation") {
@@ -88,7 +91,8 @@ struct SwiftUIReaderNavigationController: View {
             manga: manga,
             chapter: chapter,
             startPage: startPage,
-            transitionSource: transitionSource
+            transitionSource: transitionSource,
+            isIncognitoSession: isIncognitoSession
         )
             .interfaceOrientations(interfaceOrientations)
             .onReceive(NotificationCenter.default.publisher(for: .readerOrientation)) { _ in
@@ -108,6 +112,7 @@ private struct _SwiftUIReaderNavigationController: UIViewControllerRepresentable
     let chapter: AidokuRunner.Chapter
     var startPage: Int?
     var transitionSource: ReaderTransitionSource?
+    var isIncognitoSession: Bool
 
     final class Coordinator {
         var nav: ReaderNavigationController?
@@ -123,7 +128,8 @@ private struct _SwiftUIReaderNavigationController: UIViewControllerRepresentable
             source: source,
             manga: manga,
             chapter: chapter,
-            startPage: startPage
+            startPage: startPage,
+            isIncognitoSession: isIncognitoSession
         )
         reader.openingTransitionSourceViewController = transitionSource?.viewController
         let nav = ReaderNavigationController(readerViewController: reader)
@@ -136,13 +142,17 @@ private struct _SwiftUIReaderNavigationController: UIViewControllerRepresentable
         guard let reader = context.coordinator.reader else { return }
         reader.openingTransitionSourceViewController = transitionSource?.viewController
 
-        // make a fresh reader instance if needed
-        if reader.manga.key != manga.key || reader.manga.sourceKey != manga.sourceKey {
+        // A privacy mode change must start a fresh reader even for the same
+        // manga: an existing controller must never keep writing progress.
+        if reader.manga.key != manga.key
+            || reader.manga.sourceKey != manga.sourceKey
+            || reader.isIncognitoSession != isIncognitoSession {
             let newReader = ReaderViewController(
                 source: source,
                 manga: manga,
                 chapter: chapter,
-                startPage: startPage
+                startPage: startPage,
+                isIncognitoSession: isIncognitoSession
             )
             newReader.openingTransitionSourceViewController = transitionSource?.viewController
             context.coordinator.reader = newReader

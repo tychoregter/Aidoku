@@ -8,14 +8,70 @@
 import AidokuRunner
 import CoreData
 
+private final class IncognitoHistoryWriteGate: @unchecked Sendable {
+    static let shared = IncognitoHistoryWriteGate()
+
+    private let lock = NSLock()
+    private var activeSessions: [MangaIdentifier: Int] = [:]
+
+    func begin(mangaId: MangaIdentifier) {
+        lock.lock()
+        activeSessions[mangaId, default: 0] += 1
+        lock.unlock()
+    }
+
+    func end(mangaId: MangaIdentifier) -> Bool {
+        lock.lock()
+        if let count = activeSessions[mangaId] {
+            if count <= 1 {
+                activeSessions.removeValue(forKey: mangaId)
+            } else {
+                activeSessions[mangaId] = count - 1
+            }
+        }
+        let hasActiveSession = activeSessions[mangaId] != nil
+        lock.unlock()
+        return !hasActiveSession
+    }
+
+    func contains(mangaId: MangaIdentifier) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return activeSessions[mangaId] != nil
+    }
+}
+
 final class HistoryManager: Sendable {
     static let shared = HistoryManager()
 
-    private func isUpdateAllowed(for mangaId: MangaIdentifier) async -> Bool {
-        guard AppSettings.tracking.onlyUpdateLibraryItems.get() else { return true }
-        return await CoreDataManager.shared.container.performBackgroundTask { context in
-            CoreDataManager.shared.hasLibraryManga(mangaId: mangaId, context: context)
+    func beginIncognitoSession(mangaId: MangaIdentifier) {
+        IncognitoHistoryWriteGate.shared.begin(mangaId: mangaId)
+    }
+
+    func endIncognitoSession(mangaId: MangaIdentifier) {
+        guard IncognitoHistoryWriteGate.shared.end(mangaId: mangaId) else { return }
+        Task {
+            await TrackerManager.shared.processPendingUpdates()
         }
+    }
+
+    func isIncognitoSessionActive(mangaId: MangaIdentifier) -> Bool {
+        IncognitoHistoryWriteGate.shared.contains(mangaId: mangaId)
+    }
+
+    private func isUpdateAllowed(for mangaId: MangaIdentifier) async -> Bool {
+        guard !isIncognitoSessionActive(mangaId: mangaId) else { return false }
+        let allowed: Bool
+        if AppSettings.tracking.onlyUpdateLibraryItems.get() {
+            allowed = await CoreDataManager.shared.container.performBackgroundTask { context in
+                CoreDataManager.shared.hasLibraryManga(mangaId: mangaId, context: context)
+            }
+        } else {
+            allowed = true
+        }
+        // Recheck after the async library lookup in case an incognito reader
+        // for this title was opened while that lookup was suspended.
+        return allowed && !isIncognitoSessionActive(mangaId: mangaId)
     }
 }
 
@@ -30,7 +86,8 @@ extension HistoryManager {
     ) async {
         let mangaId = chapterId.mangaIdentifier
         guard await isUpdateAllowed(for: mangaId) else { return }
-        await CoreDataManager.shared.container.performBackgroundTask { context in
+        let didSave = await CoreDataManager.shared.container.performBackgroundTask { context in
+            guard !self.isIncognitoSessionActive(mangaId: mangaId) else { return false }
             CoreDataManager.shared.setRead(mangaId: mangaId, context: context)
             CoreDataManager.shared.setProgress(
                 progress,
@@ -41,10 +98,13 @@ extension HistoryManager {
             )
             do {
                 try context.save()
+                return true
             } catch {
                 LogManager.logger.error("HistoryManager.setProgress: \(error)")
+                return false
             }
         }
+        guard didSave else { return }
         NotificationCenter.default.post(name: .historySet, object: (chapterId, progress))
         await LibraryPagePreviewCache.shared.invalidate(mangaId: mangaId)
         await CoverPalette.persistIfEligible(mangaId)
@@ -69,6 +129,7 @@ extension HistoryManager {
     func addSession(chapterId: ChapterIdentifier, data: ReadingSessionData) async {
         guard await isUpdateAllowed(for: chapterId.mangaIdentifier) else { return }
         await CoreDataManager.shared.container.performBackgroundTask { context in
+            guard !self.isIncognitoSessionActive(mangaId: chapterId.mangaIdentifier) else { return }
             CoreDataManager.shared.createSession(
                 chapterId: chapterId,
                 data: data,
@@ -91,6 +152,7 @@ extension HistoryManager {
         guard await isUpdateAllowed(for: mangaId) else { return }
         // mark each manga as read
         let success = await CoreDataManager.shared.container.performBackgroundTask { context in
+            guard !self.isIncognitoSessionActive(mangaId: mangaId) else { return false }
             // mark chapters as read
             let success = CoreDataManager.shared.setCompleted(
                 chapterIds: chapters.map {

@@ -13,5 +13,4 @@ struct HistoryEntry: Hashable {
     var date: Date
     var currentPage: Int?
     var totalPages: Int?
-    var additionalEntryCount: Int?
 }

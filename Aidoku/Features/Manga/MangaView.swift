@@ -11,6 +11,17 @@ import SwiftUI
 import UIKit
 
 struct MangaView: View {
+    private struct ReaderLaunch: Identifiable {
+        let id = UUID()
+        let chapter: AidokuRunner.Chapter
+        let isIncognitoSession: Bool
+
+        init(_ chapter: AidokuRunner.Chapter, incognito: Bool = false) {
+            self.chapter = chapter
+            self.isIncognitoSession = incognito
+        }
+    }
+
     @StateObject private var viewModel: ViewModel
     @ObservedObject private var toolbarTransitionState: MangaToolbarTransitionState
 
@@ -36,7 +47,7 @@ struct MangaView: View {
 
     @State private var loadingAlert: UIAlertController?
 
-    @State private var openChapter: AidokuRunner.Chapter?
+    @State private var readerLaunch: ReaderLaunch?
 
     @StateObject private var developerMode = UserDefaultsBool(key: AppSettings.general.developerMode.key)
     @StateObject private var incognitoMode = UserDefaultsBool(key: AppSettings.general.incognitoMode.key)
@@ -302,18 +313,18 @@ struct MangaView: View {
                     switch openAction {
                         case .read:
                             if let targetChapterKey, let chapter = viewModel.chapters.first(where: { $0.key == targetChapterKey }) {
-                                openChapter = chapter
+                                readerLaunch = ReaderLaunch(chapter)
                             }
                         case .readNext:
                             if let nextChapter = viewModel.nextChapter {
-                                openChapter = nextChapter
+                                readerLaunch = ReaderLaunch(nextChapter)
                             }
                         case .readLatest:
                             let visibleChapterKeys = Set(viewModel.chapters.map(\.key))
                             if let latestChapter = viewModel.manga.chapters?.first(where: {
                                 visibleChapterKeys.contains($0.key)
                             }) ?? viewModel.chapters.first {
-                                openChapter = latestChapter
+                                readerLaunch = ReaderLaunch(latestChapter)
                             }
                     }
                 } else if let targetChapterKey {
@@ -369,7 +380,7 @@ struct MangaView: View {
                     }
                 }
             }
-            .fullScreenCover(item: $openChapter) { chapter in
+            .fullScreenCover(item: $readerLaunch) { launch in
                 SwiftUIReaderNavigationController(
                     source: viewModel.source,
                     manga: {
@@ -392,12 +403,14 @@ struct MangaView: View {
                         }
                         return mangaWithFilteredChapters
                     }(),
-                    chapter: chapter,
+                    chapter: launch.chapter,
                     transitionSource: readerTransitionSource
-                        ?? ReaderTransitionSource(path.navigationController?.topViewController)
+                        ?? ReaderTransitionSource(path.navigationController?.topViewController),
+                    isIncognitoSession: launch.isIncognitoSession
                 )
                 .ignoresSafeArea()
-                .navigationTransitionZoom(sourceID: chapter, in: transitionNamespace)
+                .id(launch.id)
+                .navigationTransitionZoom(sourceID: launch.chapter, in: transitionNamespace)
             }
             .environment(\.editMode, $editMode)
             .clearsStaleListSelection(selectedChapters)
@@ -494,7 +507,12 @@ extension MangaView {
             },
             onReadButtonPressed: {
                 if let nextChapter = viewModel.nextChapter {
-                    openChapter = nextChapter
+                    readerLaunch = ReaderLaunch(nextChapter)
+                }
+            },
+            onReadIncognitoPressed: {
+                if let nextChapter = viewModel.nextChapter {
+                    readerLaunch = ReaderLaunch(nextChapter, incognito: true)
                 }
             }
         )
@@ -547,7 +565,7 @@ extension MangaView {
             isEditing: editMode == .active
         ) {
             if editMode == .inactive {
-                openChapter = chapter
+                readerLaunch = ReaderLaunch(chapter)
             } else {
                 if selectedChapters.contains(chapter.key) {
                     selectedChapters.remove(chapter.key)
@@ -635,6 +653,14 @@ extension MangaView {
                 }
             } else {
                 buttons
+            }
+        }
+
+        Section {
+            Button {
+                readerLaunch = ReaderLaunch(chapter, incognito: true)
+            } label: {
+                Label(NSLocalizedString("READ_INCOGNITO"), systemImage: "eye.slash")
             }
         }
 
@@ -830,21 +856,8 @@ extension MangaView {
                         selectedChapters = Set(viewModel.listedChapters.map { $0.key })
                     }
                 } label: {
-                    if allSelected {
-                        if #available(iOS 26.0, *) {
-                            Text(NSLocalizedString("DESELECT_ALL"))
-                        } else {
-                            Text(NSLocalizedString("DESELECT_ALL"))
-                                .foregroundStyle(usesLightToolbarIcons ? Color.white : Color.black)
-                        }
-                    } else {
-                        if #available(iOS 26.0, *) {
-                            Text(NSLocalizedString("SELECT_ALL"))
-                        } else {
-                            Text(NSLocalizedString("SELECT_ALL"))
-                                .foregroundStyle(usesLightToolbarIcons ? Color.white : Color.black)
-                        }
-                    }
+                    Text(NSLocalizedString(allSelected ? "DESELECT_ALL" : "SELECT_ALL"))
+                        .foregroundStyle(usesLightToolbarIcons ? Color.white : Color.black)
                 }
                 .disabled(selectableCount == 0)
             }
@@ -1502,7 +1515,7 @@ struct MangaDetailsBackdrop: View {
             red: adjusted(red),
             green: adjusted(green),
             blue: adjusted(blue),
-            alpha: usesDarkText ? 0.92 : 0.68
+            alpha: 0.68
         )
     }
 

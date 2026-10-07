@@ -22,6 +22,8 @@ class ReaderViewController: BaseObservingViewController {
     let manga: AidokuRunner.Manga
     var chapter: AidokuRunner.Chapter
     private let darkensIncognitoBanner: Bool
+    let isIncognitoSession: Bool
+    private var incognitoHistorySessionRegistered = false
     var pages: [Page] = []
     var readingMode: ReadingMode = .rtl
     var defaultReadingMode: ReadingMode?
@@ -199,12 +201,14 @@ class ReaderViewController: BaseObservingViewController {
         manga: AidokuRunner.Manga,
         chapter: AidokuRunner.Chapter,
         startPage: Int? = nil,
-        darkensIncognitoBanner: Bool = false
+        darkensIncognitoBanner: Bool = false,
+        isIncognitoSession: Bool = false
     ) {
         self.source = source
         self.manga = manga
         self.chapter = chapter
         self.darkensIncognitoBanner = darkensIncognitoBanner
+        self.isIncognitoSession = isIncognitoSession
         self.chapterList = manga.chapters ?? []
         self.chaptersToMark = [chapter]
         self.defaultReadingMode = switch manga.viewer {
@@ -216,9 +220,16 @@ class ReaderViewController: BaseObservingViewController {
         }
         self.forceStartPage = startPage
         super.init()
+        if isIncognitoSession {
+            HistoryManager.shared.beginIncognitoSession(mangaId: manga.identifier)
+            incognitoHistorySessionRegistered = true
+        }
     }
 
     deinit {
+        if incognitoHistorySessionRegistered {
+            HistoryManager.shared.endIncognitoSession(mangaId: manga.identifier)
+        }
         readerProgressContrastUpdateWorkItem?.cancel()
         openingTransitionCornerMaskDisplayLink?.invalidate()
         openingTransitionCornerMask?.removeFromSuperview()
@@ -609,6 +620,7 @@ class ReaderViewController: BaseObservingViewController {
         (reader as? ReaderWebtoonViewController)?.stopAutoScroll()
 
         if isBeingDismissed || navigationController?.isBeingDismissed == true {
+            endIncognitoHistorySession()
             // The incognito banner must restore its normal color immediately
             // as the reader is dismissed. A regular reader bar reveal still
             // uses the animated color transition.
@@ -632,6 +644,12 @@ class ReaderViewController: BaseObservingViewController {
         Task {
             await updateReadPosition()
         }
+    }
+
+    private func endIncognitoHistorySession() {
+        guard incognitoHistorySessionRegistered else { return }
+        incognitoHistorySessionRegistered = false
+        HistoryManager.shared.endIncognitoSession(mangaId: manga.identifier)
     }
 
     override func viewWillTransition(to size: CGSize, with coordinator: UIViewControllerTransitionCoordinator) {
@@ -760,6 +778,7 @@ extension ReaderViewController {
         let effectiveCurrentPage = currentPage ?? self.currentPage
 
         guard
+            !isIncognitoSession,
             !AppSettings.general.incognitoMode.get(),
             effectiveTotalPages > 0 // ensure chapter pages are loaded
         else {
@@ -796,6 +815,7 @@ extension ReaderViewController {
     }
 
     private func saveReadingSession(chapter: AidokuRunner.Chapter? = nil) async {
+        guard !isIncognitoSession else { return }
         guard let sessionStartDate else { return }
         let pagesRead = sessionReadPages.count
         if pagesRead > 0 && sessionLastInteraction != nil {
@@ -1915,7 +1935,7 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
     }
 
     func setCompleted() {
-        guard !AppSettings.general.incognitoMode.get() else { return }
+        guard !isIncognitoSession, !AppSettings.general.incognitoMode.get() else { return }
 
         Task { [chaptersToMark] in
             await HistoryManager.shared.addHistory(

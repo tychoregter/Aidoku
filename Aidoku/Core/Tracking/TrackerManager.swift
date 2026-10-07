@@ -445,16 +445,20 @@ actor TrackerManager {
         refreshLibrary: Bool = false,
         respectKomgaTrackingSetting: Bool = false
     ) async {
-        guard !progressByManga.isEmpty else { return }
+        let writableProgress = progressByManga.filter {
+            !HistoryManager.shared.isIncognitoSessionActive(mangaId: $0.key)
+        }
+        guard !writableProgress.isEmpty else { return }
 
         let (completed, progressed, changedManga) = await CoreDataManager.shared.container.performBackgroundTask {
-            [progressByManga] context in
+            [writableProgress] context in
             var completed: [ChapterIdentifier] = []
             var progressed: [ChapterIdentifier: Int] = [:]
             var changedManga = Set<MangaIdentifier>()
             var latestReadDates: [MangaIdentifier: Date] = [:]
 
-            for (mangaId, progressMap) in progressByManga {
+            for (mangaId, progressMap) in writableProgress {
+                guard !HistoryManager.shared.isIncognitoSessionActive(mangaId: mangaId) else { continue }
                 if
                     respectKomgaTrackingSetting,
                     !KomgaTracker.isTrackingEnabled(for: mangaId.sourceKey)
@@ -562,10 +566,16 @@ actor TrackerManager {
 
 private extension TrackerManager {
     func isUpdateAllowed(for mangaId: MangaIdentifier) async -> Bool {
-        guard AppSettings.tracking.onlyUpdateLibraryItems.get() else { return true }
-        return await CoreDataManager.shared.container.performBackgroundTask { context in
-            CoreDataManager.shared.hasLibraryManga(mangaId: mangaId, context: context)
+        guard !HistoryManager.shared.isIncognitoSessionActive(mangaId: mangaId) else { return false }
+        let allowed: Bool
+        if AppSettings.tracking.onlyUpdateLibraryItems.get() {
+            allowed = await CoreDataManager.shared.container.performBackgroundTask { context in
+                CoreDataManager.shared.hasLibraryManga(mangaId: mangaId, context: context)
+            }
+        } else {
+            allowed = true
         }
+        return allowed && !HistoryManager.shared.isIncognitoSessionActive(mangaId: mangaId)
     }
 }
 
@@ -718,6 +728,10 @@ extension TrackerManager {
             var successes = 0
 
             for var update in trackingState.pendingPageUpdates {
+                guard await isUpdateAllowed(for: update.chapterId.mangaIdentifier) else {
+                    stillPending.append(update)
+                    continue
+                }
                 guard let tracker = TrackerManager.getTracker(id: update.trackerId) as? PageTracker else {
                     continue // tracker no longer exists, remove the update
                 }

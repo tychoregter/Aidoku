@@ -11,6 +11,13 @@ import SwiftUI
 import AidokuRunner
 
 struct MangaDetailsHeaderView: View {
+    private struct VisibleTag: Identifiable {
+        let text: String
+        let isGenre: Bool
+
+        var id: String { "\(isGenre ? "genre" : "tag")-\(text.lowercased())" }
+    }
+
     enum Section {
         case cover
         case details
@@ -43,6 +50,7 @@ struct MangaDetailsHeaderView: View {
     var onHeroBottomChange: ((CGFloat) -> Void)?
     var onTitlePressed: (() -> Void)?
     var onReadButtonPressed: (() -> Void)?
+    var onReadIncognitoPressed: (() -> Void)?
 
     @EnvironmentObject private var path: NavigationCoordinator
     @Environment(\.openURL) private var openURL
@@ -124,7 +132,8 @@ struct MangaDetailsHeaderView: View {
         onCoverDominantColorChange: ((UIColor) -> Void)? = nil,
         onHeroBottomChange: ((CGFloat) -> Void)? = nil,
         onTitlePressed: (() -> Void)? = nil,
-        onReadButtonPressed: (() -> Void)? = nil
+        onReadButtonPressed: (() -> Void)? = nil,
+        onReadIncognitoPressed: (() -> Void)? = nil
     ) {
         self.section = section
         self._source = source
@@ -149,6 +158,7 @@ struct MangaDetailsHeaderView: View {
         self.onHeroBottomChange = onHeroBottomChange
         self.onTitlePressed = onTitlePressed
         self.onReadButtonPressed = onReadButtonPressed
+        self.onReadIncognitoPressed = onReadIncognitoPressed
 
         self._isTracking = State(initialValue: TrackerManager.shared.isTracking(
             mangaId: manga.wrappedValue.identifier
@@ -441,37 +451,20 @@ struct MangaDetailsHeaderView: View {
                     }
                 }
 
-                Button {
-                    onReadButtonPressed?()
-                } label: {
-                    VStack(spacing: 0) {
-                        Text(readButtonTitle)
-                            .font(.system(size: 16, weight: .semibold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                            .contentTransition(isEnteringTransition ? .identity : .interpolate)
-                            .animation(isEnteringTransition ? nil : loadingAnimation, value: readButtonTitle)
-                        if let readButtonSubtitle {
-                            Text(developerMode.value
-                                ? DeveloperMode.chapterTitle(for: String(describing: manga.identifier))
-                                : readButtonSubtitle)
-                                .font(.system(size: 13))
-                                .foregroundStyle(readButtonTextColor.opacity(0.62))
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .contentTransition(isEnteringTransition ? .identity : .interpolate)
-                                .animation(isEnteringTransition ? nil : loadingAnimation, value: readButtonSubtitle)
-                                .transition(.identity)
-                        }
-                    }
-                    .padding(.horizontal, readButtonSubtitle == nil ? 18 : 24)
-                    .frame(minWidth: 168, minHeight: 48)
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(readButtonTextColor.opacity(readButtonDisabled ? 0.78 : 1))
-                .background(readButtonColor.opacity(readButtonDisabled ? 0.67 : 1), in: Capsule())
-                .disabled(readButtonDisabled)
+                ReadIncognitoButtonInteraction(
+                    onRead: { onReadButtonPressed?() },
+                    onReadIncognito: { onReadIncognitoPressed?() },
+                    isEnabled: !readButtonDisabled,
+                    hasIncognitoAction: nextChapter != nil,
+                    content: AnyView(
+                        readButtonLabel
+                            .foregroundStyle(readButtonTextColor.opacity(readButtonDisabled ? 0.78 : 1))
+                            .background(
+                                readButtonColor.opacity(readButtonDisabled ? 0.67 : 1),
+                                in: Capsule()
+                            )
+                    )
+                )
                 .transaction {
                     if descriptionExpansionAnimating || isEnteringTransition {
                         $0.animation = nil
@@ -550,6 +543,32 @@ struct MangaDetailsHeaderView: View {
         } action: { bottom in
             onHeroBottomChange?(bottom)
         }
+    }
+
+    private var readButtonLabel: some View {
+        VStack(spacing: 0) {
+            Text(readButtonTitle)
+                .font(.system(size: 16, weight: .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .contentTransition(isEnteringTransition ? .identity : .interpolate)
+                .animation(isEnteringTransition ? nil : loadingAnimation, value: readButtonTitle)
+            if let readButtonSubtitle {
+                Text(developerMode.value
+                    ? DeveloperMode.chapterTitle(for: String(describing: manga.identifier))
+                    : readButtonSubtitle)
+                    .font(.system(size: 13))
+                    .foregroundStyle(readButtonTextColor.opacity(0.62))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .contentTransition(isEnteringTransition ? .identity : .interpolate)
+                    .animation(isEnteringTransition ? nil : loadingAnimation, value: readButtonSubtitle)
+                    .transition(.identity)
+            }
+        }
+        .padding(.horizontal, readButtonSubtitle == nil ? 18 : 24)
+        .frame(minWidth: 168, minHeight: 48)
+        .contentShape(Capsule())
     }
 
     @ViewBuilder
@@ -649,16 +668,17 @@ struct MangaDetailsHeaderView: View {
         if !tags.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(tags, id: \.self) { tag in
+                    ForEach(tags) { tag in
+                        let displayText = developerMode.value ? DeveloperMode.tag(for: tag.text) : tag.text
                         let label = TagView(
-                            text: developerMode.value ? DeveloperMode.tag(for: tag) : tag,
+                            text: tag.isGenre ? displayText.lowercased() : displayText,
                             foregroundColor: headerTextColor,
                             backgroundColor: headerControlBackgroundColor,
                             outlineColor: controlOutlineColor
                         )
-                        if let source, let filter = source.matchingGenreFilter(for: tag) {
+                        if let source, let filter = source.matchingGenreFilter(for: tag.text) {
                             Button {
-                                let viewController = MangaListViewController(source: source, title: tag)
+                                let viewController = MangaListViewController(source: source, title: tag.text)
                                 viewController.getEntries = { page in
                                     try await source.getSearchMangaList(query: nil, page: page, filters: [
                                         filter
@@ -681,7 +701,7 @@ struct MangaDetailsHeaderView: View {
         }
     }
 
-    private var visibleTags: [String] {
+    private var visibleTags: [VisibleTag] {
         guard let allLabels = manga.tags?.filter({
             !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }), !allLabels.isEmpty else { return [] }
@@ -704,8 +724,8 @@ struct MangaDetailsHeaderView: View {
         let configuration = LibraryGenreFilterSettings.load()
         let genreIdentifiers = Set(genres.map(LibraryGenreFilterSettings.normalize))
         var displayedIdentifiers: Set<String> = []
-        var visibleGenres: [String] = []
-        var visibleTags: [String] = []
+        var visibleGenres: [VisibleTag] = []
+        var visibleTags: [VisibleTag] = []
 
         if showGenres.value {
             for genre in genres {
@@ -724,7 +744,7 @@ struct MangaDetailsHeaderView: View {
                 let label = limitGenresToEnabled.value
                     ? LibraryGenreFilterSettings.displayName(for: root, availableNames: genres)
                     : genre
-                visibleGenres.append(label)
+                visibleGenres.append(VisibleTag(text: label, isGenre: true))
             }
         }
 
@@ -735,14 +755,15 @@ struct MangaDetailsHeaderView: View {
                 // the genre pill itself is hidden by the display settings.
                 guard !genreIdentifiers.contains(identifier),
                       displayedIdentifiers.insert(identifier).inserted else { continue }
-                visibleTags.append(tag)
+                visibleTags.append(VisibleTag(text: tag, isGenre: false))
             }
         }
 
         let alphabetical: (String, String) -> Bool = {
             $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
         }
-        return visibleGenres.sorted(by: alphabetical) + visibleTags.sorted(by: alphabetical)
+        return visibleGenres.sorted { alphabetical($0.text, $1.text) }
+            + visibleTags.sorted { alphabetical($0.text, $1.text) }
     }
 
     func toggleBookmarked() async {
@@ -846,6 +867,116 @@ struct MangaDetailsHeaderView: View {
             readButtonTitle = title
             readButtonSubtitle = subtitle
             readButtonDisabled = disabled
+        }
+    }
+}
+
+/// UIKit owns the visible button as well as its context menu, so its native
+/// press highlight and menu lift animate the same view without a second copy.
+private struct ReadIncognitoButtonInteraction: UIViewControllerRepresentable {
+    let onRead: () -> Void
+    let onReadIncognito: () -> Void
+    let isEnabled: Bool
+    let hasIncognitoAction: Bool
+    let content: AnyView
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            onRead: onRead,
+            onReadIncognito: onReadIncognito,
+            isEnabled: isEnabled,
+            hasIncognitoAction: hasIncognitoAction
+        )
+    }
+
+    func makeUIViewController(context: Context) -> UIHostingController<AnyView> {
+        let controller = UIHostingController(rootView: content)
+        controller.safeAreaRegions = []
+        controller.view.backgroundColor = .clear
+        controller.view.isUserInteractionEnabled = isEnabled
+        let tap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.read)
+        )
+        controller.view.addGestureRecognizer(tap)
+        controller.view.addInteraction(UIContextMenuInteraction(delegate: context.coordinator))
+        return controller
+    }
+
+    func updateUIViewController(_ controller: UIHostingController<AnyView>, context: Context) {
+        controller.rootView = content
+        controller.view.isUserInteractionEnabled = isEnabled
+        context.coordinator.onRead = onRead
+        context.coordinator.onReadIncognito = onReadIncognito
+        context.coordinator.isEnabled = isEnabled
+        context.coordinator.hasIncognitoAction = hasIncognitoAction
+    }
+
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        uiViewController controller: UIHostingController<AnyView>,
+        context: Context
+    ) -> CGSize? {
+        let ideal = controller.sizeThatFits(in: CGSize(width: 10_000, height: 48))
+        let availableWidth = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? ideal.width
+        return CGSize(width: min(availableWidth, max(168, ideal.width)), height: max(48, ideal.height))
+    }
+
+    final class Coordinator: NSObject, UIContextMenuInteractionDelegate {
+        var onRead: () -> Void
+        var onReadIncognito: () -> Void
+        var isEnabled: Bool
+        var hasIncognitoAction: Bool
+
+        init(
+            onRead: @escaping () -> Void,
+            onReadIncognito: @escaping () -> Void,
+            isEnabled: Bool,
+            hasIncognitoAction: Bool
+        ) {
+            self.onRead = onRead
+            self.onReadIncognito = onReadIncognito
+            self.isEnabled = isEnabled
+            self.hasIncognitoAction = hasIncognitoAction
+        }
+
+        @objc func read() {
+            if isEnabled { onRead() }
+        }
+
+        func contextMenuInteraction(
+            _ interaction: UIContextMenuInteraction,
+            configurationForMenuAtLocation location: CGPoint
+        ) -> UIContextMenuConfiguration? {
+            guard isEnabled, hasIncognitoAction else { return nil }
+            return UIContextMenuConfiguration(
+                identifier: nil,
+                previewProvider: nil,
+                actionProvider: { [weak self] _ in
+                    UIMenu(children: [
+                        UIAction(
+                            title: NSLocalizedString("READ_INCOGNITO"),
+                            image: UIImage(systemName: "eye.slash")
+                        ) { _ in
+                            self?.onReadIncognito()
+                        }
+                    ])
+                }
+            )
+        }
+
+        func contextMenuInteraction(
+            _ interaction: UIContextMenuInteraction,
+            previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration
+        ) -> UITargetedPreview? {
+            guard let view = interaction.view else { return nil }
+            let parameters = UIPreviewParameters()
+            parameters.backgroundColor = .clear
+            parameters.visiblePath = UIBezierPath(
+                roundedRect: view.bounds,
+                cornerRadius: view.bounds.height / 2
+            )
+            return UITargetedPreview(view: view, parameters: parameters)
         }
     }
 }
