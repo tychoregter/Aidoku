@@ -178,6 +178,7 @@
 "LANGUAGES" = "Languages";
 "BASE_URL" = "Base URL";
 "INFO" = "Info";
+"DETAILS" = "Details";
 "VERSION" = "Version";
 "BUILD" = "Build";
 "BUTTON_FILTER" = "Filter";
@@ -372,6 +373,11 @@
 "CHAPTER" = "Book";
 "BOOK_ORDER" = "Book Order";
 "CHAPTERS" = "Books";
+"CUSTOM_BOOK_NAME" = "Rename Books";
+"BOOK_NAME_PREFIX" = "Chapter";
+"LABS_FEATURES" = "Labs Features";
+"LABS_FEATURES_TEXT" = "Enables features that aren't fully ready yet. These may be less polished then you're used to.";
+"RESTORE_SOURCE_BOOK_NAMES" = "Use Source Names";
 "VOLUME_X" = "Volume %g";
 "CHAPTER_X" = "Book %g";
 "VOL_X" = "Vol.%g";

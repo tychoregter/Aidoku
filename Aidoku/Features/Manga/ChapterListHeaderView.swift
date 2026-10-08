@@ -10,6 +10,11 @@ import UIKit
 import AidokuRunner
 
 struct ChapterListHeaderView: View {
+    @AppStorage("General.labsFeatures") private var labsFeaturesEnabled = false
+    @State private var showingChapterNameEditor = false
+    @State private var chapterNamePrefix = ""
+    @State private var hasCustomChapterName = false
+
     @Binding var sortOption: ChapterSortOption
     @Binding var sortAscending: Bool
 
@@ -70,7 +75,7 @@ struct ChapterListHeaderView: View {
         }
     }
 
-    var body: some View {
+    private var header: some View {
         HStack {
             Text(NSLocalizedString("CHAPTERS"))
                 .font(.system(size: 20, weight: .semibold))
@@ -90,6 +95,35 @@ struct ChapterListHeaderView: View {
 
             Spacer()
 
+        }
+    }
+
+    @ViewBuilder var body: some View {
+        if labsFeaturesEnabled {
+            header
+                .contentShape(Rectangle())
+                .onLongPressGesture {
+                    chapterNamePrefix = ChapterNaming.storedPrefix(for: mangaId) ?? ""
+                    hasCustomChapterName = !chapterNamePrefix.isEmpty
+                    showingChapterNameEditor = true
+                }
+                .alert(
+                    NSLocalizedString("CUSTOM_BOOK_NAME", value: "Rename Books", comment: "Title of the custom numbered book naming editor"),
+                    isPresented: $showingChapterNameEditor
+                ) {
+                    TextField(NSLocalizedString("BOOK_NAME_PREFIX", value: "Chapter", comment: "Custom word before a book number"), text: $chapterNamePrefix)
+                    if hasCustomChapterName {
+                        Button(NSLocalizedString("RESTORE_SOURCE_BOOK_NAMES", value: "Use Source Names", comment: "Restore source book names"), role: .destructive) {
+                            ChapterNaming.setPrefix(nil, for: mangaId)
+                        }
+                    }
+                    Button(NSLocalizedString("CANCEL"), role: .cancel) {}
+                    Button(NSLocalizedString("APPLY", value: "Apply", comment: "Apply the custom book name")) {
+                        ChapterNaming.setPrefix(chapterNamePrefix, for: mangaId)
+                    }
+                }
+        } else {
+            header
         }
     }
 
@@ -130,8 +164,15 @@ enum BookGapPresentation {
 
     static func missingCount(between first: AidokuRunner.Chapter, and second: AidokuRunner.Chapter) -> Int {
         guard let firstNumber = number(for: first),
-              let secondNumber = number(for: second) else { return 0 }
-        return missingCount(between: firstNumber, and: secondNumber)
+              let secondNumber = number(for: second),
+              let missingNumbers = missingWholeNumbers(between: firstNumber, and: secondNumber) else { return 0 }
+
+        // The source's book numbers establish the gap. Only then consult either
+        // neighboring title for an explicit combined episode that covers it.
+        let coveredNumbers = [first, second].compactMap { combinedNumberRange(for: $0) }
+        return missingNumbers.reduce(0) { count, number in
+            count + (coveredNumbers.contains { $0.contains(number) } ? 0 : 1)
+        }
     }
 
     static func totalMissingCount(in chapters: [AidokuRunner.Chapter]) -> Int {
@@ -141,17 +182,76 @@ enum BookGapPresentation {
         }
     }
 
-    private static func missingCount(between first: Float, and second: Float) -> Int {
+    private static func missingWholeNumbers(between first: Float, and second: Float) -> ClosedRange<Int>? {
         let lower = min(first, second)
         let upper = max(first, second)
-        guard lower >= 0, upper < 1_000_000, upper - lower <= 1_000 else { return 0 }
+        guard lower >= 0, upper < 1_000_000, upper - lower <= 1_000 else { return nil }
 
         let firstMissing = Int(floor(lower)) + 1
         // A .1 book starts a fractional sequence and fills its whole-number slot;
         // later fractional entries such as .2 or .5 do not imply that start exists.
         let startsFractionalSequence = abs(upper - floor(upper) - 0.1) < 0.005
         let lastMissing = Int(ceil(upper)) - (startsFractionalSequence ? 2 : 1)
-        return max(lastMissing - firstMissing + 1, 0)
+        return firstMissing <= lastMissing ? firstMissing...lastMissing : nil
+    }
+
+    /// Accept only explicit combined episode titles tied to the source's book
+    /// number. Sources may number a combined book by its first or last episode.
+    private static func combinedNumberRange(for chapter: AidokuRunner.Chapter) -> ClosedRange<Int>? {
+        guard let bookNumber = number(for: chapter),
+              bookNumber >= 0,
+              bookNumber < 1_000_000,
+              abs(bookNumber - bookNumber.rounded()) < 0.001,
+              let title = chapter.title else { return nil }
+
+        let leadingNumberPattern = #"^\s*(?:(?:episode|ep|chapter|ch)\.?\s*)?#?\s*(\d+)"#
+        guard let leadingRegex = try? NSRegularExpression(pattern: leadingNumberPattern, options: [.caseInsensitive]),
+              let leadingMatch = leadingRegex.firstMatch(in: title, range: NSRange(title.startIndex..., in: title)),
+              let firstNumberRange = Range(leadingMatch.range(at: 1), in: title),
+              let firstNumber = Int(title[firstNumberRange]) else { return nil }
+
+        let connectorPattern = #"^\s*(\+|&|and|[-–—])\s*(\d+)"#
+        guard let connectorRegex = try? NSRegularExpression(
+            pattern: connectorPattern,
+            options: [.caseInsensitive]
+        ),
+        let suffixRange = Range(leadingMatch.range(at: 0), in: title) else {
+            return nil
+        }
+
+        var suffix = String(title[suffixRange.upperBound...])
+        var lastNumber = firstNumber
+        var lowestNumber = firstNumber
+        var highestNumber = firstNumber
+
+        while let match = connectorRegex.firstMatch(in: suffix, range: NSRange(suffix.startIndex..., in: suffix)),
+              let connectorRange = Range(match.range(at: 1), in: suffix),
+              let nextNumberRange = Range(match.range(at: 2), in: suffix),
+              let matchedRange = Range(match.range(at: 0), in: suffix),
+              let nextNumber = Int(suffix[nextNumberRange]),
+              nextNumber != lastNumber,
+              nextNumber < 1_000_000 {
+            let connector = suffix[connectorRange].lowercased()
+            let isRange = connector == "-" || connector == "–" || connector == "—"
+            // A large dash-separated number is more likely a year or title suffix.
+            // After a combined group, only an immediately adjacent dashed number
+            // can extend it.
+            if isRange && (abs(nextNumber - lastNumber) > 50
+                || (lowestNumber < highestNumber && abs(nextNumber - lastNumber) > 1)) {
+                break
+            }
+            guard isRange || abs(nextNumber - lastNumber) == 1 else { return nil }
+
+            lowestNumber = min(lowestNumber, nextNumber)
+            highestNumber = max(highestNumber, nextNumber)
+            lastNumber = nextNumber
+            suffix = String(suffix[matchedRange.upperBound...])
+        }
+
+        let sourceNumber = Int(bookNumber.rounded())
+        guard lowestNumber < highestNumber,
+              sourceNumber == lowestNumber || sourceNumber == highestNumber else { return nil }
+        return lowestNumber...highestNumber
     }
 }
 

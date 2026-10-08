@@ -1187,7 +1187,8 @@ extension ReaderWebtoonViewController: ASCollectionDataSource {
                     transition: .init(
                         type: page.type == .prevInfoPage ? .prev : .next,
                         from: chapter,
-                        to: to
+                        to: to,
+                        mangaId: self.viewModel.manga.identifier
                     ),
                     pillarboxLayoutState: self.pillarboxLayoutState,
                     usesDarkAppearance: usesDarkAppearance

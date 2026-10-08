@@ -123,7 +123,9 @@ struct HomeChapterListView: View {
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
 
-                    Text(entry.chapter.formattedTitle())
+                    Text(ChapterNaming.prefix(for: entry.manga.identifier) == nil
+                        ? entry.chapter.formattedTitle()
+                        : ChapterNaming.title(for: entry.chapter, in: entry.manga.identifier))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 

@@ -16,6 +16,7 @@ struct Transition {
     var type: TransitionType
     var from: AidokuRunner.Chapter
     var to: AidokuRunner.Chapter?
+    var mangaId: MangaIdentifier
 }
 
 class ReaderTransitionNode: ASDisplayNode {
@@ -54,7 +55,7 @@ class ReaderTransitionNode: ASDisplayNode {
             return node
         }
         node.attributedText = NSAttributedString(
-            string: chapter.readerTransitionDisplayTitle,
+            string: ChapterNaming.title(for: chapter, in: transition.mangaId, useFullBookLabel: true),
             attributes: [
                 .foregroundColor: secondaryTextColor,
                 .font: UIFont.systemFont(ofSize: Self.defaultFontSize)
@@ -88,7 +89,7 @@ class ReaderTransitionNode: ASDisplayNode {
             return node
         }
         node.attributedText = NSAttributedString(
-            string: chapter.readerTransitionDisplayTitle,
+            string: ChapterNaming.title(for: chapter, in: transition.mangaId, useFullBookLabel: true),
             attributes: [
                 .foregroundColor: secondaryTextColor,
                 .font: UIFont.systemFont(ofSize: Self.defaultFontSize)

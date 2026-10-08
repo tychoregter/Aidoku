@@ -562,6 +562,8 @@ extension MangaView {
             downloadStatus: downloadStatus,
             downloadProgress: viewModel.downloadProgress[chapter.key],
             displayMode: viewModel.chapterTitleDisplayMode,
+            namingPrefix: ChapterNaming.prefix(for: viewModel.manga.identifier),
+            namingRevision: viewModel.chapterNamingRevision,
             isEditing: editMode == .active
         ) {
             if editMode == .inactive {
@@ -1046,6 +1048,8 @@ private struct ChapterCellView<T: View>: View, Equatable {
     let downloadStatus: DownloadStatus
     let downloadProgress: Float?
     let displayMode: ChapterTitleDisplayMode
+    let namingPrefix: String?
+    let namingRevision: Int
     let isEditing: Bool
 
     var onPressed: (() -> Void)?
@@ -1130,6 +1134,8 @@ private struct ChapterCellView<T: View>: View, Equatable {
             && lhs.downloadStatus == rhs.downloadStatus
             && lhs.downloadProgress == rhs.downloadProgress
             && lhs.displayMode == rhs.displayMode
+            && lhs.namingPrefix == rhs.namingPrefix
+            && lhs.namingRevision == rhs.namingRevision
             && lhs.isEditing == rhs.isEditing
     }
 }

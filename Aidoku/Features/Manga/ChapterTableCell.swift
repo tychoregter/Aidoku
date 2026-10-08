@@ -122,10 +122,7 @@ struct ChapterTableCell: View {
 
     private var chapterTitle: String {
         if developerMode.value { return DeveloperMode.chapterTitle(for: chapter.key) }
-        if let title = chapter.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
-            return title
-        }
-        return chapter.sourceDisplayTitle
+        return ChapterNaming.title(for: chapter, in: manga.identifier)
     }
 
     private var chapterNumberLabel: String {

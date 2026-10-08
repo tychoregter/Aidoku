@@ -199,6 +199,8 @@ extension SettingsView {
 
     func onSettingChange(_ key: String) {
         switch key {
+            case AppSettings.general.labsFeatures.key:
+                NotificationCenter.default.post(name: ChapterNaming.didChange, object: nil)
             case AppSettings.appearance.appearance.key, AppSettings.appearance.useSystemAppearance.key:
                 if !AppSettings.appearance.useSystemAppearance.get() {
                     if AppSettings.appearance.appearance.get() == 0 {

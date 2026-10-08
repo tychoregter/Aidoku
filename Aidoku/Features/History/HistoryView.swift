@@ -379,11 +379,8 @@ private struct HistoryEntryCell: View, @MainActor Equatable {
     }
 
     private var chapterName: String? {
-        guard let chapter else { return nil }
-        if let title = chapter.title?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
-            return title
-        }
-        return chapter.sourceDisplayTitle
+        guard let chapter, let manga else { return nil }
+        return ChapterNaming.title(for: chapter, in: manga.identifier)
     }
 
     private var timeText: String {

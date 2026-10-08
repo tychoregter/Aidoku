@@ -71,7 +71,7 @@ struct ReaderChapterListView: View {
                         } label: {
                             HStack {
                                 VStack(alignment: .leading) {
-                                    Text(chapter.sourceDisplayTitle)
+                                    Text(ChapterNaming.title(for: chapter, in: manga.identifier))
                                         .foregroundColor(.primary)
                                         .font(.subheadline)
                                     if showPageCounts.value, supportsPageCounts {

@@ -61,6 +61,45 @@ struct ChapterListPreferences: Codable {
     }
 }
 
+/// A per-series display name for numbered books. Keep source titles untouched so
+/// refreshes, chapter matching, and missing-book detection use original metadata.
+enum ChapterNaming {
+    static let didChange = Notification.Name("ChapterNaming.didChange")
+
+    static func prefix(for mangaId: MangaIdentifier) -> String? {
+        guard AppSettings.general.labsFeatures.get() else { return nil }
+        return storedPrefix(for: mangaId)
+    }
+
+    static func storedPrefix(for mangaId: MangaIdentifier) -> String? {
+        UserDefaults.standard.string(forKey: key(for: mangaId))
+    }
+
+    static func setPrefix(_ value: String?, for mangaId: MangaIdentifier) {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = trimmed?.isEmpty == false ? trimmed : nil
+        UserDefaults.standard.set(prefix, forKey: key(for: mangaId))
+        NotificationCenter.default.post(name: didChange, object: mangaId)
+    }
+
+    static func title(
+        for chapter: AidokuRunner.Chapter,
+        in mangaId: MangaIdentifier,
+        useFullBookLabel: Bool = false
+    ) -> String {
+        if let prefix = prefix(for: mangaId),
+           let number = chapter.chapterNumber ?? chapter.volumeNumber,
+           number.isFinite {
+            return "\(prefix) \(String(format: "%g", Double(number)))"
+        }
+        return useFullBookLabel ? chapter.readerTransitionDisplayTitle : chapter.sourceDisplayTitle
+    }
+
+    private static func key(for mangaId: MangaIdentifier) -> String {
+        "Manga.chapterNamePrefix.\(mangaId)"
+    }
+}
+
 @MainActor
 enum ChapterListPresentation {
     static func orderedChapters(

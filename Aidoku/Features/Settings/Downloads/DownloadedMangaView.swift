@@ -111,7 +111,11 @@ struct DownloadedMangaView: View {
                     Button {
                         openChapter = chapter
                     } label: {
-                        ChapterRow(chapter: chapter, history: viewModel.readingHistory[chapter.chapterId])
+                        ChapterRow(
+                            chapter: chapter,
+                            mangaId: viewModel.manga.mangaIdentifier,
+                            history: viewModel.readingHistory[chapter.chapterId]
+                        )
                     }
                     .foregroundStyle(.primary)
                     .disabled(chapter.failed)
@@ -238,6 +242,7 @@ struct DownloadedMangaView: View {
 
 private struct ChapterRow: View {
     let chapter: DownloadedChapterInfo
+    let mangaId: MangaIdentifier
     let history: (page: Int, date: Int)?
 
     var isRead: Bool {
@@ -247,7 +252,9 @@ private struct ChapterRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text(chapter.displayTitle)
+                Text(ChapterNaming.prefix(for: mangaId).flatMap { _ in
+                    chapter.chapter.map { ChapterNaming.title(for: $0, in: mangaId) }
+                } ?? chapter.displayTitle)
                     .font(.callout)
                     .lineLimit(1)
                     .foregroundStyle(isRead ? .secondary : .primary)

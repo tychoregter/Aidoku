@@ -79,7 +79,8 @@ class ReaderPageViewController: BaseObservingViewController {
     init(
         type: PageType,
         delegate: ReaderHoldingDelegate?,
-        temporaryPageStore: ReaderTemporaryPageStore? = nil
+        temporaryPageStore: ReaderTemporaryPageStore? = nil,
+        mangaId: MangaIdentifier? = nil
     ) {
         self.type = type
         self.delegate = delegate
@@ -89,6 +90,7 @@ class ReaderPageViewController: BaseObservingViewController {
         switch type {
             case .info(let infoPageType):
                 infoView = ReaderInfoPageView(type: infoPageType == .previous ? .previous : .next)
+                infoView?.mangaId = mangaId
             case .page:
                 guard let temporaryPageStore else {
                     fatalError("ReaderPageViewController with type page requires a temporary page store")

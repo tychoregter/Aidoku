@@ -15,6 +15,9 @@ enum ReaderInfoPageType {
 
 class ReaderInfoPageView: UIView {
     var type: ReaderInfoPageType
+    var mangaId: MangaIdentifier? {
+        didSet { updateLabelText() }
+    }
 
     var currentChapter: AidokuRunner.Chapter? {
         didSet {
@@ -158,19 +161,23 @@ class ReaderInfoPageView: UIView {
 
     func updateLabelText() {
         guard let currentChapter else { return }
+        func title(_ chapter: AidokuRunner.Chapter) -> String {
+            guard let mangaId else { return chapter.readerTransitionDisplayTitle }
+            return ChapterNaming.title(for: chapter, in: mangaId, useFullBookLabel: true)
+        }
         if let previousChapter {
             topChapterLabel.text = NSLocalizedString("PREVIOUS_COLON")
-            topChapterTitleLabel.text = previousChapter.readerTransitionDisplayTitle
+            topChapterTitleLabel.text = title(previousChapter)
             bottomChapterLabel.text = NSLocalizedString("CURRENT_COLON")
-            bottomChapterTitleLabel.text = currentChapter.readerTransitionDisplayTitle
+            bottomChapterTitleLabel.text = title(currentChapter)
             updateSkippedBooksWarning(between: previousChapter, and: currentChapter)
             noChapterLabel.isHidden = true
             stackView.isHidden = false
         } else if let nextChapter {
             topChapterLabel.text = NSLocalizedString("FINISHED_COLON")
-            topChapterTitleLabel.text = currentChapter.readerTransitionDisplayTitle
+            topChapterTitleLabel.text = title(currentChapter)
             bottomChapterLabel.text = NSLocalizedString("NEXT_COLON")
-            bottomChapterTitleLabel.text = nextChapter.readerTransitionDisplayTitle
+            bottomChapterTitleLabel.text = title(nextChapter)
             updateSkippedBooksWarning(between: currentChapter, and: nextChapter)
             noChapterLabel.isHidden = true
             stackView.isHidden = false

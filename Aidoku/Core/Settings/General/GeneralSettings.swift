@@ -11,6 +11,7 @@ struct GeneralSettings: Sendable {
     var keys: [any SettingsDefault] {
         [
             incognitoMode,
+            labsFeatures,
             developerMode,
             flareSolverrURL,
             flareSolverrFallback
@@ -18,6 +19,7 @@ struct GeneralSettings: Sendable {
     }
 
     let incognitoMode = SettingsKey<Bool>("General.incognitoMode", default: false)
+    let labsFeatures = SettingsKey<Bool>("General.labsFeatures", default: false)
     let developerMode = SettingsKey<Bool>("General.developerMode", default: false)
     let flareSolverrURL = SettingsKey<String>("General.flareSolverrURL", default: "")
     let flareSolverrFallback = SettingsKey<Bool>("General.flareSolverrFallback", default: true)

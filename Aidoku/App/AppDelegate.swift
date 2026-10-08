@@ -25,6 +25,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     static let isSideloaded = Bundle.main.bundleIdentifier != canonicalID
 
     private var networkObserverId: UUID?
+    private var currentHomeScreenQuickActionSource: (
+        manga: [MangaInfo],
+        isReadingPin: Bool,
+        isFavoritesPin: Bool
+    )?
 
     private lazy var loadingAlert: UIAlertController = {
         let loadingAlert = UIAlertController(
@@ -165,6 +170,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // launch (no window ever appears). Forcing first init on the main thread here
         // makes the main thread win the race deterministically.
         _ = CoreDataManager.shared
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleChapterNamingChanged(_:)),
+            name: ChapterNaming.didChange,
+            object: nil
+        )
 
         DataLoader.sharedUrlCache.diskCapacity = 0
 
@@ -342,6 +353,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         isReadingPin: Bool,
         isFavoritesPin: Bool
     ) {
+        currentHomeScreenQuickActionSource = (Array(pinnedManga.prefix(4)), isReadingPin, isFavoritesPin)
         let context = CoreDataManager.shared.container.viewContext
         let items = context.performAndWait {
             pinnedManga.prefix(4).map { manga in
@@ -366,6 +378,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
             }
         }
         UIApplication.shared.shortcutItems = Array(items)
+    }
+
+    @objc private func handleChapterNamingChanged(_ notification: Notification) {
+        guard let source = currentHomeScreenQuickActionSource else { return }
+        if let mangaId = notification.object as? MangaIdentifier,
+           !source.manga.contains(where: { $0.id == mangaId }) { return }
+        updateHomeScreenQuickActions(
+            for: source.manga,
+            isReadingPin: source.isReadingPin,
+            isFavoritesPin: source.isFavoritesPin
+        )
     }
 
     func handleHomeScreenQuickAction(
@@ -1033,13 +1056,13 @@ private enum LibraryReadingStatus {
                     : NSLocalizedString("CAUGHT_UP")
             }
             let nextIndex = chapters.index(before: currentIndex)
-            return chapterSubtitle(for: chapters[nextIndex])
+            return chapterSubtitle(for: chapters[nextIndex], in: identifier)
         }
 
         guard latestHistory.total > 0 else {
-            return chapterSubtitle(for: historyChapter)
+            return chapterSubtitle(for: historyChapter, in: identifier)
         }
-        return chapterSubtitle(for: historyChapter)
+        return chapterSubtitle(for: historyChapter, in: identifier)
     }
 
     static func spotlightSubtitle(for libraryManga: LibraryMangaObject) -> String? {
@@ -1065,8 +1088,8 @@ private enum LibraryReadingStatus {
         )
     }
 
-    private static func chapterSubtitle(for chapter: ChapterObject) -> String {
-        let chapterName = chapter.toNewChapter().sourceDisplayTitle
+    private static func chapterSubtitle(for chapter: ChapterObject, in mangaId: MangaIdentifier) -> String {
+        let chapterName = ChapterNaming.title(for: chapter.toNewChapter(), in: mangaId)
         return truncatedShortcutSubtitle(chapterName)
     }
 

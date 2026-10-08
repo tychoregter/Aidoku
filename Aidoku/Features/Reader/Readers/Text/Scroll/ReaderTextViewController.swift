@@ -165,6 +165,7 @@ class ReaderTextViewController: BaseViewController {
         nextChapter: AidokuRunner.Chapter?
     ) -> ReaderInfoPageView {
         let tv = ReaderInfoPageView(type: .next)
+        tv.mangaId = mangaId
         tv.applyTextTheme()
         tv.translatesAutoresizingMaskIntoConstraints = false
         tv.currentChapter = finishedChapter
@@ -209,6 +210,7 @@ class ReaderTextViewController: BaseViewController {
 
         // Boundary transition views (direct scroll view children)
         let prevView = ReaderInfoPageView(type: .previous)
+        prevView.mangaId = mangaId
         prevView.applyTextTheme()
         prevView.translatesAutoresizingMaskIntoConstraints = false
         prevView.isHidden = true
@@ -216,6 +218,7 @@ class ReaderTextViewController: BaseViewController {
         previousTransitionView = prevView
 
         let nextView = ReaderInfoPageView(type: .next)
+        nextView.mangaId = mangaId
         nextView.applyTextTheme()
         nextView.translatesAutoresizingMaskIntoConstraints = false
         nextView.isHidden = true

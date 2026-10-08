@@ -33,6 +33,7 @@ extension ReaderPagedTextViewController {
 
             let infoPageType: ReaderInfoPageType = direction == .next ? .next : .previous
             let infoView = ReaderInfoPageView(type: infoPageType)
+            infoView.mangaId = mangaId
 
             // Set chapter info using the old Chapter model (matching the image reader)
             infoView.currentChapter = currentChapter

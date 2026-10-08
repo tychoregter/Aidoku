@@ -1397,6 +1397,31 @@ extension LibraryViewModel {
         }
     }
 
+    func refreshReadingSubtitle(for identifier: MangaIdentifier) async {
+        let subtitle = await CoreDataManager.shared.container.performBackgroundTask { context in
+            guard let manga = CoreDataManager.shared.getManga(mangaId: identifier, context: context) else {
+                return Optional<String>.none
+            }
+            return libraryReadingSubtitle(for: manga, context: context)
+        }
+        guard let subtitle else { return }
+        for index in manga.indices where manga[index].id == identifier {
+            manga[index].readingSubtitle = subtitle
+        }
+        for index in pinnedManga.indices where pinnedManga[index].id == identifier {
+            pinnedManga[index].readingSubtitle = subtitle
+        }
+        for index in continueReadingManga.indices where continueReadingManga[index].id == identifier {
+            continueReadingManga[index].readingSubtitle = subtitle
+        }
+        for index in libraryPinnedManga.indices where libraryPinnedManga[index].id == identifier {
+            libraryPinnedManga[index].readingSubtitle = subtitle
+        }
+        if unfilteredLibraryManga[identifier] != nil {
+            unfilteredLibraryManga[identifier]?.readingSubtitle = subtitle
+        }
+    }
+
     func fetchDownloadCounts(for identifier: MangaIdentifier? = nil) async {
         var downloadCounts: [MangaIdentifier: Int] = [:]
         if let identifier {
@@ -1713,7 +1738,9 @@ private func libraryReadingSubtitle(for manga: MangaObject, context: NSManagedOb
     }
 
     let chapterTitle: String
-    if let number = next.chapterNumber, number >= 0 {
+    if ChapterNaming.prefix(for: runnerManga.identifier) != nil {
+        chapterTitle = ChapterNaming.title(for: next, in: runnerManga.identifier)
+    } else if let number = next.chapterNumber, number >= 0 {
         chapterTitle = String(
             format: NSLocalizedString("LIBRARY_COVER_CHAPTER_NUMBER", value: "Book %@", comment: "Book number beneath a library cover"),
             String(format: "%g", Double(number))

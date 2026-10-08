@@ -216,6 +216,11 @@ struct MangaDetailsHeaderView: View {
         .onReceive(NotificationCenter.default.publisher(for: .updateTrackers)) { _ in
             isTracking = TrackerManager.shared.isTracking(mangaId: manga.identifier)
         }
+        .onReceive(NotificationCenter.default.publisher(for: ChapterNaming.didChange)) { notification in
+            if let mangaId = notification.object as? MangaIdentifier,
+               mangaId != manga.identifier { return }
+            updateReadButtonText()
+        }
         .task {
             updateReadButtonText()
         }
@@ -857,7 +862,7 @@ struct MangaDetailsHeaderView: View {
             title = readingInProgress
                 ? NSLocalizedString("CONTINUE_READING")
                 : NSLocalizedString("START_READING")
-            subtitle = chapter.sourceDisplayTitle
+            subtitle = ChapterNaming.title(for: chapter, in: manga.identifier)
             disabled = false
         } else {
             title = NSLocalizedString("NO_CHAPTERS_AVAILABLE")

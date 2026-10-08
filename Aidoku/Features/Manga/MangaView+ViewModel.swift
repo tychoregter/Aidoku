@@ -16,6 +16,7 @@ extension MangaView {
 
         @Published var manga: AidokuRunner.Manga
         @Published var chapters: [AidokuRunner.Chapter] = []
+        @Published var chapterNamingRevision = 0
         @Published var otherDownloadedChapters: [AidokuRunner.Chapter] = []
 
         @Published var readingHistory: [String: (page: Int, date: Int)] = [:]
@@ -92,6 +93,18 @@ extension MangaView.ViewModel {
     }
 
     private func registerLibraryNotifications() {
+        NotificationCenter.default.publisher(for: ChapterNaming.didChange)
+            .sink { [weak self] notification in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if let mangaId = notification.object as? MangaIdentifier,
+                       mangaId != self.manga.identifier { return }
+                    // A changed revision also refreshes already-visible equatable rows.
+                    self.chapterNamingRevision &+= 1
+                }
+            }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: .updateLibrary)
             .sink { [weak self] _ in
                 Task { @MainActor in

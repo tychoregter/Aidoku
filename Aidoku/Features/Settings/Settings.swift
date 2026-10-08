@@ -1263,6 +1263,19 @@ extension Settings {
         .init(
             title: "",
             value: .group(.init(
+                footer: NSLocalizedString("LABS_FEATURES_TEXT"),
+                items: [
+                    .init(
+                        key: AppSettings.general.labsFeatures.key,
+                        title: NSLocalizedString("LABS_FEATURES"),
+                        value: .toggle(.init())
+                    )
+                ]
+            ))
+        ),
+        .init(
+            title: "",
+            value: .group(.init(
                 footer: NSLocalizedString("SCREENSHOT_MODE_TEXT"),
                 items: [
                     .init(

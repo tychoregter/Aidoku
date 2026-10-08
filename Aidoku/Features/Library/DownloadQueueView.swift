@@ -67,7 +67,9 @@ struct DownloadQueueView: View {
                                 VStack(alignment: .leading) {
                                     Text(download.manga.title)
                                         .lineLimit(3)
-                                    Text(download.chapter.formattedTitle())
+                                    Text(ChapterNaming.prefix(for: download.manga.identifier) == nil
+                                        ? download.chapter.formattedTitle()
+                                        : ChapterNaming.title(for: download.chapter, in: download.manga.identifier))
                                         .foregroundStyle(.secondary)
                                         .font(.callout)
                                         .lineLimit(1)

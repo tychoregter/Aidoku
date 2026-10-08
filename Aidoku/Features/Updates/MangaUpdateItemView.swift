@@ -46,7 +46,8 @@ struct MangaUpdateItemView: View {
                     .lineLimit(2)
 
                 ForEach(updates.prefix(chaptersLimit)) { item in
-                    if let chapterTitle = item.chapter?.toNew().sourceDisplayTitle {
+                    if let chapter = item.chapter?.toNew(), let manga {
+                        let chapterTitle = ChapterNaming.title(for: chapter, in: manga.identifier)
                         Text(chapterTitle)
                             .font(.footnote)
                             .foregroundStyle(.secondary)

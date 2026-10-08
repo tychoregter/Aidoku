@@ -100,7 +100,13 @@ struct DictionaryVocabDetailsView: View {
                                     Text(sourceManga?.title ?? "Loading Series Title")
                                         .lineLimit(2)
                                     if !sourceLoaded || sourceChapter != nil {
-                                        Text(sourceChapter?.formattedTitle() ?? "Loading")
+                                        Text(sourceChapter.map { chapter in
+                                            sourceManga.flatMap { manga in
+                                                ChapterNaming.prefix(for: manga.identifier) == nil
+                                                    ? nil : ChapterNaming.title(for: chapter, in: manga.identifier)
+                                            }
+                                                ?? chapter.formattedTitle()
+                                        } ?? "Loading")
                                             .font(.subheadline)
                                             .foregroundStyle(.secondary)
                                     }

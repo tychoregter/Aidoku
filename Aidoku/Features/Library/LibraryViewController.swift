@@ -774,6 +774,19 @@ class LibraryViewController: OldMangaCollectionViewController {
                 self.updateDataSource()
             }
         }
+        addObserver(forName: ChapterNaming.didChange) { [weak self] notification in
+            guard let self else { return }
+            Task {
+                if let mangaId = notification.object as? MangaIdentifier {
+                    await self.viewModel.refreshReadingSubtitle(for: mangaId)
+                } else {
+                    await self.viewModel.loadLibrary()
+                }
+                // The chapter model is unchanged, so diffable data source would
+                // otherwise keep the old subtitle on visible covers.
+                self.updateDataSource(reloadCells: true)
+            }
+        }
 
         // update history
         addObserver(forName: .updateHistory) { [weak self] _ in
@@ -2892,7 +2905,7 @@ extension LibraryViewController {
 
             if canShowInfo {
                 topActions.append(UIAction(
-                    title: NSLocalizedString("INFO"),
+                    title: NSLocalizedString("DETAILS", value: "Details", comment: "Open manga details from the library menu"),
                     image: UIImage(systemName: hasMultipleTopActions ? "info.circle.fill" : "info.circle"),
                     attributes: singleAttributes
                 ) { _ in
