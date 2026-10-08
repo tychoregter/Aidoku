@@ -1211,7 +1211,7 @@ private struct RightNavbarButton: View, Equatable {
                                 } label: {
                                     Label(
                                         NSLocalizedString(isFavorite ? "UNFAVORITE" : "FAVORITE"),
-                                        systemImage: isFavorite ? "star.slash.fill" : "star.fill"
+                                        systemImage: isFavorite ? "heart.slash.fill" : "heart.fill"
                                     )
                                 }
                                 Button {
@@ -1241,7 +1241,7 @@ private struct RightNavbarButton: View, Equatable {
                                 } label: {
                                     Label(
                                         NSLocalizedString(isFavorite ? "UNFAVORITE" : "FAVORITE"),
-                                        systemImage: isFavorite ? "star.slash" : "star"
+                                        systemImage: isFavorite ? "heart.slash" : "heart"
                                     )
                                 }
                             }

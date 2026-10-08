@@ -356,7 +356,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
                             context: context
                         )
                     },
-                    icon: UIApplicationShortcutIcon(systemImageName: isFavoritesPin ? "star" : "book"),
+                    icon: UIApplicationShortcutIcon(systemImageName: isFavoritesPin ? "heart" : "book"),
                     userInfo: [
                         "sourceKey": manga.id.sourceKey as NSSecureCoding,
                         "mangaKey": manga.id.mangaKey as NSSecureCoding,

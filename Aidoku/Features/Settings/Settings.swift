@@ -64,7 +64,7 @@ enum Settings {
                 value: .page(.init(
                     items: [],
                     inlineTitle: true,
-                    icon: .system(name: "star.fill", color: "orange")
+                    icon: .system(name: "heart.fill", color: "orange")
                 ))
             ),
             .init(

@@ -253,7 +253,7 @@ class LibraryViewController: OldMangaCollectionViewController {
             target: self,
             action: isFavoritesTab ? #selector(unfavoriteSelected) : #selector(removeSelectedFromLibrary)
         )
-        deleteButton.image = UIImage(systemName: isFavoritesTab ? "star.slash" : "trash")
+        deleteButton.image = UIImage(systemName: isFavoritesTab ? "heart.slash" : "trash")
         if #unavailable(iOS 26.0) {
             deleteButton.tintColor = .systemRed
         }
@@ -1275,7 +1275,7 @@ extension LibraryViewController {
     // should be called when category changes and when library loads initially
     func updateEmptyStack() {
         emptyStackView.imageSystemName = if isFavoritesTab {
-            "star.fill"
+            "heart.fill"
         } else if isStackView {
             "square.stack.3d.up.fill"
         } else {
@@ -1673,7 +1673,7 @@ extension LibraryViewController {
     private func pinTypeIconName(for pinType: LibraryViewModel.PinType) -> String {
         switch pinType {
             case .none: "pin.slash"
-            case .favorites: "star"
+            case .favorites: "heart"
             case .started: "clock"
             case .unread: "eye.slash"
             case .completed: "checkmark.circle"
@@ -2887,7 +2887,6 @@ extension LibraryViewController {
             )
             let canShare = manga.url != nil
             let canShowInfo = mangaInfo.count == 1
-                && (AppSettings.library.opensReaderView.get() || section == .continueReading)
             let topActionCount = [canShowInfo, canShowFavorite, canShare].filter { $0 }.count
             let hasMultipleTopActions = topActionCount > 1
 
@@ -2906,8 +2905,8 @@ extension LibraryViewController {
                 topActions.append(UIAction(
                     title: NSLocalizedString(isFavorite ? "UNFAVORITE" : "FAVORITE"),
                     image: UIImage(systemName: isFavorite
-                        ? (hasMultipleTopActions ? "star.slash.fill" : "star.slash")
-                        : (hasMultipleTopActions ? "star.fill" : "star"))
+                        ? (hasMultipleTopActions ? "heart.slash.fill" : "heart.slash")
+                        : (hasMultipleTopActions ? "heart.fill" : "heart"))
                 ) { _ in
                     self.viewModel.toggleFavorite(manga.id)
                     Task {
@@ -3098,7 +3097,7 @@ extension LibraryViewController {
                             ? NSLocalizedString("ADD_TO_LIBRARY")
                             : NSLocalizedString("REMOVE_FROM_LIBRARY"),
                     image: UIImage(systemName: self.isFavoritesTab
-                        ? "star.slash"
+                        ? "heart.slash"
                         : nonLibraryContinueReading ? "plus.circle" : "trash"),
                     attributes: self.isFavoritesTab || canRemoveFromLibrary ? .destructive : []
                 ) { _ in

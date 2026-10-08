@@ -169,7 +169,7 @@ class TabBarController: UITabBarController {
             if AppSettings.appearance.dedicatedFavoritesTab.get() {
                 fixedTabs.append(modernTab(
                     title: "Favorites",
-                    image: UIImage(systemName: "star.fill"),
+                    image: UIImage(systemName: "heart.fill"),
                     identifier: "favorites",
                     viewController: favoritesNavigationController
                 ))
@@ -224,7 +224,7 @@ class TabBarController: UITabBarController {
             )
             historyNavigationController.tabBarItem = UITabBarItem(tabBarSystemItem: .history, tag: 2)
             favoritesNavigationController.tabBarItem = UITabBarItem(
-                title: "Favorites", image: UIImage(systemName: "star.fill"), tag: 1
+                title: "Favorites", image: UIImage(systemName: "heart.fill"), tag: 1
             )
             searchNavigationController.tabBarItem = UITabBarItem(tabBarSystemItem: .search, tag: 3)
             settingsViewController.tabBarItem = UITabBarItem(
