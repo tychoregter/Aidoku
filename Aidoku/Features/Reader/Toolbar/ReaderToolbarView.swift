@@ -424,6 +424,7 @@ class ReaderToolbarView: UIView {
         thumbnailScrubberView.configure(
             contentIdentifier: contentIdentifier,
             pageCount: pageCount,
+            initialPage: currentPage ?? 1,
             usesAdaptivePrivateServerConcurrency: usesAdaptivePrivateServerConcurrency,
             cachedThumbnailProvider: cachedProvider,
             thumbnailProvider: provider

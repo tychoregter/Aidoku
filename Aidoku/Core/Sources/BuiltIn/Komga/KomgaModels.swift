@@ -9,27 +9,30 @@ import AidokuRunner
 import Foundation
 
 enum KomgaGenreStore {
-    private static let lock = NSLock()
-
     static func genres(sourceKey: String, mangaKey: String) -> [String] {
-        lock.lock()
-        defer { lock.unlock() }
+        if let genres = UserDefaults.standard.stringArray(forKey: storageKey(sourceKey, mangaKey)) {
+            return genres
+        }
+        // Preserve metadata saved before genres were stored per series.
         let values = UserDefaults.standard.dictionary(forKey: storageKey(sourceKey)) as? [String: [String]]
         return values?[mangaKey] ?? []
     }
 
     static func store(_ genres: [String], sourceKey: String, mangaKey: String) {
         let genres = genres.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        lock.lock()
-        defer { lock.unlock() }
-        let key = storageKey(sourceKey)
-        var values = UserDefaults.standard.dictionary(forKey: key) as? [String: [String]] ?? [:]
-        values[mangaKey] = genres
-        UserDefaults.standard.set(values, forKey: key)
+        let key = storageKey(sourceKey, mangaKey)
+        guard UserDefaults.standard.stringArray(forKey: key) != genres else { return }
+        // UserDefaults notifies SwiftUI synchronously. Never hold a lock while
+        // writing: a rendering view may be reading this series' genres.
+        UserDefaults.standard.set(genres, forKey: key)
     }
 
     private static func storageKey(_ sourceKey: String) -> String {
         "\(sourceKey).genreMetadata"
+    }
+
+    private static func storageKey(_ sourceKey: String, _ mangaKey: String) -> String {
+        "\(storageKey(sourceKey)).\(mangaKey)"
     }
 }
 

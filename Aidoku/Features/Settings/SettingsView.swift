@@ -199,8 +199,6 @@ extension SettingsView {
 
     func onSettingChange(_ key: String) {
         switch key {
-            case AppSettings.general.labsFeatures.key:
-                NotificationCenter.default.post(name: ChapterNaming.didChange, object: nil)
             case AppSettings.appearance.appearance.key, AppSettings.appearance.useSystemAppearance.key:
                 if !AppSettings.appearance.useSystemAppearance.get() {
                     if AppSettings.appearance.appearance.get() == 0 {
@@ -345,7 +343,9 @@ extension SettingsView {
 
     @ViewBuilder
     func pageContentHandler(_ key: String) -> (some View)? {
-        if key == "Library.categories" {
+        if key == "Advanced.labsFeatures" {
+            LabsFeaturesView(path: path)
+        } else if key == "Library.categories" {
             CategoriesView(categories: $categoriesOnly)
         } else if key == AppSettings.library.chapterListOrder.key {
             DefaultChapterListOrderView()

@@ -67,7 +67,7 @@ enum ChapterNaming {
     static let didChange = Notification.Name("ChapterNaming.didChange")
 
     static func prefix(for mangaId: MangaIdentifier) -> String? {
-        guard AppSettings.general.labsFeatures.get() else { return nil }
+        guard AppSettings.general.bookRenaming.get() else { return nil }
         return storedPrefix(for: mangaId)
     }
 

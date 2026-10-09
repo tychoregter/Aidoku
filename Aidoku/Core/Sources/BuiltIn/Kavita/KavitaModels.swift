@@ -9,22 +9,21 @@ import AidokuRunner
 import Foundation
 
 enum KavitaGenreStore {
-    private static let lock = NSLock()
-
     static func genres(sourceKey: String, mangaKey: String) -> [String] {
-        lock.lock()
-        defer { lock.unlock() }
+        if let genres = UserDefaults.standard.stringArray(forKey: "\(sourceKey).genreMetadata.\(mangaKey)") {
+            return genres
+        }
+        // Preserve metadata saved before genres were stored per series.
         let values = UserDefaults.standard.dictionary(forKey: "\(sourceKey).genreMetadata") as? [String: [String]]
         return values?[mangaKey] ?? []
     }
 
     static func store(_ genres: [String], sourceKey: String, mangaKey: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        let key = "\(sourceKey).genreMetadata"
-        var values = UserDefaults.standard.dictionary(forKey: key) as? [String: [String]] ?? [:]
-        values[mangaKey] = genres.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        UserDefaults.standard.set(values, forKey: key)
+        let genres = genres.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let key = "\(sourceKey).genreMetadata.\(mangaKey)"
+        guard UserDefaults.standard.stringArray(forKey: key) != genres else { return }
+        // Keep the UserDefaults notification outside any application lock.
+        UserDefaults.standard.set(genres, forKey: key)
     }
 }
 

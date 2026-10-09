@@ -44,6 +44,7 @@ struct MangaView: View {
     @State private var statusBarStyleOwner = UUID()
 
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("General.recognizeCombinedBooks") private var recognizeCombinedBooks = false
 
     @State private var loadingAlert: UIAlertController?
 
@@ -112,6 +113,7 @@ struct MangaView: View {
     }
 
     var body: some View {
+        let _ = recognizeCombinedBooks
         let isNumberedOrder = BookGapPresentation.isNumberedOrder(viewModel.chapters)
         let list = ScrollViewReader { proxy in
             List(selection: $selectedChapters) {

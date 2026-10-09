@@ -11,9 +11,7 @@ import AidokuRunner
 
 struct ChapterListHeaderView: View {
     @AppStorage("General.labsFeatures") private var labsFeaturesEnabled = false
-    @State private var showingChapterNameEditor = false
-    @State private var chapterNamePrefix = ""
-    @State private var hasCustomChapterName = false
+    @State private var renameRequest: BookRenameRequest?
 
     @Binding var sortOption: ChapterSortOption
     @Binding var sortAscending: Bool
@@ -103,25 +101,9 @@ struct ChapterListHeaderView: View {
             header
                 .contentShape(Rectangle())
                 .onLongPressGesture {
-                    chapterNamePrefix = ChapterNaming.storedPrefix(for: mangaId) ?? ""
-                    hasCustomChapterName = !chapterNamePrefix.isEmpty
-                    showingChapterNameEditor = true
+                    renameRequest = BookRenameRequest(mangaId)
                 }
-                .alert(
-                    NSLocalizedString("CUSTOM_BOOK_NAME", value: "Rename Books", comment: "Title of the custom numbered book naming editor"),
-                    isPresented: $showingChapterNameEditor
-                ) {
-                    TextField(NSLocalizedString("BOOK_NAME_PREFIX", value: "Chapter", comment: "Custom word before a book number"), text: $chapterNamePrefix)
-                    if hasCustomChapterName {
-                        Button(NSLocalizedString("RESTORE_SOURCE_BOOK_NAMES", value: "Use Source Names", comment: "Restore source book names"), role: .destructive) {
-                            ChapterNaming.setPrefix(nil, for: mangaId)
-                        }
-                    }
-                    Button(NSLocalizedString("CANCEL"), role: .cancel) {}
-                    Button(NSLocalizedString("APPLY", value: "Apply", comment: "Apply the custom book name")) {
-                        ChapterNaming.setPrefix(chapterNamePrefix, for: mangaId)
-                    }
-                }
+                .modifier(BookRenameEditor(request: $renameRequest))
         } else {
             header
         }
@@ -166,6 +148,10 @@ enum BookGapPresentation {
         guard let firstNumber = number(for: first),
               let secondNumber = number(for: second),
               let missingNumbers = missingWholeNumbers(between: firstNumber, and: secondNumber) else { return 0 }
+
+        guard AppSettings.general.recognizeCombinedBooks.get() else {
+            return missingNumbers.count
+        }
 
         // The source's book numbers establish the gap. Only then consult either
         // neighboring title for an explicit combined episode that covers it.

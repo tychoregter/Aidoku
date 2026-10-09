@@ -22,6 +22,7 @@ struct ReaderChapterListView: View {
     @StateObject private var chapterListOrderObserver = UserDefaultsObserver(
         key: AppSettings.library.chapterListOrder.key
     )
+    @AppStorage("General.recognizeCombinedBooks") private var recognizeCombinedBooks = false
     var chapterSet: ((AidokuRunner.Chapter) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
@@ -48,6 +49,7 @@ struct ReaderChapterListView: View {
     }
 
     var body: some View {
+        let _ = recognizeCombinedBooks
         let visibleChapters = orderedChapterList
         let isNumberedOrder = BookGapPresentation.isNumberedOrder(visibleChapters)
         PlatformNavigationStack {

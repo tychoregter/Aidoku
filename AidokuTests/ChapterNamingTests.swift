@@ -6,7 +6,7 @@ import Testing
     @Test func prefixUsesSourceBookNumberAndCanBeReset() {
         let mangaId = MangaIdentifier(sourceKey: "test", mangaKey: "chapter-naming")
         let chapter = AidokuRunner.Chapter(key: "44", title: "Chapter 44", volumeNumber: 44)
-        let labsKey = AppSettings.general.labsFeatures
+        let labsKey = AppSettings.general.bookRenaming
         let previousValue = labsKey.get()
         labsKey.set(true)
         defer {
@@ -24,7 +24,7 @@ import Testing
 
     @Test func fractionalAndUnnumberedBooks() {
         let mangaId = MangaIdentifier(sourceKey: "test", mangaKey: "chapter-naming-fractional")
-        let labsKey = AppSettings.general.labsFeatures
+        let labsKey = AppSettings.general.bookRenaming
         let previousValue = labsKey.get()
         labsKey.set(true)
         defer {
@@ -42,7 +42,7 @@ import Testing
     @Test func storedNameIsHiddenWhenLabsIsOff() {
         let mangaId = MangaIdentifier(sourceKey: "test", mangaKey: "chapter-naming-labs")
         let chapter = AidokuRunner.Chapter(key: "44", title: "Chapter 44", volumeNumber: 44)
-        let labsKey = AppSettings.general.labsFeatures
+        let labsKey = AppSettings.general.bookRenaming
         let previousValue = labsKey.get()
         defer {
             ChapterNaming.setPrefix(nil, for: mangaId)

@@ -51,7 +51,7 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
     private var imageProcessingTask: Task<UIImage?, Never>?
     private var pageLoadCancellationWorkItem: DispatchWorkItem?
 
-    private static let pageLoadGracePeriod: TimeInterval = 0.75
+    private static let pageLoadGracePeriod: TimeInterval = 2
 
     private var shouldShowLiveTextButton = false
     private var liveTextAnalysisTask: Task<Void, Never>?
@@ -337,9 +337,10 @@ extension ReaderWebtoonPageNode {
 
         pageLoadGeneration &+= 1
         let generation = pageLoadGeneration
-        let taskPriority: TaskPriority? = Self.priorityLoadingEnabled
-            ? (isVisible ? .userInitiated : .utility)
-            : nil
+        // Page URL resolution may still be running when a preloaded page
+        // becomes visible. Starting at userInitiated lets it respond promptly;
+        // the image request itself stays low priority until visibility.
+        let taskPriority: TaskPriority? = Self.priorityLoadingEnabled ? .userInitiated : nil
         pageLoadTask = Task(priority: taskPriority) { [weak self] in
             guard let self else { return }
             await self.loadPage()

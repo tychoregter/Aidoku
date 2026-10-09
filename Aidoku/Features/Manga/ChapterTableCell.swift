@@ -25,6 +25,7 @@ struct ChapterTableCell: View {
     @StateObject private var developerMode = UserDefaultsBool(key: AppSettings.general.developerMode.key)
     @StateObject private var hideNSFWCovers = UserDefaultsBool(key: AppSettings.appearance.blurNSFWCovers.key)
     @State private var loadedPageCount: Int?
+    @State private var chapterNamingRevision = 0
 
     var downloaded: Bool {
         downloadStatus == .finished
@@ -44,6 +45,7 @@ struct ChapterTableCell: View {
     }
 
     var body: some View {
+        let _ = chapterNamingRevision
         let view = HStack(spacing: 10) {
             MangaCoverView(
                 source: source,
@@ -92,18 +94,25 @@ struct ChapterTableCell: View {
         .padding(.vertical, 12)
         .frame(alignment: .leading)
         .contentShape(Rectangle())
-        if #available(iOS 16.0, *) {
-            view
-                .alignmentGuide(.listRowSeparatorLeading) { d in
-                    d[.leading] + 20 + 56 + 10
-                }
-                .task(id: "\(chapter.key)-\(showPageCounts.value)") {
+        Group {
+            if #available(iOS 16.0, *) {
+                view
+                    .alignmentGuide(.listRowSeparatorLeading) { d in
+                        d[.leading] + 20 + 56 + 10
+                    }
+                    .task(id: "\(chapter.key)-\(showPageCounts.value)") {
+                        await loadPageCountIfNeeded()
+                    }
+            } else {
+                view.task {
                     await loadPageCountIfNeeded()
                 }
-        } else {
-            view.task {
-                await loadPageCountIfNeeded()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ChapterNaming.didChange)) { notification in
+            if let mangaId = notification.object as? MangaIdentifier,
+               mangaId != manga.identifier { return }
+            chapterNamingRevision &+= 1
         }
     }
 

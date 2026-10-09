@@ -74,7 +74,7 @@
 "LIBRARY_ADJUST_FILTERS" = "Adjust your filters to see more content.";
 "ADD_TO_LIBRARY" = "Add to Library";
 "REMOVE_FROM_LIBRARY" = "Remove from Library";
-"MANGA_INFO" = "Manga Info";
+"MANGA_INFO" = "Series Info";
 "SHOW_GENRES" = "Show Genres";
 "LIMIT_TO_ENABLED_GENRES" = "Limit to Enabled Genres";
 "SHOW_TAGS" = "Show Tags";
@@ -375,8 +375,13 @@
 "CHAPTERS" = "Books";
 "CUSTOM_BOOK_NAME" = "Rename Books";
 "BOOK_NAME_PREFIX" = "Chapter";
-"LABS_FEATURES" = "Labs Features";
-"LABS_FEATURES_TEXT" = "Enables features that aren't fully ready yet. These may be less polished then you're used to.";
+"LABS_FEATURES" = "Labs";
+"LABS_MANGA_INFO" = "Series Info";
+"BOOK_RENAMING" = "Book Renaming";
+"RECOGNIZE_COMBINED_BOOKS" = "Recognize Combined Books";
+"RENAMED_BOOKS" = "Renamed Books";
+"NO_RENAMED_BOOKS" = "No renamed books yet.";
+"ADD_BOOK_RENAME" = "Add Book Rename";
 "RESTORE_SOURCE_BOOK_NAMES" = "Use Source Names";
 "VOLUME_X" = "Volume %g";
 "CHAPTER_X" = "Book %g";

@@ -169,6 +169,7 @@ final class ReaderThumbnailScrubberView: UIControl {
     func configure(
         contentIdentifier: String,
         pageCount: Int,
+        initialPage: Int,
         usesAdaptivePrivateServerConcurrency: Bool,
         cachedThumbnailProvider: @escaping (Int) async -> UIImage?,
         thumbnailProvider: @escaping (Int, ImageKind, @escaping @MainActor (UIImage) -> Void) async -> UIImage?
@@ -176,6 +177,7 @@ final class ReaderThumbnailScrubberView: UIControl {
         let isSameContent = self.contentIdentifier == contentIdentifier && self.pageCount == pageCount
         self.contentIdentifier = contentIdentifier
         self.pageCount = pageCount
+        continuousPageIndex = pageCount > 0 ? min(max(initialPage - 1, 0), pageCount - 1) : nil
         self.usesAdaptivePrivateServerConcurrency = usesAdaptivePrivateServerConcurrency
         self.cachedThumbnailProvider = cachedThumbnailProvider
         self.thumbnailProvider = thumbnailProvider
@@ -715,23 +717,20 @@ final class ReaderThumbnailScrubberView: UIControl {
         guard isLoadingEnabled, pageCount > 0 else { return }
         let currentIndex = pageIndex(for: currentValue)
         let indexes = (0..<pageCount).sorted {
-            abs($0 - currentIndex) < abs($1 - currentIndex)
+            let firstDistance = abs($0 - currentIndex)
+            let secondDistance = abs($1 - currentIndex)
+            return firstDistance == secondDistance ? $0 < $1 : firstDistance < secondDistance
         }
         thumbnailPreloadTask?.cancel()
         let generation = loadGeneration
         thumbnailPreloadTask = Task(priority: .utility) { [weak self] in
             guard let self else { return }
 
-            // First fill every persistent cache hit. Cache misses return
-            // immediately and never wait behind a network request.
+            // Resolve the current page first. A full cache scan can be slow
+            // for long chapters and must not delay its high-quality preview.
             if let cachedThumbnailProvider = self.cachedThumbnailProvider {
-                for index in indexes where self.loadedImages[index] == nil {
-                    guard !Task.isCancelled, self.isLoadingEnabled,
-                          self.loadGeneration == generation else { return }
-                    if let image = await cachedThumbnailProvider(index) {
-                        self.applyThumbnail(image, at: index, generation: generation)
-                    }
-                    await Task.yield()
+                if let image = await cachedThumbnailProvider(currentIndex) {
+                    self.applyThumbnail(image, at: currentIndex, generation: generation)
                 }
             }
 
@@ -743,11 +742,24 @@ final class ReaderThumbnailScrubberView: UIControl {
                   self.loadGeneration == generation else { return }
             self.prefetchPreviewImages(around: currentIndex)
 
+            // Fill nearby disk hits without waiting for distant cached pages.
+            if let cachedThumbnailProvider = self.cachedThumbnailProvider {
+                for index in indexes.prefix(24) where self.loadedImages[index] == nil {
+                    guard !Task.isCancelled, self.isLoadingEnabled,
+                          self.loadGeneration == generation else { return }
+                    if let image = await cachedThumbnailProvider(index) {
+                        self.applyThumbnail(image, at: index, generation: generation)
+                    }
+                    await Task.yield()
+                }
+            }
+
             let missingIndexes = indexes.filter { self.loadedImages[$0] == nil }
             await self.loadThumbnails(
                 at: missingIndexes,
                 generation: generation,
-                adaptively: self.usesAdaptivePrivateServerConcurrency
+                adaptively: self.usesAdaptivePrivateServerConcurrency,
+                isWebtoon: self.usesContinuousProgress
             )
             guard self.loadGeneration == generation else { return }
             self.thumbnailPreloadTask = nil
@@ -762,13 +774,16 @@ final class ReaderThumbnailScrubberView: UIControl {
     private func loadThumbnails(
         at indexes: [Int],
         generation: Int,
-        adaptively: Bool
+        adaptively: Bool,
+        isWebtoon: Bool
     ) async {
         guard !indexes.isEmpty else { return }
 
-        let minimumConcurrency = adaptively ? 4 : 3
-        let maximumConcurrency = adaptively ? 8 : 3
-        var targetConcurrency = adaptively ? 6 : 3
+        // Webtoon pages share the same source connection. Keep strip loads
+        // from occupying every slot when the reader needs a page behind us.
+        let minimumConcurrency = isWebtoon ? 1 : (adaptively ? 4 : 3)
+        let maximumConcurrency = isWebtoon ? 2 : (adaptively ? 8 : 3)
+        var targetConcurrency = isWebtoon ? 1 : (adaptively ? 6 : 3)
         var nextIndex = 0
         var activeLoads = 0
         var fastCompletionCount = 0
@@ -794,7 +809,7 @@ final class ReaderThumbnailScrubberView: UIControl {
                     return
                 }
 
-                if adaptively {
+                if adaptively || isWebtoon {
                     let previousAverage = averageLatency ?? result.latency
                     averageLatency = previousAverage * 0.75 + result.latency * 0.25
 
@@ -843,6 +858,15 @@ final class ReaderThumbnailScrubberView: UIControl {
         guard isLoadingEnabled,
               loadedImages[index] == nil,
               let thumbnailProvider else { return loadedImages[index] != nil }
+        if let cachedThumbnailProvider,
+           let cached = await cachedThumbnailProvider(index) {
+            guard !Task.isCancelled, isLoadingEnabled,
+                  loadGeneration == generation else { return false }
+            applyThumbnail(cached, at: index, generation: generation)
+            return true
+        }
+        guard !Task.isCancelled, isLoadingEnabled,
+              loadGeneration == generation else { return false }
         let image = await thumbnailProvider(index, .strip) { [weak self] intermediateImage in
             guard let self,
                   self.isLoadingEnabled,

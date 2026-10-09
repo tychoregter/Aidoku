@@ -11,7 +11,8 @@ struct GeneralSettings: Sendable {
     var keys: [any SettingsDefault] {
         [
             incognitoMode,
-            labsFeatures,
+            bookRenaming,
+            recognizeCombinedBooks,
             developerMode,
             flareSolverrURL,
             flareSolverrFallback
@@ -19,7 +20,9 @@ struct GeneralSettings: Sendable {
     }
 
     let incognitoMode = SettingsKey<Bool>("General.incognitoMode", default: false)
-    let labsFeatures = SettingsKey<Bool>("General.labsFeatures", default: false)
+    // Keep the original preference key so existing Labs users retain access to their renames.
+    let bookRenaming = SettingsKey<Bool>("General.labsFeatures", default: false)
+    let recognizeCombinedBooks = SettingsKey<Bool>("General.recognizeCombinedBooks", default: false)
     let developerMode = SettingsKey<Bool>("General.developerMode", default: false)
     let flareSolverrURL = SettingsKey<String>("General.flareSolverrURL", default: "")
     let flareSolverrFallback = SettingsKey<Bool>("General.flareSolverrFallback", default: true)

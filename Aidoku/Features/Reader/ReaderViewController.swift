@@ -1549,6 +1549,19 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
         publishIntermediate: @escaping @MainActor (UIImage) -> Void,
         includeIntermediate: Bool = true
     ) async -> UIImage? {
+        // Preview requests follow the selection while scrubbing. Keep them
+        // inside the caller's task so cancelling an obsolete preview also
+        // cancels its image request instead of leaving a high-priority load
+        // running behind the newly selected page.
+        if kind == .preview {
+            return await loadThumbnailImage(
+                for: page,
+                kind: kind,
+                allowsNetwork: allowsNetwork,
+                publishIntermediate: publishIntermediate,
+                includeIntermediate: includeIntermediate
+            )
+        }
         let targetWidth = scrubberThumbnailTargetWidth(for: kind)
         let qualityKey = switch kind {
             case .strip: "strip"
@@ -1592,6 +1605,7 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
     ) async -> UIImage? {
         let targetWidth = scrubberThumbnailTargetWidth(for: kind)
         let options = await scrubberThumbnailOptions(for: kind, page: page, targetWidth: targetWidth)
+        guard !Task.isCancelled else { return nil }
         if let image = page.image {
             return await makeScrubberThumbnail(from: image, kind: kind)
         }
@@ -1662,6 +1676,7 @@ extension ReaderViewController: @MainActor ReaderHoldingDelegate {
                 appliesUpscaling: false
             )
             request.thumbnail = options
+            guard !Task.isCancelled else { return nil }
             // Keep active page previews ahead of strip thumbnails while
             // allowing strip requests to run at their normal priority.
             request.priority = kind == .preview ? .high : .low
