@@ -1106,15 +1106,25 @@ private enum LibraryReadingStatus {
 }
 
 private actor SpotlightIndexingCoordinator {
-    private var generation = 0
+    private var isIndexing = false
+    private var needsAnotherPass = false
 
-    func begin() -> Int {
-        generation += 1
-        return generation
+    func begin() -> Bool {
+        guard !isIndexing else {
+            needsAnotherPass = true
+            return false
+        }
+        isIndexing = true
+        return true
     }
 
-    func isCurrent(_ generation: Int) -> Bool {
-        self.generation == generation
+    func finishPass() -> Bool {
+        if needsAnotherPass {
+            needsAnotherPass = false
+            return true
+        }
+        isIndexing = false
+        return false
     }
 }
 
@@ -1122,6 +1132,7 @@ private enum LibrarySpotlightIndexer {
     private static let domainIdentifier = "library"
     private static let identifierPrefix = "library:"
     private static let separator = "\u{1F}"
+    private static let indexedIdentifiersKey = "Spotlight.libraryIndexedIdentifiers"
     private static let indexingCoordinator = SpotlightIndexingCoordinator()
 
     private struct ItemMetadata: Sendable {
@@ -1138,62 +1149,93 @@ private enum LibrarySpotlightIndexer {
 
     static func indexLibrary() {
         Task(priority: .utility) {
-            let generation = await indexingCoordinator.begin()
-            let metadata = await CoreDataManager.shared.container.performBackgroundTask { context in
-                CoreDataManager.shared.getLibraryManga(context: context).compactMap { object -> ItemMetadata? in
-                    guard let manga = object.manga, !manga.title.isEmpty else { return nil }
-                    return ItemMetadata(
-                        sourceKey: manga.sourceId,
-                        mangaKey: manga.id,
-                        title: manga.title,
-                        author: manga.author,
-                        artist: manga.artist,
-                        readingStatus: LibraryReadingStatus.spotlightSubtitle(for: object),
-                        tags: manga.tags ?? [],
-                        cover: manga.cover,
-                        isNSFW: manga.nsfw == MangaContentRating.nsfw.rawValue
-                    )
-                }
-            }
+            guard await indexingCoordinator.begin() else { return }
+            repeat {
+                await indexCurrentLibrary()
+            } while await indexingCoordinator.finishPass()
+        }
+    }
 
-            guard await indexingCoordinator.isCurrent(generation) else { return }
-
-            // Rebuild the app-owned Spotlight domain from the current library.
-            // Indexing the current items alone does not remove titles that were
-            // deleted from the library since the previous indexing pass.
-            try? await CSSearchableIndex.default().deleteSearchableItems(
-                withDomainIdentifiers: [domainIdentifier]
-            )
-
-            // Publish the text metadata immediately, then update each result as
-            // its cover becomes available through the app's normal image path.
-            let hidesNSFWCovers = AppSettings.appearance.blurNSFWCovers.get()
-            let hiddenThumbnail = hidesNSFWCovers ? hiddenThumbnailData() : nil
-            try? await CSSearchableIndex.default().indexSearchableItems(metadata.map {
-                searchableItem(
-                    for: $0,
-                    thumbnailData: hidesNSFWCovers && $0.isNSFW ? hiddenThumbnail : nil
+    private static func indexCurrentLibrary() async {
+        let metadata = await CoreDataManager.shared.container.performBackgroundTask { context in
+            CoreDataManager.shared.getLibraryManga(context: context).compactMap { object -> ItemMetadata? in
+                guard let manga = object.manga, !manga.title.isEmpty else { return nil }
+                return ItemMetadata(
+                    sourceKey: manga.sourceId,
+                    mangaKey: manga.id,
+                    title: manga.title,
+                    author: manga.author,
+                    artist: manga.artist,
+                    readingStatus: LibraryReadingStatus.spotlightSubtitle(for: object),
+                    tags: manga.tags ?? [],
+                    cover: manga.cover,
+                    isNSFW: manga.nsfw == MangaContentRating.nsfw.rawValue
                 )
-            })
-
-            for item in metadata {
-                guard await indexingCoordinator.isCurrent(generation) else { return }
-                guard !(hidesNSFWCovers && item.isNSFW) else { continue }
-                guard let cover = item.cover,
-                      let thumbnail = await thumbnailData(for: cover, sourceKey: item.sourceKey) else {
-                    continue
-                }
-                try? await CSSearchableIndex.default().indexSearchableItems([
-                    searchableItem(for: item, thumbnailData: thumbnail)
-                ])
             }
         }
+
+        let index = CSSearchableIndex.default()
+        let previousIdentifiers = Set(UserDefaults.standard.stringArray(forKey: indexedIdentifiersKey) ?? [])
+        let currentIdentifiers = Set(metadata.map {
+            makeIdentifier(sourceKey: $0.sourceKey, mangaKey: $0.mangaKey)
+        })
+        let removedIdentifiers = previousIdentifiers.subtracting(currentIdentifiers)
+        var successfullyIndexed = previousIdentifiers
+        if !removedIdentifiers.isEmpty {
+            do {
+                try await index.deleteSearchableItems(withIdentifiers: Array(removedIdentifiers))
+                successfullyIndexed.subtract(removedIdentifiers)
+            } catch {
+                LogManager.logger.error("Spotlight removal failed: \(error)")
+            }
+        }
+
+        // Never replace an existing cover with a text-only result while a
+        // refresh is in progress. Fetch artwork concurrently, but send
+        // indexing requests serially to Core Spotlight.
+        let hidesNSFWCovers = AppSettings.appearance.blurNSFWCovers.get()
+        let hiddenThumbnail = hidesNSFWCovers ? hiddenThumbnailData() : nil
+        for batchStart in stride(from: 0, to: metadata.count, by: 6) {
+            let batch = metadata[batchStart..<min(batchStart + 6, metadata.count)]
+            await withTaskGroup(of: (ItemMetadata, Data?).self) { group in
+                for item in batch {
+                    group.addTask {
+                        if hidesNSFWCovers && item.isNSFW {
+                            return (item, hiddenThumbnail)
+                        }
+                        guard let cover = item.cover else { return (item, nil) }
+                        return (item, await thumbnailData(for: cover, sourceKey: item.sourceKey))
+                    }
+                }
+
+                for await (item, thumbnail) in group {
+                    let identifier = makeIdentifier(sourceKey: item.sourceKey, mangaKey: item.mangaKey)
+                    // If a temporary cover fetch fails, retain any existing
+                    // Spotlight result rather than stripping its thumbnail.
+                    if thumbnail != nil || item.cover == nil || !successfullyIndexed.contains(identifier) {
+                        do {
+                            try await index.indexSearchableItems([searchableItem(for: item, thumbnailData: thumbnail)])
+                            successfullyIndexed.insert(identifier)
+                        } catch {
+                            LogManager.logger.error("Spotlight indexing failed for \(item.title): \(error)")
+                        }
+                    }
+                }
+            }
+        }
+        UserDefaults.standard.set(Array(successfullyIndexed), forKey: indexedIdentifiersKey)
     }
 
     static func remove(mangaId: MangaIdentifier) {
         let identifier = makeIdentifier(sourceKey: mangaId.sourceKey, mangaKey: mangaId.mangaKey)
         Task(priority: .utility) {
-            try? await CSSearchableIndex.default().deleteSearchableItems(withIdentifiers: [identifier])
+            do {
+                try await CSSearchableIndex.default().deleteSearchableItems(withIdentifiers: [identifier])
+            } catch {
+                LogManager.logger.error("Spotlight removal failed: \(error)")
+            }
+            // A running pass may have captured this item before it was removed.
+            indexLibrary()
         }
     }
 

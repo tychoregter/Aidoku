@@ -1166,28 +1166,14 @@ extension Settings {
 
     private static let advancedSettings: [Setting] = [
         .init(
-            title: NSLocalizedString("FLARESOLVERR"),
-            value: .group(.init(
-                footer: NSLocalizedString("FLARESOLVERR_TEXT"),
-                items: [
-                    .init(
-                        key: AppSettings.general.flareSolverrURL.key,
-                        title: NSLocalizedString("FLARESOLVERR_URL"),
-                        value: .text(.init(
-                            placeholder: "http://127.0.0.1:8191",
-                            autocapitalizationType: 0,
-                            keyboardType: 3,
-                            returnKeyType: 9,
-                            autocorrectionDisabled: true
-                        ))
-                    ),
-                    .init(
-                        key: AppSettings.general.flareSolverrFallback.key,
-                        title: NSLocalizedString("FLARESOLVERR_FALLBACK"),
-                        value: .toggle(.init())
-                    )
-                ]
-            ))
+            title: "",
+            value: .group(.init(items: [
+                .init(
+                    key: "Advanced.labsFeatures",
+                    title: NSLocalizedString("LABS_FEATURES"),
+                    value: .page(.init(items: [], inlineTitle: true))
+                )
+            ]))
         ),
         .init(
             title: NSLocalizedString("ADVANCED"),
@@ -1257,16 +1243,6 @@ extension Settings {
                             value: .button(.init())
                         )
                     ]))
-                )
-            ]))
-        ),
-        .init(
-            title: "",
-            value: .group(.init(items: [
-                .init(
-                    key: "Advanced.labsFeatures",
-                    title: NSLocalizedString("LABS_FEATURES"),
-                    value: .page(.init(items: [], inlineTitle: true))
                 )
             ]))
         ),

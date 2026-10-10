@@ -57,6 +57,8 @@ struct LabsFeaturesView: View {
     let path: NavigationCoordinator
     @AppStorage("General.labsFeatures") private var bookRenamingEnabled = false
     @AppStorage("General.recognizeCombinedBooks") private var recognizeCombinedBooks = false
+    @AppStorage("General.flareSolverrURL") private var flareSolverrURL = ""
+    @AppStorage("General.flareSolverrFallback") private var flareSolverrFallback = true
 
     var body: some View {
         List {
@@ -74,6 +76,19 @@ struct LabsFeaturesView: View {
             Section {
                 Toggle(NSLocalizedString("RECOGNIZE_COMBINED_BOOKS", value: "Recognize Combined Books", comment: "Recognize multi-episode books when checking for missing books"),
                        isOn: $recognizeCombinedBooks)
+            }
+            Section {
+                TextField(NSLocalizedString("FLARESOLVERR_URL"), text: $flareSolverrURL, prompt: Text("http://127.0.0.1:8191"))
+                    .keyboardType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                if !flareSolverrURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Toggle(NSLocalizedString("FLARESOLVERR_FALLBACK"), isOn: $flareSolverrFallback)
+                }
+            } header: {
+                Text(NSLocalizedString("FLARESOLVERR"))
+            } footer: {
+                Text(NSLocalizedString("FLARESOLVERR_TEXT"))
             }
         }
         .listStyle(.insetGrouped)

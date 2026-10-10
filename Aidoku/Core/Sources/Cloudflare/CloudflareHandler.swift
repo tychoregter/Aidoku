@@ -45,6 +45,12 @@ actor CloudflareHandler: NSObject {
     private var popupController: WebViewViewController?
 
     @MainActor
+    private var pendingPopupTask: Task<Void, Never>?
+
+    @MainActor
+    private var pendingPopupID: UUID?
+
+    @MainActor
     private var popupShown: Bool {
         popupController?.presentingViewController != nil
     }
@@ -95,40 +101,86 @@ actor CloudflareHandler: NSObject {
     }
 
     func handle(request: URLRequest) async throws -> (Data, URLResponse) {
-        do {
-            try await solveWithFlareSolverr(request: request)
-            return try await retry(request: request)
-        } catch {
-            guard AppSettings.general.flareSolverrFallback.get() else {
-                throw error
+        let configuredURL = AppSettings.general.flareSolverrURL.get().trimmingCharacters(in: .whitespacesAndNewlines)
+        if !configuredURL.isEmpty {
+            do {
+                if let solvedResponse = try await solveWithFlareSolverr(request: request) {
+                    return solvedResponse
+                }
+                return try await retry(request: request, route: "FlareSolverr")
+            } catch {
+                guard AppSettings.general.flareSolverrFallback.get() else {
+                    throw error
+                }
             }
         }
 
         // handle challenges one at a time, waiting for a solution for the request url host
-        try await awaitChallenge(for: request)
-        return try await retry(request: request)
+        let manualRequest = await prepareManualRequest(request)
+        try await awaitChallenge(for: manualRequest)
+        return try await retry(request: manualRequest, route: "manual verification")
     }
 
-    private func retry(request: URLRequest) async throws -> (Data, URLResponse) {
+    private func retry(request: URLRequest, route: String) async throws -> (Data, URLResponse) {
         let newRequest = if let url = request.url {
             await AidokuRunner.Source.modify(url: url, request: request)
         } else {
             request
         }
         let (data, response) = try await URLSession.shared.data(for: newRequest)
-        if
-            let response = response as? HTTPURLResponse,
-            shouldHandle(response: response, data: data)
-        {
-            throw HandleError.solveFailed
+        if let response = response as? HTTPURLResponse {
+            let host = newRequest.url?.host ?? "unknown host"
+            if shouldHandle(response: response, data: data) {
+                LogManager.logger.error("Cloudflare challenge returned after \(route) for \(host) (HTTP \(response.statusCode))")
+                throw HandleError.solveFailed
+            }
+            if response.statusCode >= 400 {
+                LogManager.logger.error("Cloudflare retry after \(route) returned HTTP \(response.statusCode) for \(host)")
+            }
         }
         return (data, response)
+    }
+
+    private func prepareManualRequest(_ request: URLRequest) async -> URLRequest {
+        guard let url = request.url else { return request }
+        var manualRequest = request
+
+        // A former FlareSolverr session can outlive its configured server URL.
+        // Its desktop user-agent and clearance cookie must not be carried into
+        // an iOS web-view verification session.
+        if let oldUserAgent = Self.storedFlareSolverrUserAgent(for: url) {
+            let labels = (url.host ?? "").lowercased().split(separator: ".")
+            if labels.count >= 2 {
+                for index in 0..<(labels.count - 1) {
+                    let domain = labels[index...].joined(separator: ".")
+                    flareSolverrUserAgents.removeValue(forKey: domain)
+                    UserDefaults.standard.removeObject(forKey: Self.flareSolverrUserAgentDefaultsPrefix + domain)
+                }
+            }
+            HTTPCookieStorage.shared.removeClearanceCookies(for: url)
+            if let cookieHeader = manualRequest.value(forHTTPHeaderField: "Cookie") {
+                let remainingCookies = cookieHeader.split(separator: ";").filter { part in
+                    let name = String(part.split(separator: "=", maxSplits: 1).first ?? "")
+                        .trimmingCharacters(in: .whitespaces)
+                    return name.caseInsensitiveCompare("cf_clearance") != .orderedSame
+                }.joined(separator: "; ")
+                manualRequest.setValue(remainingCookies.isEmpty ? nil : remainingCookies, forHTTPHeaderField: "Cookie")
+            }
+            if manualRequest.value(forHTTPHeaderField: "User-Agent") == oldUserAgent {
+                manualRequest.setValue(await UserAgentProvider.shared.getUserAgent(), forHTTPHeaderField: "User-Agent")
+            }
+        }
+
+        return await AidokuRunner.Source.modify(url: url, request: manualRequest)
     }
 
     /// Returns the browser user-agent paired with a FlareSolverr clearance
     /// cookie for this host. Cloudflare binds `cf_clearance` to the user-agent,
     /// so normal source requests must use the same one after a solve.
     func userAgent(for url: URL) -> String? {
+        guard !AppSettings.general.flareSolverrURL.get().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
         if let host = url.host?.lowercased(), let userAgent = flareSolverrUserAgents[host] {
             return userAgent
         }
@@ -137,6 +189,13 @@ actor CloudflareHandler: NSObject {
 
     /// Synchronous counterpart for the legacy WASM networking layer.
     nonisolated static func cachedFlareSolverrUserAgent(for url: URL) -> String? {
+        guard !AppSettings.general.flareSolverrURL.get().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return storedFlareSolverrUserAgent(for: url)
+    }
+
+    private nonisolated static func storedFlareSolverrUserAgent(for url: URL) -> String? {
         guard let host = url.host?.lowercased() else { return nil }
         let labels = host.split(separator: ".")
         guard labels.count >= 2 else { return nil }
@@ -154,7 +213,7 @@ actor CloudflareHandler: NSObject {
         return nil
     }
 
-    private func solveWithFlareSolverr(request: URLRequest) async throws {
+    private func solveWithFlareSolverr(request: URLRequest) async throws -> (Data, URLResponse)? {
         let configuredURL = AppSettings.general.flareSolverrURL.get().trimmingCharacters(in: .whitespacesAndNewlines)
         guard
             !configuredURL.isEmpty,
@@ -163,17 +222,18 @@ actor CloudflareHandler: NSObject {
         else {
             throw HandleError.solveFailed
         }
+        let method = (request.httpMethod ?? "GET").uppercased()
+        let host = targetURL.host ?? "unknown host"
+        LogManager.logger.log("FlareSolverr handling \(method) \(host)\(targetURL.path)")
 
-        var body: [String: Any] = [
-            // FlareSolverr only supports form-encoded POST bodies. Use its
-            // browser to acquire clearance, then replay the original request.
+        let body: [String: Any] = [
+            // FlareSolverr fetches the challenged URL in its browser. Its
+            // response can be used directly for GET requests, avoiding a
+            // second request from a different client fingerprint.
             "cmd": "request.get",
             "url": targetURL.absoluteString,
             "maxTimeout": 120_000
         ]
-        if let host = targetURL.host?.lowercased(), let userAgent = flareSolverrUserAgents[host] {
-            body["userAgent"] = userAgent
-        }
         var solverRequest = URLRequest(url: apiURL)
         solverRequest.httpMethod = "POST"
         solverRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -188,11 +248,87 @@ actor CloudflareHandler: NSObject {
         guard result.status == "ok", let solution = result.solution, solution.status < 400 else {
             throw HandleError.solveFailed
         }
+        LogManager.logger.log(
+            "FlareSolverr result for \(host): HTTP \(solution.status), body \(solution.response?.utf8.count ?? 0) bytes"
+        )
+
+        let solvedResponse: (Data, URLResponse)?
+        if method == "GET" {
+            guard (200..<300).contains(solution.status), let responseBody = solution.response else {
+                LogManager.logger.error("FlareSolverr did not return a usable response for \(targetURL.host ?? "unknown host")")
+                throw HandleError.solveFailed
+            }
+            // FlareSolverr returns the decoded body as a string. Do not pass
+            // through a challenge or Chromium error page even if the solver
+            // reported success (its status may still be 200 for a browser 404).
+            if responseBody.contains("id=\"main-frame-error\"")
+                || responseBody.contains("No webpage was found for the web address") {
+                let errorCode = responseBody.range(of: #"HTTP ERROR \d{3}"#, options: .regularExpression)
+                    .map { String(responseBody[$0]) } ?? "browser error"
+                LogManager.logger.error("FlareSolverr returned \(errorCode) for \(targetURL.host ?? "unknown host")")
+                throw HandleError.solveFailed
+            }
+            let browserJSON = Self.browserWrappedJSON(from: responseBody)
+            let responseData = browserJSON ?? Data(responseBody.utf8)
+            var headers = solution.headers ?? [:]
+            headers = headers.filter { key, _ in
+                !["content-encoding", "content-length", "transfer-encoding"].contains(key.lowercased())
+            }
+            if browserJSON != nil {
+                headers = headers.filter { $0.key.lowercased() != "content-type" }
+                headers["Content-Type"] = "application/json; charset=utf-8"
+            }
+            guard let httpResponse = HTTPURLResponse(
+                url: targetURL,
+                statusCode: solution.status,
+                httpVersion: "HTTP/1.1",
+                headerFields: headers
+            ) else {
+                throw HandleError.solveFailed
+            }
+            if shouldHandle(response: httpResponse, data: responseData)
+                || responseBody.range(of: "<title>Just a moment", options: .caseInsensitive) != nil
+                || responseBody.contains("cdn-cgi/challenge-platform") {
+                throw HandleError.solveFailed
+            }
+            solvedResponse = (responseData, httpResponse)
+            LogManager.logger.log("FlareSolverr using its response directly for \(host)")
+        } else {
+            LogManager.logger.log("FlareSolverr retrying \(method) from Aidoku for \(host); direct response requires GET")
+            solvedResponse = nil
+        }
 
         if let userAgent = solution.userAgent {
             storeFlareSolverrUserAgent(userAgent, for: targetURL, cookies: solution.cookies)
         }
         storeFlareSolverrCookies(solution.cookies, for: targetURL)
+        return solvedResponse
+    }
+
+    /// Chromium wraps JSON responses in an HTML document containing a `pre`.
+    /// FlareSolverr returns that page source, not the original response bytes.
+    private static func browserWrappedJSON(from pageSource: String) -> Data? {
+        let pattern = #"(?is)<body[^>]*>\s*<pre[^>]*>(.*?)</pre>\s*</body>"#
+        guard let match = pageSource.range(of: pattern, options: .regularExpression),
+              let preStart = pageSource[match].range(of: "<pre", options: .caseInsensitive),
+              let contentStart = pageSource[preStart.upperBound...].firstIndex(of: ">"),
+              let contentEnd = pageSource[contentStart...].range(of: "</pre>", options: .caseInsensitive)?.lowerBound
+        else {
+            return nil
+        }
+
+        let escaped = String(pageSource[pageSource.index(after: contentStart)..<contentEnd])
+        let json = escaped
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
+        let data = Data(json.utf8)
+        guard (try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)) != nil else {
+            return nil
+        }
+        return data
     }
 
     private func storeFlareSolverrCookies(_ cookies: [FlareSolverrCookie], for url: URL) {
@@ -254,6 +390,8 @@ private struct FlareSolverrResponse: Decodable {
 
 private struct FlareSolverrSolution: Decodable {
     let status: Int
+    let headers: [String: String]?
+    let response: String?
     let cookies: [FlareSolverrCookie]
     let userAgent: String?
 }
@@ -293,6 +431,9 @@ extension CloudflareHandler {
         guard let continuation = finishContinuation else { return }
 
         Task { @MainActor in
+            pendingPopupTask?.cancel()
+            pendingPopupTask = nil
+            pendingPopupID = nil
             webView.removeFromSuperview()
             popupController?.dismiss(animated: true)
             popupController = nil
@@ -304,6 +445,10 @@ extension CloudflareHandler {
         proxy = nil
 
         continuation.resume(with: result)
+    }
+
+    private func hasPendingChallenge() -> Bool {
+        finishContinuation != nil
     }
 
     private func proxy(for request: URLRequest) async -> Proxy {
@@ -501,6 +646,7 @@ extension CloudflareHandler {
     @MainActor
     private func showPopup(for request: URLRequest) async {
         guard !popupShown else { return }
+        guard await hasPendingChallenge() else { return }
 
         // don't timeout while popup is shown
         await disableTimeout()
@@ -512,6 +658,7 @@ extension CloudflareHandler {
 
         popupController?.dismiss(animated: true)
         let popup = WebViewViewController(request: request, handler: await proxy(for: request))
+        guard await hasPendingChallenge() else { return }
         popupController = popup
 
         webView.navigationDelegate = popup
@@ -531,12 +678,26 @@ extension CloudflareHandler {
     // check if captcha or verify button is shown, and show the popup if it is
     @MainActor
     private func checkForCaptcha(for request: URLRequest) {
-        guard !popupShown else { return }
-        Task {
-            let found = await isCaptchaPage()
-            if found {
-                await showPopup(for: request)
+        guard !popupShown, pendingPopupTask == nil else { return }
+        let id = UUID()
+        pendingPopupID = id
+        pendingPopupTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                if self.pendingPopupID == id {
+                    self.pendingPopupTask = nil
+                    self.pendingPopupID = nil
+                }
             }
+            guard await self.isCaptchaPage() else { return }
+
+            // Brief automatic checks can finish just after the challenge UI
+            // appears. Keep the web view hidden until it is clearly waiting
+            // for user interaction.
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled, !self.popupShown else { return }
+            guard await self.isCaptchaPage() else { return }
+            await self.showPopup(for: request)
         }
     }
 
