@@ -1,5 +1,5 @@
 # Aidoku SF - A Modernized Fork of Aidoku
-This Aidoku Fork is primarily focussed around modernizations to the UI, implementing features according to my personal preferences and improving support and usage of private libraries (especially Komga). This fork isn’t necessarily a replacement for Aidoku and some people might still prefer the original, but if your preferences align with mine this fork might be up your alley.
+This Aidoku Fork is primarily focussed around modernizations to the UI (primarily inspired by Apple apps), implementing features according to my personal preferences and improving support and usage of private libraries (especially Komga). This fork isn’t necessarily a replacement for Aidoku and some people might still prefer the original, but if your preferences align with mine this fork might be up your alley.
 
 This Fork of Aidoku was initially made to make some changes and enhancements that tailored towards my personal preferences, but this quickly spiraled out of control. At the time of writing this fork made over 25 improvements, ranging from small design tweaks to the ability to mark items as favorites, and a completely redesigned pinned item system. A full list of changes can be found below.
 
