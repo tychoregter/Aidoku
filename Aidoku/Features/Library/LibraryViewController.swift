@@ -1350,10 +1350,13 @@ extension LibraryViewController {
                     UIAlertAction(title: NSLocalizedString("OK"), style: .cancel),
                     UIAlertAction(title: NSLocalizedString("REFRESH_ANYWAYS"), style: .default) { _ in
                         Task {
+                            refreshControl?.beginRefreshing()
                             await MangaManager.shared.backgroundRefreshLibrary(
                                 category: self.viewModel.isInRealCategory ? self.viewModel.currentCategory : nil,
                                 skipReachabilityCheck: true
                             )
+                            refreshControl?.endRefreshing()
+                            self.shouldHideRefreshAfterDrag = false
                         }
                     }
                 ]

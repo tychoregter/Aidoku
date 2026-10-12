@@ -15,6 +15,7 @@ actor MangaManager {
     static let shared = MangaManager()
 
     private static let taskIdentifier = (Bundle.main.bundleIdentifier ?? "") + ".libraryRefresh"
+    private static let manualTaskIdentifier = (Bundle.main.bundleIdentifier ?? "") + ".manualLibraryRefresh.active"
 
     private var libraryRefreshTask: Task<(), Never>?
     private var libraryRefreshProgressTask: Task<(), Never>?
@@ -22,6 +23,12 @@ actor MangaManager {
 
     private var targetCategory: String?
     private var skipReachabilityCheck: Bool = false
+    private var manualRefreshJob: Task<Void, Never>?
+    private var manualRefreshPending = false
+    private var manualRefreshStarted = false
+    private var manualRefreshExpired = false
+    private var manualRefreshResult: Bool?
+    private var manualRefreshCompletion: CheckedContinuation<Bool, Never>?
 
     private static let maxConcurrentLibraryUpdateTasks = 10
 
@@ -345,6 +352,15 @@ extension MangaManager {
                 task.setTaskCompleted(success: true)
             }
         }
+        if #available(iOS 26.0, *) {
+            BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.manualTaskIdentifier, using: nil) { @Sendable [weak self] task in
+                guard let self, let task = task as? BGContinuedProcessingTask else {
+                    task.setTaskCompleted(success: false)
+                    return
+                }
+                Task { await self.handleManualRefresh(task) }
+            }
+        }
 #endif
     }
 
@@ -396,27 +412,96 @@ extension MangaManager {
     }
 
     func backgroundRefreshLibrary(category: String? = nil, skipReachabilityCheck: Bool = false) async {
+        if let manualRefreshJob {
+            await manualRefreshJob.value
+            return
+        }
+
+        let job = Task {
+            await performManualRefresh(category: category, skipReachabilityCheck: skipReachabilityCheck)
+        }
+        manualRefreshJob = job
+        await job.value
+        manualRefreshJob = nil
+    }
+
+    private func performManualRefresh(category: String?, skipReachabilityCheck: Bool) async {
         targetCategory = category
         self.skipReachabilityCheck = skipReachabilityCheck
 
 #if !targetEnvironment(simulator)
         if #available(iOS 26.0, *), AppSettings.library.backgroundRefresh.get(), !ProcessInfo.processInfo.isMacCatalystApp {
             let request = BGContinuedProcessingTaskRequest(
-                identifier: Self.taskIdentifier,
+                identifier: Self.manualTaskIdentifier,
                 title: NSLocalizedString("REFRESHING_LIBRARY"),
                 subtitle: NSLocalizedString("PROCESSING_ENTRIES")
             )
+            request.strategy = .fail
+            manualRefreshPending = true
+            manualRefreshStarted = false
+            manualRefreshExpired = false
+            manualRefreshResult = nil
             do {
                 try await BGTaskScheduler.shared.submit(request: request)
-                return
+                let startupTimeout = Task {
+                    try? await Task.sleep(for: .seconds(10))
+                    manualRefreshStartTimedOut()
+                }
+                let handled = await withCheckedContinuation { continuation in
+                    if let result = manualRefreshResult {
+                        continuation.resume(returning: result)
+                    } else {
+                        manualRefreshCompletion = continuation
+                    }
+                }
+                startupTimeout.cancel()
+                if handled { return }
             } catch {
                 LogManager.logger.error("Failed to start background library refresh: \(error)")
             }
+            manualRefreshPending = false
+            manualRefreshResult = nil
         }
 #endif
 
         await refreshLibrary(category: category)
     }
+
+#if !targetEnvironment(simulator)
+    @available(iOS 26.0, *)
+    private func handleManualRefresh(_ task: BGContinuedProcessingTask) async {
+        guard manualRefreshPending else {
+            task.setTaskCompleted(success: false)
+            return
+        }
+        manualRefreshStarted = true
+        task.expirationHandler = { [weak self] in
+            Task { await self?.expireManualRefresh() }
+        }
+        await refreshLibrary(category: targetCategory, task: task)
+        task.setTaskCompleted(success: !manualRefreshExpired)
+        finishManualRefresh(handled: true)
+    }
+
+    private func expireManualRefresh() {
+        manualRefreshExpired = true
+        libraryRefreshTask?.cancel()
+    }
+
+    private func finishManualRefresh(handled: Bool) {
+        manualRefreshPending = false
+        manualRefreshResult = handled
+        manualRefreshCompletion?.resume(returning: handled)
+        manualRefreshCompletion = nil
+    }
+
+    private func manualRefreshStartTimedOut() {
+        guard manualRefreshPending, !manualRefreshStarted else { return }
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.manualTaskIdentifier)
+        LogManager.logger.warn("Manual background library refresh did not start; refreshing in app")
+        finishManualRefresh(handled: false)
+    }
+#endif
 
     /// Refresh manga objects in library.
     func refreshLibrary(

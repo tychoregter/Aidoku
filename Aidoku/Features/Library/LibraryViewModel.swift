@@ -9,6 +9,18 @@ import AidokuRunner
 import CoreData
 import UIKit
 
+private func alphabeticallyPrecedes(
+    _ lhsTitle: String,
+    id lhsID: String,
+    _ rhsTitle: String,
+    id rhsID: String,
+    descending: Bool
+) -> Bool {
+    let comparison = lhsTitle.localizedCaseInsensitiveCompare(rhsTitle)
+    if comparison == .orderedSame { return lhsID < rhsID }
+    return descending ? comparison == .orderedDescending : comparison == .orderedAscending
+}
+
 @MainActor
 class LibraryViewModel {
     enum Scope: Equatable {
@@ -451,7 +463,7 @@ extension LibraryViewModel {
             } else {
                 request.predicate = NSPredicate(format: "manga != nil")
             }
-            if sortMethod != .unreadChapters {
+            if sortMethod != .unreadChapters && sortMethod != .alphabetical {
                 request.sortDescriptors = [
                     NSSortDescriptor(
                         key: sortMethod.sortStringValue,
@@ -459,9 +471,18 @@ extension LibraryViewModel {
                     )
                 ]
             }
-            guard let libraryObjects = try? context.fetch(request) else {
+            guard let fetchedLibraryObjects = try? context.fetch(request) else {
                 return (false, true, pinnedManga, libraryPinnedManga, manga, ignoredFilterPinnedManga, sourceKeys, unappliedFilters, [LibraryFilter.Genre](), allLibraryManga)
             }
+            let libraryObjects = sortMethod == .alphabetical
+                ? fetchedLibraryObjects.sorted {
+                    alphabeticallyPrecedes(
+                        $0.manga?.title ?? "", id: $0.manga?.identifier.description ?? "",
+                        $1.manga?.title ?? "", id: $1.manga?.identifier.description ?? "",
+                        descending: sortAscending
+                    )
+                }
+                : fetchedLibraryObjects
 
             var stackLibraryObjects: [LibraryMangaObject] = []
             if !stackedMemberIDs.isEmpty {
@@ -1063,8 +1084,11 @@ extension LibraryViewModel {
         return result.sorted { lhs, rhs in
             switch sortMethod {
                 case .alphabetical:
-                    let comparison = (lhs.title ?? "").localizedStandardCompare(rhs.title ?? "")
-                    return sortAscending ? comparison == .orderedDescending : comparison == .orderedAscending
+                    return alphabeticallyPrecedes(
+                        lhs.title ?? "", id: lhs.id.description,
+                        rhs.title ?? "", id: rhs.id.description,
+                        descending: sortAscending
+                    )
                 case .unreadChapters:
                     return sortAscending ? lhs.unread < rhs.unread : lhs.unread > rhs.unread
                 case .lastRead, .lastOpened, .lastUpdated, .dateAdded, .lastChapter:
@@ -1463,12 +1487,19 @@ extension LibraryViewModel {
     func sortLibrary() async {
         switch sortMethod {
             case .alphabetical:
-                if sortAscending {
-                    pinnedManga.sort { $0.title ?? "" > $1.title ?? "" }
-                    manga.sort { $0.title ?? "" > $1.title ?? "" }
-                } else {
-                    pinnedManga.sort { $0.title ?? "" < $1.title ?? "" }
-                    manga.sort { $0.title ?? "" < $1.title ?? "" }
+                pinnedManga.sort {
+                    alphabeticallyPrecedes(
+                        $0.title ?? "", id: $0.id.description,
+                        $1.title ?? "", id: $1.id.description,
+                        descending: sortAscending
+                    )
+                }
+                manga.sort {
+                    alphabeticallyPrecedes(
+                        $0.title ?? "", id: $0.id.description,
+                        $1.title ?? "", id: $1.id.description,
+                        descending: sortAscending
+                    )
                 }
 
             case .unreadChapters:
@@ -1514,11 +1545,11 @@ extension LibraryViewModel {
         switch sortMethod {
             case .alphabetical:
                 sortedLibrary = (libraryPinnedManga + manga).sorted {
-                    if sortAscending {
-                        ($0.title ?? "") > ($1.title ?? "")
-                    } else {
-                        ($0.title ?? "") < ($1.title ?? "")
-                    }
+                    alphabeticallyPrecedes(
+                        $0.title ?? "", id: $0.id.description,
+                        $1.title ?? "", id: $1.id.description,
+                        descending: sortAscending
+                    )
                 }
             case .unreadChapters:
                 sortedLibrary = (libraryPinnedManga + manga).sorted {
