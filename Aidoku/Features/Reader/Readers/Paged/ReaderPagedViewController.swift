@@ -992,6 +992,7 @@ extension ReaderPagedViewController: ReaderReaderDelegate {
             }
             splitPages = [:]
 
+            updatePageLayout()
             loadPageControllers(chapter: chapter)
 
             if isChapterChange {

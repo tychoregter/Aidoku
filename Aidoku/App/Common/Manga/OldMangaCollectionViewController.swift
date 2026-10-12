@@ -365,9 +365,19 @@ extension OldMangaCollectionViewController {
     }
 
     private static func gridItemsPerRow(environment: NSCollectionLayoutEnvironment) -> Int {
-        let layout = AppSettings.appearance.layout.get()
         let containerWidth = environment.container.contentSize.width
+        return getGridItemsPerRow(
+            containerWidth: containerWidth,
+            isLandscape: containerWidth > environment.container.contentSize.height,
+            layout: AppSettings.appearance.layout.get()
+        )
+    }
 
+    static func getGridItemsPerRow(
+        containerWidth: CGFloat,
+        isLandscape: Bool,
+        layout: AppearanceSettings.Layout
+    ) -> Int {
         switch layout {
             case .standard:
                 let idealWidth: CGFloat = 180
@@ -376,7 +386,6 @@ extension OldMangaCollectionViewController {
                 let idealWidth: CGFloat = UIDevice.current.userInterfaceIdiom == .pad ? 150 : 120
                 return max(1, Int(floor(containerWidth / idealWidth)))
             case .custom:
-                let isLandscape = containerWidth > environment.container.contentSize.height
                 return if isLandscape {
                     AppSettings.appearance.customLandscapeRows.get()
                 } else {

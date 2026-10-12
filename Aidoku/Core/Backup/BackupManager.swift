@@ -234,7 +234,9 @@ actor BackupManager {
             else {
                 continue
             }
-            if
+            if let data = value as? Data {
+                convertedSettings[key] = .data(data)
+            } else if
                 let number = value as? NSNumber,
                 CFGetTypeID(number) == CFBooleanGetTypeID()
             {
@@ -251,8 +253,6 @@ actor BackupManager {
                 convertedSettings[key] = .array(value)
             } else if let value = value as? [Int] {
                 convertedSettings[key] = .intArray(value)
-            } else if let value = value as? Data {
-                convertedSettings[key] = .data(value)
             } else if let value = Self.convertSettingsDictionary(value) {
                 convertedSettings[key] = .object(value)
             }

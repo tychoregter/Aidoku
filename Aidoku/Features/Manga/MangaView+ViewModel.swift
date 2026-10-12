@@ -364,8 +364,11 @@ extension MangaView.ViewModel {
 
 extension MangaView.ViewModel {
     func checkForCategories() async {
-        hasCategories = await CoreDataManager.shared.container.performBackgroundTask { context in
+        let hasCategories = await CoreDataManager.shared.container.performBackgroundTask { context in
             !CoreDataManager.shared.getCategoryTitles(sorted: false, context: context).isEmpty
+        }
+        if self.hasCategories != hasCategories {
+            self.hasCategories = hasCategories
         }
     }
 
@@ -663,7 +666,9 @@ extension MangaView.ViewModel {
                 context: context
             )
         }
-        bookmarked = inLibrary
+        if bookmarked != inLibrary {
+            bookmarked = inLibrary
+        }
     }
 
     private func loadHistory() async {

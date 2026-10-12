@@ -72,6 +72,7 @@ struct SourceHomeContentView: View {
     }
 
     var body: some View {
+        GeometryReader { geometry in
         ScrollViewReader { reader in
             ScrollView {
                 VStack {}.id(0) // indicator to scroll to the top
@@ -79,7 +80,7 @@ struct SourceHomeContentView: View {
                 Group {
                     if loading {
                         // loading skeleton
-                        loadingView().transition(.opacity)
+                        loadingView(width: geometry.size.width).transition(.opacity)
                     } else if let home, listingSelection == 0 {
                         // home page
                         homeView(for: home, partial: !homeFullyLoaded)
@@ -96,6 +97,7 @@ struct SourceHomeContentView: View {
                         HomeGridView(
                             source: source,
                             entries: entries,
+                            containerWidth: geometry.size.width,
                             bookmarkedItems: $bookmarkedItems,
                             selectionMode: selectionMode,
                             selectedItems: $selectedItems,
@@ -126,7 +128,7 @@ struct SourceHomeContentView: View {
                             .transition(.opacity)
                         }
                     } else {
-                        loadingView().frame(height: 200).hidden()
+                        loadingView(width: geometry.size.width).frame(height: 200).hidden()
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -237,6 +239,7 @@ struct SourceHomeContentView: View {
             await reload(initial: true)
         }
         .environmentObject(path)
+        }
     }
 
     private func publishSelectionState(allSelected: Bool? = nil) {
@@ -249,14 +252,14 @@ struct SourceHomeContentView: View {
     }
 
     @ViewBuilder
-    private func loadingView() -> some View {
+    private func loadingView(width: CGFloat) -> some View {
         Group {
             if listingSelection == 0 && source.features.providesHome {
                 SourceHomeSkeletonView(source: source)
             } else if let listing = currentListing {
                 switch listing.kind {
                     case .default:
-                        HomeGridView.placeholder
+                        HomeGridView.placeholder(width: width)
                     case .list:
                         PlaceholderMangaHomeList(showTitle: false)
                 }

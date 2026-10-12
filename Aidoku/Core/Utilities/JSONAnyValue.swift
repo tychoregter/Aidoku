@@ -47,10 +47,26 @@ struct JSONAnyValue: Hashable, Sendable {
 }
 
 extension JSONAnyValue: Codable {
+    private struct EncodedData: Codable {
+        let aidokuData: Data
+    }
+
     init(from decoder: Decoder) throws {
         let container =  try decoder.singleValueContainer()
 
-        if let bool = try? container.decode(Bool.self) {
+        dataValue = nil
+        boolValue = nil
+        intValue = nil
+        doubleValue = nil
+        stringValue = nil
+        intArrayValue = nil
+        stringArrayValue = nil
+        objectValue = nil
+
+        if let data = try? container.decode(EncodedData.self) {
+            type = .data
+            dataValue = data.aidokuData
+        } else if let bool = try? container.decode(Bool.self) {
             type = .bool
             boolValue = bool
             intValue = nil
@@ -62,7 +78,6 @@ extension JSONAnyValue: Codable {
             dataValue = nil
         } else if let int = try? container.decode(Int.self) {
             type = .int
-            boolValue = nil
             intValue = int
             doubleValue = Double(int)
             stringValue = nil
@@ -72,7 +87,6 @@ extension JSONAnyValue: Codable {
             dataValue = nil
         } else if let float = try? container.decode(Float.self) {
             type = .double
-            boolValue = nil
             intValue = Int(float)
             doubleValue = Double(float)
             stringValue = nil
@@ -82,7 +96,6 @@ extension JSONAnyValue: Codable {
             dataValue = nil
         } else if let double = try? container.decode(Double.self) {
             type = .double
-            boolValue = nil
             intValue = Int(double)
             doubleValue = double
             stringValue = nil
@@ -92,9 +105,6 @@ extension JSONAnyValue: Codable {
             dataValue = nil
         } else if let string = try? container.decode(String.self) {
             type = .string
-            boolValue = nil
-            intValue = nil
-            doubleValue = nil
             stringValue = string
             intArrayValue = nil
             stringArrayValue = nil
@@ -102,21 +112,12 @@ extension JSONAnyValue: Codable {
             dataValue = nil
         } else if let ints = try? container.decode([Int].self) {
             type = .intArray
-            boolValue = nil
-            intValue = nil
-            doubleValue = nil
-            stringValue = nil
             intArrayValue = ints
             stringArrayValue = nil
             objectValue = nil
             dataValue = nil
         } else if let strings = try? container.decode([String].self) {
             type = .array
-            boolValue = nil
-            intValue = nil
-            doubleValue = nil
-            stringValue = nil
-            intArrayValue = nil
             stringArrayValue = strings
             objectValue = nil
             dataValue = nil
@@ -137,12 +138,6 @@ extension JSONAnyValue: Codable {
             dataValue = data
         } else if let object = try? container.decode([String: JSONAnyValue].self) {
             type = .object
-            boolValue = nil
-            intValue = nil
-            doubleValue = nil
-            stringValue = nil
-            intArrayValue = nil
-            stringArrayValue = nil
             objectValue = object
             dataValue = nil
         } else {
@@ -206,11 +201,11 @@ extension JSONAnyValue {
         .init(type: .intArray, intArrayValue: value)
     }
 
-    static func object(_ value: [String: JSONAnyValue]) -> JSONAnyValue {
-        .init(type: .object, objectValue: value)
-    }
-
     static func data(_ value: Data) -> JSONAnyValue {
         .init(type: .data, dataValue: value)
+    }
+
+    static func object(_ value: [String: JSONAnyValue]) -> JSONAnyValue {
+        .init(type: .object, objectValue: value)
     }
 }

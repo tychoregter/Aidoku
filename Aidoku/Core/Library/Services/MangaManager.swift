@@ -1037,6 +1037,19 @@ extension MangaManager {
                     mangaObjectToUpdate?.load(from: newManga)
                 }
 
+                // copy categories
+                if copy {
+                    let categories = CoreDataManager.shared.getCategories(
+                        mangaId: oldManga.identifier,
+                        context: context
+                    )
+                    CoreDataManager.shared.addCategoriesToManga(
+                        mangaId: newManga.identifier,
+                        categories: categories,
+                        context: context
+                    )
+                }
+
                 // migrate history
                 let storedOldHistory = CoreDataManager.shared.getHistoryForManga(
                     mangaId: oldManga.identifier,
@@ -1140,9 +1153,15 @@ extension MangaManager {
             }
         }
 
-        // remove old item from library
-        if copy && forceRemoveFromLibrary {
-            await shared.removeFromLibrary(mangaId: oldManga.identifier)
+        if copy && result != nil {
+            // remove old item from library
+            if forceRemoveFromLibrary {
+                await shared.removeFromLibrary(mangaId: oldManga.identifier)
+            } else {
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .updateLibrary, object: nil)
+                }
+            }
         }
 
         return result
