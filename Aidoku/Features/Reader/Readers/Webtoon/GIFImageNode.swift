@@ -77,7 +77,6 @@ class GIFImageNode: ASControlNode {
     func reset() {
         image = nil
         animatedData = nil
-        image = nil
 
         Task { @MainActor [weak self] in
             guard let self, self.image == nil else { return }

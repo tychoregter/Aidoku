@@ -57,6 +57,8 @@ struct LabsFeaturesView: View {
     let path: NavigationCoordinator
     @AppStorage("General.labsFeatures") private var bookRenamingEnabled = false
     @AppStorage("General.recognizeCombinedBooks") private var recognizeCombinedBooks = false
+    @AppStorage("General.disableTrackingMenu") private var disableTrackingMenu = false
+    @AppStorage("General.libraryActionsMenu") private var libraryActionsMenu = false
     @AppStorage("General.flareSolverrURL") private var flareSolverrURL = ""
     @AppStorage("General.flareSolverrFallback") private var flareSolverrFallback = true
 
@@ -70,12 +72,20 @@ struct LabsFeaturesView: View {
                         BookRenamingSettingsView(path: path)
                     }
                 }
+                Toggle(NSLocalizedString("DISABLE_TRACKING_MENU", value: "Disable Tracking Menu", comment: "Hide the tracking action from series info menus"),
+                       isOn: $disableTrackingMenu)
             } header: {
                 Text(NSLocalizedString("LABS_MANGA_INFO", value: "Series Info", comment: "Labs settings related to series information"))
             }
             Section {
                 Toggle(NSLocalizedString("RECOGNIZE_COMBINED_BOOKS", value: "Recognize Combined Books", comment: "Recognize multi-episode books when checking for missing books"),
                        isOn: $recognizeCombinedBooks)
+            }
+            Section {
+                Toggle(NSLocalizedString("LIBRARY_ACTIONS_MENU", value: "Library Actions Menu", comment: "Show Settings, Select, and Refresh in the Library menu"),
+                       isOn: $libraryActionsMenu)
+            } header: {
+                Text(NSLocalizedString("LABS_LIBRARY", value: "Library", comment: "Labs settings related to the Library"))
             }
             Section {
                 TextField(NSLocalizedString("FLARESOLVERR_URL"), text: $flareSolverrURL, prompt: Text("http://127.0.0.1:8191"))
@@ -93,6 +103,9 @@ struct LabsFeaturesView: View {
         }
         .listStyle(.insetGrouped)
         .navigationTitle(NSLocalizedString("LABS_FEATURES"))
+        .onChange(of: libraryActionsMenu) { _ in
+            NotificationCenter.default.post(name: .init(AppSettings.general.libraryActionsMenu.key), object: nil)
+        }
         .onChange(of: bookRenamingEnabled) { _ in
             // A nil object means every displayed series should return to its
             // source title or restore its previously saved custom name.

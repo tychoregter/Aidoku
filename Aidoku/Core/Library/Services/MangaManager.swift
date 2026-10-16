@@ -692,10 +692,25 @@ extension MangaManager {
             for manga in filteredManga {
                 guard !Task.isCancelled else { return results }
 
-                guard
-                    let newManga = try? await SourceManager.shared.source(for: manga.sourceId)?
-                        .getMangaUpdate(manga: manga.toNew(), needsDetails: updateMetadata, needsChapters: true)
-                else {
+                guard let source = await SourceManager.shared.source(for: manga.sourceId) else {
+                    LogManager.logger.error(
+                        "Library refresh failed for \(manga.title ?? manga.id) [\(manga.sourceId)/\(manga.id)]: source unavailable"
+                    )
+                    completed += 1
+                    progress.completedUnitCount = Int64(completed)
+                    updateLibraryRefreshProgress(progress)
+                    continue
+                }
+
+                let newManga: AidokuRunner.Manga
+                do {
+                    newManga = try await source.getMangaUpdate(
+                        manga: manga.toNew(), needsDetails: updateMetadata, needsChapters: true
+                    )
+                } catch {
+                    LogManager.logger.error(
+                        "Library refresh failed for \(manga.title ?? manga.id) [\(manga.sourceId)/\(manga.id)]: \(error)"
+                    )
                     completed += 1
                     progress.completedUnitCount = Int64(completed)
                     updateLibraryRefreshProgress(progress)
@@ -781,6 +796,10 @@ extension MangaManager {
 
             return results
         }()
+
+        // The final update is buffered; deliver it before completing the
+        // background task so its Live Activity cannot end one item behind.
+        await libraryRefreshProgressTask?.value
 
         if notificationsEnabled, !pendingNotifications.isEmpty {
             await NotificationManager.shared.notifyNewChapters(pendingNotifications)

@@ -665,7 +665,7 @@ extension MangaView {
             Button {
                 readerLaunch = ReaderLaunch(chapter, incognito: true)
             } label: {
-                Label(NSLocalizedString("READ_INCOGNITO"), systemImage: "eye.slash")
+                Label(NSLocalizedString("READ_INCOGNITO"), systemImage: "book.closed")
             }
         }
 
@@ -1162,6 +1162,7 @@ private struct RightNavbarButton: View, Equatable {
     let removeDownloads: () -> Void
 
     @Binding var editMode: EditMode
+    @AppStorage("General.disableTrackingMenu") private var disableTrackingMenu = false
     @State private var isFavorite = false
     @State private var hasAvailableTrackers = false
 
@@ -1254,7 +1255,7 @@ private struct RightNavbarButton: View, Equatable {
                                 }
                             }
                         }
-                        if hasAvailableTrackers {
+                        if hasAvailableTrackers && !disableTrackingMenu {
                             Button {
                                 openTracker()
                             } label: {
@@ -1351,6 +1352,7 @@ private struct RightNavbarButton: View, Equatable {
             && lhs.hasDownloads == rhs.hasDownloads
             && lhs.isEditing == rhs.isEditing
             && lhs.usesLightLabel == rhs.usesLightLabel
+            && lhs.disableTrackingMenu == rhs.disableTrackingMenu
     }
 }
 

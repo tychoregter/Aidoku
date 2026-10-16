@@ -961,7 +961,7 @@ private struct ReadIncognitoButtonInteraction: UIViewControllerRepresentable {
                     UIMenu(children: [
                         UIAction(
                             title: NSLocalizedString("READ_INCOGNITO"),
-                            image: UIImage(systemName: "eye.slash")
+                            image: UIImage(systemName: "book.closed")
                         ) { _ in
                             self?.onReadIncognito()
                         }

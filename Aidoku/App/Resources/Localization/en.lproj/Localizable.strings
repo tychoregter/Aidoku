@@ -73,7 +73,7 @@
 "LIBRARY_ADD_CONTENT" = "Add content from the browse tab.";
 "LIBRARY_ADJUST_FILTERS" = "Adjust your filters to see more content.";
 "ADD_TO_LIBRARY" = "Add to Library";
-"REMOVE_FROM_LIBRARY" = "Remove from Library";
+"REMOVE_FROM_LIBRARY" = "Remove";
 "MANGA_INFO" = "Series Info";
 "SHOW_GENRES" = "Show Genres";
 "LIMIT_TO_ENABLED_GENRES" = "Limit to Enabled Genres";
@@ -104,13 +104,14 @@
 "LAYOUT_GRID" = "Grid";
 "LAYOUT_LIST" = "List";
 "FAVORITE" = "Favorite";
-"UNFAVORITE" = "Unfavorite";
+"UNFAVORITE" = "Undo";
 "CAUGHT_UP" = "Caught Up";
 "REMOVING_(ONE)_ITEM_FROM_LIBRARY" = "Removing Item from Library";
 "REMOVING_%i_ITEMS_FROM_LIBRARY" = "Removing %i Items from Library";
 "REMOVING_(ONE)_ITEM_FROM_CATEGORY_%@" = "Removing Item from Category %@";
 "REMOVING_%i_ITEMS_FROM_CATEGORY_%@" = "Removing %i Items from Category %@";
 "REFRESHING_LIBRARY" = "Refreshing Library…";
+"REFRESH_LIBRARY" = "Refresh Library";
 "PROCESSING_ENTRIES" = "Processing Entries…";
 "REFRESH_NO_WIFI" = "Not Connected to Wi-Fi";
 "REFRESH_NO_WIFI_TEXT" = "The \"Only Update on Wi-Fi\" setting is enabled, so the library cannot be refreshed until a Wi-Fi connection is available.";
@@ -379,6 +380,9 @@
 "LABS_MANGA_INFO" = "Series Info";
 "BOOK_RENAMING" = "Book Renaming";
 "RECOGNIZE_COMBINED_BOOKS" = "Recognize Combined Books";
+"DISABLE_TRACKING_MENU" = "Disable Tracking Menu";
+"LABS_LIBRARY" = "Library";
+"LIBRARY_ACTIONS_MENU" = "Library Actions Menu";
 "RENAMED_BOOKS" = "Renamed Books";
 "NO_RENAMED_BOOKS" = "No renamed books yet.";
 "ADD_BOOK_RENAME" = "Add Book Rename";

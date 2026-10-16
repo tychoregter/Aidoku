@@ -12,8 +12,8 @@ import AidokuRunner
 import PhotosUI
 
 class LibraryViewController: OldMangaCollectionViewController {
-    // Restore the Library selection menu and two-finger swipe by setting this to true.
-    private static let selectionEnabled = false
+    private static var libraryActionsMenuEnabled: Bool { AppSettings.general.libraryActionsMenu.get() }
+    private static var selectionEnabled: Bool { libraryActionsMenuEnabled }
 
     private var horizontalRowScrollViewObservations: [NSKeyValueObservation] = []
     private var isOpeningLibraryItem = false
@@ -85,6 +85,12 @@ class LibraryViewController: OldMangaCollectionViewController {
         systemName: "line.3.horizontal.decrease",
         action: nil,
         titleKey: "CATEGORY",
+        sharesBackground: false
+    )
+    private lazy var actionsBarButton = makeBarButton(
+        systemName: "ellipsis",
+        action: nil,
+        titleKey: "MORE_BARBUTTON",
         sharesBackground: false
     )
     private lazy var settingsBarButton = makeBarButton(
@@ -452,7 +458,14 @@ class LibraryViewController: OldMangaCollectionViewController {
                 self?.updateNavbarItems()
             }
         }
-
+        addObserver(forName: .init(AppSettings.general.libraryActionsMenu.key)) { [weak self] _ in
+            Task { @MainActor in
+                if !Self.selectionEnabled, self?.isEditing == true {
+                    self?.setEditing(false, animated: false)
+                }
+                self?.updateNavbarItems()
+            }
+        }
         let checkNavbarDownloadButton: (Notification) -> Void = { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
@@ -1163,10 +1176,12 @@ extension LibraryViewController: PHPickerViewControllerDelegate {
 extension LibraryViewController {
     func updateNavbarItems() {
         if isEditing {
-            let selectableItems = dataSource.snapshot().itemIdentifiers.filter { !$0.isEmptyPinnedPlaceholder }
+            let selectableItems = dataSource.snapshot().itemIdentifiers.filter {
+                !$0.isEmptyPinnedPlaceholder && !$0.isLibraryStack
+            }
             let selectedItems = (collectionView.indexPathsForSelectedItems ?? []).compactMap {
                 dataSource.itemIdentifier(for: $0)
-            }.filter { !$0.isEmptyPinnedPlaceholder }
+            }.filter { !$0.isEmptyPinnedPlaceholder && !$0.isLibraryStack }
             let allItemsSelected = !selectableItems.isEmpty && selectedItems.count == selectableItems.count
             navigationItem.leftBarButtonItem = if allItemsSelected {
                 makeBarButton(
@@ -1190,7 +1205,11 @@ extension LibraryViewController {
             updateCategoryMenu()
             var items: [UIBarButtonItem] = if isStackView {
                 [stackActionsBarButton, moreBarButton]
-            } else if isFavoritesTab || AppSettings.appearance.dedicatedSettingsTab.get() {
+            } else if isFavoritesTab {
+                [moreBarButton]
+            } else if Self.libraryActionsMenuEnabled {
+                [actionsBarButton, moreBarButton]
+            } else if AppSettings.appearance.dedicatedSettingsTab.get() {
                 [moreBarButton]
             } else {
                 [settingsBarButton, moreBarButton]
@@ -1317,7 +1336,7 @@ extension LibraryViewController {
     }
 
     @objc func selectAllItems() {
-        for item in dataSource.snapshot().itemIdentifiers where !item.isEmptyPinnedPlaceholder {
+        for item in dataSource.snapshot().itemIdentifiers where !item.isEmptyPinnedPlaceholder && !item.isLibraryStack {
             if let indexPath = dataSource.indexPath(for: item) {
                 collectionView.selectItem(at: indexPath, animated: false, scrollPosition: [])
             }
@@ -1375,6 +1394,11 @@ extension LibraryViewController {
                 self.shouldHideRefreshAfterDrag = false
             }
         }
+    }
+
+    private func refreshLibraryFromMenu() {
+        guard !refreshControl.isRefreshing else { return }
+        updateLibraryRefresh()
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -2586,24 +2610,63 @@ extension LibraryViewController {
             completion(self.isFavoritesTab || self.isStackView ? [filterMenu] : [filterMenu, self.makePinTitlesMenu()])
         }
 
-        var menuSections: [UIMenu] = []
-        if Self.selectionEnabled {
-            let selectAction = UIAction(
-                title: NSLocalizedString("SELECT"),
-                image: UIImage(systemName: "checkmark.circle")
-            ) { [weak self] _ in
-                self?.setEditing(true, animated: true)
-            }
-            menuSections.append(UIMenu(options: .displayInline, children: [selectAction]))
+        var menuSections = [
+            UIMenu(options: .displayInline, children: layoutActions),
+            UIMenu(options: .displayInline, children: [sortMenu, filterMenu])
+        ]
+        if Self.selectionEnabled && isFavoritesTab {
+            menuSections.insert(UIMenu(options: .displayInline, children: [makeSelectAction()]), at: 0)
         }
-        menuSections.append(UIMenu(options: .displayInline, children: layoutActions))
-        menuSections.append(UIMenu(options: .displayInline, children: [sortMenu, filterMenu]))
         moreBarButton.menu = UIMenu(children: menuSections)
 
         moreBarButton.isSelected = false
         moreBarButton.image = UIImage(systemName: "line.3.horizontal.decrease")
 
-        stackActionsBarButton.menu = viewModel.stackID.flatMap { makeStackActionsMenu(stackID: $0) }
+        updateActionsMenu()
+    }
+
+    private func makeSelectAction() -> UIAction {
+        UIAction(
+            title: NSLocalizedString("SELECT"),
+            image: UIImage(systemName: "checkmark.circle")
+        ) { [weak self] _ in
+            self?.setEditing(true, animated: true)
+        }
+    }
+
+    private func updateActionsMenu() {
+        if isStackView, let stackID = viewModel.stackID,
+           let stackMenu = makeStackActionsMenu(stackID: stackID) {
+            var sections: [UIMenu] = []
+            if Self.selectionEnabled {
+                sections.append(UIMenu(options: .displayInline, children: [makeSelectAction()]))
+            }
+            sections.append(UIMenu(options: .displayInline, children: stackMenu.children))
+            stackActionsBarButton.menu = UIMenu(children: sections)
+        } else {
+            var sections: [UIMenu] = []
+            if !isFavoritesTab && !AppSettings.appearance.dedicatedSettingsTab.get() {
+                let settingsAction = UIAction(
+                    title: NSLocalizedString("SETTINGS"),
+                    image: UIImage(systemName: "gearshape")
+                ) { [weak self] _ in
+                    self?.openSettings()
+                }
+                sections.append(UIMenu(options: .displayInline, children: [settingsAction]))
+            }
+
+            var actions: [UIAction] = Self.selectionEnabled ? [makeSelectAction()] : []
+            if !isFavoritesTab {
+                actions.append(UIAction(
+                    title: NSLocalizedString("REFRESH_LIBRARY"),
+                    image: UIImage(systemName: "arrow.clockwise")
+                ) { [weak self] _ in
+                    self?.refreshLibraryFromMenu()
+                })
+            }
+            sections.append(UIMenu(options: .displayInline, children: actions))
+            actionsBarButton.menu = UIMenu(children: sections)
+        }
     }
 }
 
@@ -2641,7 +2704,7 @@ extension LibraryViewController: LibraryCategorySelectionHeaderDelegate {
 
 // MARK: - Collection View Delegate
 extension LibraryViewController {
-    // Support two-finger drag to select when Library selection is enabled.
+    // Support two-finger drag to select library items.
     func collectionView(_ collectionView: UICollectionView, shouldBeginMultipleSelectionInteractionAt indexPath: IndexPath) -> Bool {
         guard Self.selectionEnabled else { return false }
         guard let item = dataSource.itemIdentifier(for: indexPath), !item.isEmptyPinnedPlaceholder else {
@@ -2962,7 +3025,7 @@ extension LibraryViewController {
             if mangaInfo.count == 1 {
                 mangaActions.append(UIAction(
                     title: NSLocalizedString("READ_INCOGNITO"),
-                    image: UIImage(systemName: "eye.slash")
+                    image: UIImage(systemName: "book.closed")
                 ) { _ in
                     self.openReaderIncognito(
                         for: manga,
