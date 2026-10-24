@@ -59,6 +59,7 @@ struct LabsFeaturesView: View {
     @AppStorage("General.recognizeCombinedBooks") private var recognizeCombinedBooks = false
     @AppStorage("General.disableTrackingMenu") private var disableTrackingMenu = false
     @AppStorage("General.libraryActionsMenu") private var libraryActionsMenu = false
+    @AppStorage("General.combinedNavigation") private var combinedNavigation = false
     @AppStorage("General.flareSolverrURL") private var flareSolverrURL = ""
     @AppStorage("General.flareSolverrFallback") private var flareSolverrFallback = true
 
@@ -87,6 +88,31 @@ struct LabsFeaturesView: View {
             } header: {
                 Text(NSLocalizedString("LABS_LIBRARY", value: "Library", comment: "Labs settings related to the Library"))
             }
+            if #available(iOS 27.0, *) {
+                Section {
+                    let enabledTabs = NavigationTab.ordered.filter { $0.isEnabled }
+                    let searchRequiresCombined = enabledTabs.contains(.search) && enabledTabs.last != .search
+                    Toggle(
+                        NSLocalizedString(
+                            "COMBINED_NAVIGATION",
+                            value: "Combined Navigation",
+                            comment: "Keep Search in the main tab bar instead of a separate button"
+                        ),
+                        isOn: Binding(
+                            get: { combinedNavigation || searchRequiresCombined },
+                            set: { combinedNavigation = $0 }
+                        )
+                    )
+                    .disabled(searchRequiresCombined)
+                } header: {
+                    Text(NSLocalizedString("NAVIGATION", value: "Navigation", comment: "Navigation section title"))
+                } footer: {
+                    if NavigationTab.ordered.filter({ $0.isEnabled }).contains(.search),
+                       NavigationTab.ordered.filter({ $0.isEnabled }).last != .search {
+                        Text("Combined Navigation is required while Search is not the last tab.")
+                    }
+                }
+            }
             Section {
                 TextField(NSLocalizedString("FLARESOLVERR_URL"), text: $flareSolverrURL, prompt: Text("http://127.0.0.1:8191"))
                     .keyboardType(.URL)
@@ -105,6 +131,9 @@ struct LabsFeaturesView: View {
         .navigationTitle(NSLocalizedString("LABS_FEATURES"))
         .onChange(of: libraryActionsMenu) { _ in
             NotificationCenter.default.post(name: .init(AppSettings.general.libraryActionsMenu.key), object: nil)
+        }
+        .onChange(of: combinedNavigation) { _ in
+            NotificationCenter.default.post(name: .init(AppSettings.general.combinedNavigation.key), object: nil)
         }
         .onChange(of: bookRenamingEnabled) { _ in
             // A nil object means every displayed series should return to its

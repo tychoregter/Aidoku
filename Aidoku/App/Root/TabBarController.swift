@@ -31,7 +31,9 @@ class TabBarController: UITabBarController {
         AppSettings.appearance.dedicatedFavoritesTab.get()
             || AppSettings.appearance.dedicatedBrowseTab.get()
             || AppSettings.appearance.dedicatedHistoryTab.get()
+            || AppSettings.appearance.dedicatedUpdatesTab.get()
             || AppSettings.appearance.dedicatedSettingsTab.get()
+            || AppSettings.appearance.dedicatedSearchTab.get()
     }
     private var originalFrame: CGRect = .zero
     private var shrunkFrame: CGRect = .zero
@@ -39,6 +41,7 @@ class TabBarController: UITabBarController {
 
     private var settingsPath: NavigationCoordinator?
     private var historyPath: NavigationCoordinator?
+    private var updatesPath: NavigationCoordinator?
     private weak var libraryViewController: LibraryViewController?
     private weak var favoritesViewController: LibraryViewController?
     private var previousSelectedIndex: Int?
@@ -47,18 +50,33 @@ class TabBarController: UITabBarController {
     private var favoritesNavigationController: UINavigationController?
     private var browseNavigationController: UINavigationController?
     private var historyNavigationController: UINavigationController?
+    private var updatesNavigationController: UINavigationController?
     private var searchNavigationController: UINavigationController?
+    private var combinedSearchNavigationController: UINavigationController?
     private var settingsViewController: UIViewController?
     private weak var settingsRootViewController: UIViewController?
     private var cachedModernTabs: [String: AnyObject] = [:]
 
+    // UIKit may hold both tab representations during setTabs. They must never
+    // resolve to the same navigation controller while Search changes position.
     private let searchController = SearchViewController()
+    private let combinedSearchController = SearchViewController()
+    private var usesRegularSearchTab: Bool {
+        let visibleTabs = NavigationTab.ordered.filter(\.isEnabled)
+        return visibleTabs.contains(.search) && visibleTabs.last != .search
+    }
+    private var activeSearchController: SearchViewController {
+        usesRegularSearchTab ? combinedSearchController : searchController
+    }
+    private var activeSearchNavigationController: UINavigationController? {
+        usesRegularSearchTab ? combinedSearchNavigationController : searchNavigationController
+    }
     override func viewDidLoad() {
         super.viewDidLoad()
 
         delegate = self
         if #available(iOS 26.0, *) {
-            tabBarMinimizeBehavior = .onScrollDown
+            updateTabBarMinimizeBehavior()
         }
 
         let libraryRootViewController = LibraryViewController()
@@ -76,6 +94,8 @@ class TabBarController: UITabBarController {
         browseNavigationController = browseViewController
         let searchViewController = NavigationController(rootViewController: searchController)
         searchNavigationController = searchViewController
+        let combinedSearchViewController = NavigationController(rootViewController: combinedSearchController)
+        combinedSearchNavigationController = combinedSearchViewController
 
         let historyPath = NavigationCoordinator(rootViewController: nil)
         let historyHostingController = UIHostingController(
@@ -85,6 +105,18 @@ class TabBarController: UITabBarController {
         let historyViewController = NavigationController(rootViewController: historyHostingController)
         self.historyPath = historyPath
         historyNavigationController = historyViewController
+
+        let updatesPath = NavigationCoordinator(rootViewController: nil)
+        let updatesHostingController = UIHostingController(
+            rootView: MangaUpdatesView(usesLargeTitle: true).environmentObject(updatesPath)
+        )
+        updatesHostingController.title = NSLocalizedString("MANGA_UPDATES")
+        updatesHostingController.navigationItem.largeTitleDisplayMode = .always
+        updatesPath.rootViewController = updatesHostingController
+        let updatesViewController = NavigationController(rootViewController: updatesHostingController)
+        updatesViewController.navigationBar.prefersLargeTitles = true
+        self.updatesPath = updatesPath
+        updatesNavigationController = updatesViewController
 
         let settingsPath = NavigationCoordinator(rootViewController: nil)
         // Browse, source, and manga-info screens are UIKit controllers.  Keeping
@@ -105,6 +137,7 @@ class TabBarController: UITabBarController {
         browseViewController.navigationBar.prefersLargeTitles = true
         historyViewController.navigationBar.prefersLargeTitles = true
         searchViewController.navigationBar.prefersLargeTitles = true
+        combinedSearchViewController.navigationBar.prefersLargeTitles = true
 
         configureTabs()
 
@@ -136,13 +169,42 @@ class TabBarController: UITabBarController {
         .receive(on: RunLoop.main)
         .sink { [weak self] _ in self?.configureTabs() }
         .store(in: &cancellables)
+        for key in [
+            AppSettings.appearance.dedicatedSearchTab.key,
+            AppSettings.appearance.dedicatedUpdatesTab.key,
+            AppSettings.appearance.navigationTabOrder.key
+        ] {
+            NotificationCenter.default.publisher(for: .init(key))
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in self?.configureTabs() }
+                .store(in: &cancellables)
+        }
         NotificationCenter.default.publisher(
             for: .init(AppSettings.appearance.dedicatedSettingsTab.key)
         )
         .receive(on: RunLoop.main)
         .sink { [weak self] _ in self?.settingsTabPreferenceDidChange() }
         .store(in: &cancellables)
+        NotificationCenter.default.publisher(
+            for: .init(AppSettings.appearance.collapseNavigationWhenScrolling.key)
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] _ in self?.updateTabBarMinimizeBehavior() }
+        .store(in: &cancellables)
+        NotificationCenter.default.publisher(
+            for: .init(AppSettings.general.combinedNavigation.key)
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] _ in self?.configureTabs() }
+        .store(in: &cancellables)
 
+    }
+
+    private func updateTabBarMinimizeBehavior() {
+        if #available(iOS 26.0, *) {
+            tabBarMinimizeBehavior = AppSettings.appearance.collapseNavigationWhenScrolling.get()
+                ? .onScrollDown : .never
+        }
     }
 
     private func configureTabs() {
@@ -151,65 +213,57 @@ class TabBarController: UITabBarController {
             let favoritesNavigationController,
             let browseNavigationController,
             let historyNavigationController,
+            let updatesNavigationController,
             let searchNavigationController,
+            let combinedSearchNavigationController,
             let settingsViewController
         else { return }
 
+        // The Settings controller cannot belong to a tab while it is still
+        // presented as the Library sheet. The preference handler rebuilds
+        // tabs in the sheet's dismissal completion instead.
+        guard !(AppSettings.appearance.dedicatedSettingsTab.get()
+            && settingsViewController.presentingViewController != nil)
+        else { return }
+
+        let visibleTabs = NavigationTab.ordered.filter(\.isEnabled)
+        let searchIsLast = visibleTabs.last == .search
+        let combinedNavigation = AppSettings.general.combinedNavigation.get() || !searchIsLast
+        if visibleTabs.contains(.search) {
+            activeSearchController.navigationItem.rightBarButtonItem = nil
+        }
+
         if #available(iOS 26.0, *) {
             let selectedIdentifier = selectedTab?.identifier
-            let libraryTab = modernTab(
-                title: NSLocalizedString("LIBRARY"),
-                image: UIImage(systemName: "books.vertical.fill"),
-                identifier: "library",
-                viewController: libraryNavigationController
-            )
-            libraryTab.allowsHiding = false
-            libraryTab.preferredPlacement = .fixed
-            var fixedTabs = [libraryTab]
-            if AppSettings.appearance.dedicatedFavoritesTab.get() {
-                fixedTabs.append(modernTab(
-                    title: "Favorites",
-                    image: UIImage(systemName: "heart.fill"),
-                    identifier: "favorites",
-                    viewController: favoritesNavigationController
-                ))
+            let wasSearchSelected = selectedTab.map(isSearchTab) ?? false
+            let configuredTabs: [UITab] = visibleTabs.map { item in
+                let tab: UITab
+                if item == .search && searchIsLast {
+                    let searchTab = modernSearchTab(viewController: searchNavigationController)
+                    searchTab.automaticallyActivatesSearch = !combinedNavigation
+                    tab = searchTab
+                } else {
+                    let (controller, image): (UIViewController, UIImage?) = switch item {
+                        case .library: (libraryNavigationController, UIImage(systemName: "books.vertical.fill"))
+                        case .favorites: (favoritesNavigationController, UIImage(systemName: "heart.fill"))
+                        case .browse: (browseNavigationController, UIImage(systemName: "globe"))
+                        case .history: (historyNavigationController, UIImage(systemName: "clock.fill"))
+                        case .updates: (updatesNavigationController, UIImage(systemName: "bell.fill"))
+                        case .settings: (settingsViewController, UIImage(systemName: "gear"))
+                        case .search: (combinedSearchNavigationController, UIImage(systemName: "magnifyingglass"))
+                    }
+                    tab = modernTab(title: item.title, image: image, identifier: item.rawValue, viewController: controller)
+                }
+                tab.allowsHiding = false
+                tab.preferredPlacement = .fixed
+                return tab
             }
-            if AppSettings.appearance.dedicatedBrowseTab.get() {
-                fixedTabs.append(
-                    modernTab(
-                        title: NSLocalizedString("BROWSE"),
-                        image: UIImage(systemName: "globe"),
-                        identifier: "browse",
-                        viewController: browseNavigationController
-                    )
-                )
+            if #available(iOS 27.0, *) {
+                prominentTabIdentifier = combinedNavigation ? nil : (configuredTabs.last as? UISearchTab)?.identifier
             }
-            if AppSettings.appearance.dedicatedHistoryTab.get() {
-                fixedTabs.append(
-                    modernTab(
-                        title: NSLocalizedString("HISTORY"),
-                        image: UIImage(systemName: "clock.fill"),
-                        identifier: "history",
-                        viewController: historyNavigationController
-                    )
-                )
-            }
-            if !usesLibrarySettingsOverlay {
-                fixedTabs.append(modernTab(
-                    title: NSLocalizedString("SETTINGS"),
-                    image: UIImage(systemName: "gear"),
-                    identifier: "settings",
-                    viewController: settingsViewController
-                ))
-            }
-            fixedTabs.dropFirst().forEach {
-                $0.allowsHiding = false
-                $0.preferredPlacement = .fixed
-            }
-            let searchTab = modernSearchTab(viewController: searchNavigationController)
-            tabs = hasDedicatedTabs ? fixedTabs + [searchTab] : fixedTabs
-            selectedTab = tabs.first { $0.identifier == selectedIdentifier ?? "library" }
-                ?? fixedTabs.first { $0.identifier == "library" }
+            tabs = configuredTabs
+            selectedTab = configuredTabs.first { wasSearchSelected ? isSearchTab($0) : $0.identifier == selectedIdentifier }
+                ?? configuredTabs.first { $0.identifier == NavigationTab.library.rawValue }
         } else {
             let selectedController = selectedViewController
             libraryNavigationController.tabBarItem = UITabBarItem(
@@ -223,6 +277,9 @@ class TabBarController: UITabBarController {
                 tag: 1
             )
             historyNavigationController.tabBarItem = UITabBarItem(tabBarSystemItem: .history, tag: 2)
+            updatesNavigationController.tabBarItem = UITabBarItem(
+                title: NSLocalizedString("MANGA_UPDATES"), image: UIImage(systemName: "bell.fill"), tag: 5
+            )
             favoritesNavigationController.tabBarItem = UITabBarItem(
                 title: "Favorites", image: UIImage(systemName: "heart.fill"), tag: 1
             )
@@ -232,15 +289,16 @@ class TabBarController: UITabBarController {
                 image: UIImage(systemName: "gear"),
                 tag: 4
             )
-            var controllers: [UIViewController] = [libraryNavigationController]
-            if AppSettings.appearance.dedicatedFavoritesTab.get() { controllers.append(favoritesNavigationController) }
-            if AppSettings.appearance.dedicatedBrowseTab.get() { controllers.append(browseNavigationController) }
-            if AppSettings.appearance.dedicatedHistoryTab.get() { controllers.append(historyNavigationController) }
-            if hasDedicatedTabs {
-                controllers.append(searchNavigationController)
-            }
-            if !usesLibrarySettingsOverlay {
-                controllers.append(settingsViewController)
+            let controllers: [UIViewController] = visibleTabs.map { item in
+                switch item {
+                    case .library: libraryNavigationController
+                    case .favorites: favoritesNavigationController
+                    case .browse: browseNavigationController
+                    case .history: historyNavigationController
+                    case .updates: updatesNavigationController
+                    case .settings: settingsViewController
+                    case .search: activeSearchNavigationController ?? searchNavigationController
+                }
             }
             viewControllers = controllers
             selectedViewController = controllers.contains { $0 === selectedController }
@@ -251,6 +309,11 @@ class TabBarController: UITabBarController {
         tabBar.isHidden = !hasDedicatedTabs
 
         previousSelectedIndex = selectedIndex
+    }
+
+    @available(iOS 26.0, *)
+    private func isSearchTab(_ tab: UITab) -> Bool {
+        tab.identifier == "search" || tab === cachedModernTabs["search"]
     }
 
     private func presentSettingsOverlay() {
@@ -401,13 +464,14 @@ class TabBarController: UITabBarController {
         identifier: String,
         viewController: UIViewController
     ) -> UITab {
-        if let tab = cachedModernTabs[identifier] as? UITab {
+        let cacheKey = identifier == "search" ? "searchRegular" : identifier
+        if let tab = cachedModernTabs[cacheKey] as? UITab {
             return tab
         }
         let tab = UITab(title: title, image: image, identifier: identifier) { _ in
             viewController
         }
-        cachedModernTabs[identifier] = tab
+        cachedModernTabs[cacheKey] = tab
         return tab
     }
 
@@ -453,13 +517,36 @@ class TabBarController: UITabBarController {
 extension TabBarController {
     func search(for query: String) {
         if #available(iOS 26.0, *) {
-            selectedTab = tabs.last
+            if let tab = tabs.first(where: isSearchTab) {
+                selectedTab = tab
+            } else {
+                presentSearchOverlay()
+            }
         } else {
-            selectedViewController = searchNavigationController
+            if viewControllers?.contains(where: { $0 === activeSearchNavigationController }) == true {
+                selectedViewController = activeSearchNavigationController
+            } else {
+                presentSearchOverlay()
+            }
         }
 
-        searchNavigationController?.popToRootViewController(animated: false)
-        searchController.search(for: query)
+        activeSearchNavigationController?.popToRootViewController(animated: false)
+        activeSearchController.search(for: query)
+    }
+
+    private func presentSearchOverlay() {
+        guard let searchNavigationController, searchNavigationController.presentingViewController == nil else { return }
+        searchController.navigationItem.rightBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .close,
+            target: self,
+            action: #selector(dismissSearchOverlay)
+        )
+        searchNavigationController.modalPresentationStyle = .pageSheet
+        selectedViewController?.present(searchNavigationController, animated: true)
+    }
+
+    @objc private func dismissSearchOverlay() {
+        searchNavigationController?.dismiss(animated: true)
     }
 
     override func viewDidLayoutSubviews() {
@@ -489,6 +576,12 @@ extension TabBarController: UITabBarControllerDelegate {
     @available(iOS 18.0, *)
     func tabBarController(_ tabBarController: UITabBarController, didSelectTab selectedTab: UITab, previousTab: UITab?) {
         checkForSettingsPop()
+        if #available(iOS 26.0, *), isSearchTab(selectedTab) {
+            let searchIsLast = tabs.last === selectedTab
+            if !searchIsLast || AppSettings.general.combinedNavigation.get() {
+                activeSearchController.focusSearchBar()
+            }
+        }
     }
 
     func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
@@ -510,6 +603,8 @@ extension TabBarController: UITabBarControllerDelegate {
         } else if tab.identifier == "settings" {
             popSettingsToRoot()
             scrollSettingsToTop()
+        } else if #available(iOS 26.0, *), isSearchTab(tab) {
+            activeSearchController.focusSearchBar()
         }
         return true
     }
@@ -527,6 +622,8 @@ extension TabBarController: UITabBarControllerDelegate {
         } else if viewController === settingsPath?.rootViewController || viewController === settingsPath?.navigationController {
             popSettingsToRoot()
             scrollSettingsToTop()
+        } else if viewController === activeSearchNavigationController {
+            activeSearchController.focusSearchBar()
         }
         return true
     }

@@ -14,6 +14,7 @@ class SearchViewController: UIViewController {
     private let searchController: UISearchController = .init(searchResultsController: nil)
 
     private var isSearchBarActive = false
+    private var shouldFocusSearchBar = false
     private var hasLoadedSources = false
     private var cancellables = Set<AnyCancellable>()
 
@@ -241,6 +242,27 @@ class SearchViewController: UIViewController {
         if let containerView = searchController.searchBar.value(forKey: "_scopeBarContainerView") as? UIView {
             containerView.alpha = 1
             containerView.isHidden = false
+        }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        activatePendingSearchFocus()
+    }
+
+    func focusSearchBar() {
+        shouldFocusSearchBar = true
+        loadViewIfNeeded()
+        activatePendingSearchFocus()
+    }
+
+    private func activatePendingSearchFocus() {
+        guard shouldFocusSearchBar, view.window != nil else { return }
+        shouldFocusSearchBar = false
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.view.window != nil else { return }
+            self.searchController.isActive = true
+            self.searchController.searchBar.becomeFirstResponder()
         }
     }
 

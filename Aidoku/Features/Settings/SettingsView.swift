@@ -154,6 +154,11 @@ extension SettingsView {
         )) { _ in
             navigationTabSettingsRevision += 1
         }
+        .onReceive(NotificationCenter.default.publisher(
+            for: .init(AppSettings.appearance.dedicatedUpdatesTab.key)
+        )) { _ in
+            navigationTabSettingsRevision += 1
+        }
         .environment(\.openSettingsPage) { key in
             switch key {
                 case "Browse":
@@ -526,7 +531,8 @@ extension SettingsView {
             for setting in group.items {
                 if (setting.key == "Browse" && AppSettings.appearance.dedicatedBrowseTab.get())
                     || (setting.key == "Favorites" && AppSettings.appearance.dedicatedFavoritesTab.get())
-                    || (setting.key == "History" && AppSettings.appearance.dedicatedHistoryTab.get()) {
+                    || (setting.key == "History" && AppSettings.appearance.dedicatedHistoryTab.get())
+                    || (setting.key == "MangaUpdates" && AppSettings.appearance.dedicatedUpdatesTab.get()) {
                     continue
                 }
                 if case let .page(pageSetting) = setting.value {

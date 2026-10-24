@@ -9,6 +9,7 @@ import AidokuRunner
 import SwiftUI
 
 struct MangaUpdatesView: View {
+    var usesLargeTitle = false
     struct UpdateSection: Hashable {
         let day: Int
         var items: [Item]
@@ -69,7 +70,7 @@ struct MangaUpdatesView: View {
                 }
             }
         }
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(usesLargeTitle ? .large : .inline)
         .navigationTitle(NSLocalizedString("MANGA_UPDATES"))
         .onReceive(NotificationCenter.default.publisher(for: .mangaUpdatesViewed)) { notification in
             guard let objects = notification.object as? [MangaUpdateItem] else { return }

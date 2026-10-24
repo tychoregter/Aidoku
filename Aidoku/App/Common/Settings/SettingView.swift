@@ -346,22 +346,15 @@ struct SettingView: View {
         !requires || requiresFalse || navigationTabLimitDisabled
     }
 
-    /// Keep the configurable tab bar compact. Existing enabled tabs remain
-    /// tappable so one can be turned off; only a fourth, currently-off choice
-    /// is disabled.
+    /// Library is always present, so at most four other tabs can be enabled.
     private var navigationTabLimitDisabled: Bool {
-        let keys = [
-            AppSettings.appearance.dedicatedFavoritesTab.key,
-            AppSettings.appearance.dedicatedBrowseTab.key,
-            AppSettings.appearance.dedicatedHistoryTab.key,
-            AppSettings.appearance.dedicatedSettingsTab.key
-        ]
+        let keys = NavigationTab.allCases.compactMap(\.settingKey)
         // During Toggle.onChange, `toggleValue` has already flipped but the
         // persisted value has not. Use the stored value so an enabled tab can
-        // always be switched off even when three tabs are currently enabled.
+        // always be switched off even when five tabs are currently enabled.
         let isPersistedOn: Bool = SettingsStore.shared.get(key: setting.key)
         guard keys.contains(setting.key), !isPersistedOn else { return false }
-        return keys.filter { SettingsStore.shared.get(key: $0) as Bool }.count >= 3
+        return keys.filter { SettingsStore.shared.get(key: $0) as Bool }.count >= 4
     }
 
     private let disabledOpacity: CGFloat = 0.5
@@ -371,11 +364,14 @@ struct SettingView: View {
 extension SettingView {
     @ViewBuilder
     func groupView(value: GroupSetting) -> some View {
-        if !disabled {
+        if setting.key == "Appearance.navigationTabs" {
+            NavigationTabSettingsView()
+        } else if !disabled {
             let items = value.items.filter {
                 !($0.key == "Browse" && AppSettings.appearance.dedicatedBrowseTab.get())
                     && !($0.key == "Favorites" && AppSettings.appearance.dedicatedFavoritesTab.get())
                     && !($0.key == "History" && AppSettings.appearance.dedicatedHistoryTab.get())
+                    && !($0.key == "MangaUpdates" && AppSettings.appearance.dedicatedUpdatesTab.get())
             }
             let body = ForEach(items.indices, id: \.self) { offset in
                 let setting = items[offset]
@@ -407,6 +403,102 @@ extension SettingView {
                     body
                 }
             }
+        }
+    }
+}
+
+private struct NavigationTabSettingsView: View {
+    var body: some View {
+        Section {
+            NavigationLink("Reorganize Navigation") {
+                NavigationTabEditorView()
+            }
+        }
+    }
+}
+
+/// Keep the editor's order and the actual tab bar backed by the same setting.
+private struct NavigationTabEditorView: View {
+    @State private var order = NavigationTab.ordered
+    @State private var revision = 0
+
+    private var activeTabs: [NavigationTab] {
+        order.filter(\.isEnabled)
+    }
+
+    private var inactiveTabs: [NavigationTab] {
+        order.filter { !$0.isEnabled }
+    }
+
+    var body: some View {
+        let _ = revision
+        List {
+            Section {
+                ForEach(activeTabs) { tab in
+                    Text(tab.title)
+                        .deleteDisabled(tab == .library)
+                }
+                .onDelete { offsets in
+                    for tab in offsets.map({ activeTabs[$0] }) where tab != .library {
+                        setEnabled(false, for: tab)
+                    }
+                }
+                .onMove { from, to in
+                    var active = activeTabs
+                    active.move(fromOffsets: from, toOffset: to)
+                    order = active + order.filter { !$0.isEnabled }
+                    saveOrder()
+                }
+            }
+            Section {
+                ForEach(inactiveTabs) { tab in
+                    Button {
+                        setEnabled(true, for: tab)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 22))
+                                .foregroundStyle(.green)
+                            Text(tab.title)
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(activeTabs.count >= 5)
+                }
+            } footer: {
+                Text("Show up to five tabs. Library cannot be removed.")
+            }
+        }
+        // Recreate the editing list when its membership changes. Otherwise
+        // rows moved from the add section can lack UIKit's delete/move controls
+        // until the screen is opened again.
+        .id(activeTabs.map(\.rawValue).sorted().joined(separator: ","))
+        .listStyle(.insetGrouped)
+        .navigationTitle("Reorganize Navigation")
+        .environment(\.editMode, .constant(.active))
+        .onReceive(NotificationCenter.default.publisher(for: .init(AppSettings.appearance.navigationTabOrder.key))) { _ in
+            order = NavigationTab.ordered
+        }
+    }
+
+    private func setEnabled(_ enabled: Bool, for tab: NavigationTab) {
+        guard let key = tab.settingKey else { return }
+        var active = activeTabs.filter { $0 != tab }
+        if enabled { active.append(tab) }
+        order = active + order.filter { !$0.isEnabled && $0 != tab } + (enabled ? [] : [tab])
+        UserDefaults.standard.set(enabled, forKey: key)
+        revision += 1
+        // Settings may still be presented as a sheet. Its preference handler
+        // dismisses the sheet before rebuilding the tab bar.
+        saveOrder(notify: tab != .settings)
+        NotificationCenter.default.post(name: .init(key), object: enabled)
+    }
+
+    private func saveOrder(notify: Bool = true) {
+        AppSettings.appearance.navigationTabOrder.set(order.map(\.rawValue))
+        if notify {
+            NotificationCenter.default.post(name: .init(AppSettings.appearance.navigationTabOrder.key), object: nil)
         }
     }
 }

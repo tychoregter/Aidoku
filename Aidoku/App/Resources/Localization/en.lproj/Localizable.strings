@@ -383,6 +383,10 @@
 "DISABLE_TRACKING_MENU" = "Disable Tracking Menu";
 "LABS_LIBRARY" = "Library";
 "LIBRARY_ACTIONS_MENU" = "Library Actions Menu";
+"COLLAPSE_NAVIGATION_WHEN_SCROLLING" = "Collapse Navigation When Scrolling";
+"HIDE_WHEN_SCROLLING" = "Hide Navigation When Scrolling";
+"COMBINED_NAVIGATION" = "Combined Navigation";
+"NAVIGATION" = "Navigation";
 "RENAMED_BOOKS" = "Renamed Books";
 "NO_RENAMED_BOOKS" = "No renamed books yet.";
 "ADD_BOOK_RENAME" = "Add Book Rename";

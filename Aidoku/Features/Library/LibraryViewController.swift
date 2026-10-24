@@ -3168,8 +3168,9 @@ extension LibraryViewController {
                 })
             }
 
+            var removeFromLibraryAction: UIAction?
             if self.isFavoritesTab || canRemoveFromLibrary || nonLibraryContinueReading {
-                bottomMenuChildren.append(UIAction(
+                let action = UIAction(
                     title: self.isFavoritesTab
                         ? NSLocalizedString("UNFAVORITE")
                         : nonLibraryContinueReading
@@ -3220,10 +3221,18 @@ extension LibraryViewController {
                     } else {
                         self.removeFromLibrary(mangaInfo: mangaInfo)
                     }
-                })
+                }
+                if canRemoveFromLibrary {
+                    removeFromLibraryAction = action
+                } else {
+                    bottomMenuChildren.append(action)
+                }
             }
 
             actions.append(UIMenu(options: .displayInline, children: bottomMenuChildren))
+            if let removeFromLibraryAction {
+                actions.append(UIMenu(options: .displayInline, children: [removeFromLibraryAction]))
+            }
 
             return UIMenu(title: "", children: actions)
         }

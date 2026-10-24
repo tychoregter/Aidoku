@@ -73,7 +73,7 @@ enum Settings {
                 value: .page(.init(
                     items: [],
                     inlineTitle: true,
-                    icon: .system(name: "bell", color: "green")
+                    icon: .system(name: "bell.fill", color: "green")
                 ))
             ),
             .init(
@@ -269,33 +269,26 @@ extension Settings {
             ]))
         ),
         .init(
+            key: "Appearance.navigationTabs",
             title: "Navigation",
-            value: .group(.init(
-                footer: "Choose up to three tabs to show alongside Library. If none are enabled, the tab bar is hidden.",
-                items: [
+            value: .group(.init(items: []))
+        ),
+        .init(value: .group(.init(items: {
+            if #available(iOS 26.0, *) {
+                return [
                     .init(
-                        key: AppSettings.appearance.dedicatedFavoritesTab.key,
-                        title: "Show Favorites Tab",
-                        value: .toggle(.init())
-                    ),
-                    .init(
-                        key: AppSettings.appearance.dedicatedBrowseTab.key,
-                        title: "Show Browse Tab",
-                        value: .toggle(.init())
-                    ),
-                    .init(
-                        key: AppSettings.appearance.dedicatedHistoryTab.key,
-                        title: "Show History Tab",
-                        value: .toggle(.init())
-                    ),
-                    .init(
-                        key: AppSettings.appearance.dedicatedSettingsTab.key,
-                        title: "Show Settings Tab",
+                        key: AppSettings.appearance.collapseNavigationWhenScrolling.key,
+                        title: NSLocalizedString(
+                            "HIDE_WHEN_SCROLLING",
+                            value: "Hide Navigation When Scrolling",
+                            comment: "Hide the bottom navigation bar while scrolling"
+                        ),
                         value: .toggle(.init())
                     )
                 ]
-            ))
-        )
+            }
+            return []
+        }())))
     ]
 
     private static let filterSettings: [Setting] = [

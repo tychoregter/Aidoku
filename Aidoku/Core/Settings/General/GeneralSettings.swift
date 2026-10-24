@@ -15,6 +15,7 @@ struct GeneralSettings: Sendable {
             recognizeCombinedBooks,
             disableTrackingMenu,
             libraryActionsMenu,
+            combinedNavigation,
             developerMode,
             flareSolverrURL,
             flareSolverrFallback
@@ -27,6 +28,7 @@ struct GeneralSettings: Sendable {
     let recognizeCombinedBooks = SettingsKey<Bool>("General.recognizeCombinedBooks", default: false)
     let disableTrackingMenu = SettingsKey<Bool>("General.disableTrackingMenu", default: false)
     let libraryActionsMenu = SettingsKey<Bool>("General.libraryActionsMenu", default: false)
+    let combinedNavigation = SettingsKey<Bool>("General.combinedNavigation", default: false)
     let developerMode = SettingsKey<Bool>("General.developerMode", default: false)
     let flareSolverrURL = SettingsKey<String>("General.flareSolverrURL", default: "")
     let flareSolverrFallback = SettingsKey<Bool>("General.flareSolverrFallback", default: true)
