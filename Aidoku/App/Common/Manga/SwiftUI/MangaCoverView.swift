@@ -109,6 +109,7 @@ struct MangaCoverView: View {
                     .foregroundStyle(Color(uiColor: CoverPalette.hiddenForegroundColor(
                         for: coverImage, dark: colorScheme == .dark, identifier: paletteIdentifier
                     ) ?? NSFWCoverView.foregroundColor(for: hiddenCoverColor)))
+                    .opacity(Double(NSFWCoverView.iconOpacity))
             }
         }
         .overlay(

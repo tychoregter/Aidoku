@@ -34,6 +34,10 @@ class MangaGridCell: UICollectionViewCell {
             coverAspectConstraint?.isActive = showsCaption
             titleLabel.isHidden = !showsCaption || isPlaceholder
             subtitleLabel.isHidden = !showsCaption || isPlaceholder
+            placeholderCaptionBars.isHidden = !showsCaption || !isHiddenCoverPlaceholder
+            if isHiddenCoverPlaceholder {
+                nsfwCoverView.presentation = showsCaption ? .iconOnly : .title
+            }
         }
     }
 
@@ -62,6 +66,9 @@ class MangaGridCell: UICollectionViewCell {
     private let placeholderIconView = UIImageView()
     private let placeholderLabel = UILabel()
     private let placeholderStackView = UIStackView()
+    private let placeholderCaptionBars = UIStackView()
+    private let placeholderTitleBar = UIView()
+    private let placeholderSubtitleBar = UIView()
     private let overlayView = UIView()
     private let gradient = CAGradientLayer()
     private let nsfwCoverView: NSFWCoverView = {
@@ -80,6 +87,7 @@ class MangaGridCell: UICollectionViewCell {
     private var imageTask: ImageTask?
     var isEditing = false
     private var isPlaceholder = false
+    private var isHiddenCoverPlaceholder = false
     private var hidesNSFWCover = false
     private var originalCoverImage: UIImage?
     private var grayscalesCaughtUpCover = false
@@ -144,6 +152,17 @@ class MangaGridCell: UICollectionViewCell {
         placeholderStackView.addArrangedSubview(placeholderLabel)
         placeholderStackView.isHidden = true
         coverView.addSubview(placeholderStackView)
+
+        placeholderCaptionBars.axis = .vertical
+        placeholderCaptionBars.alignment = .leading
+        placeholderCaptionBars.spacing = 6
+        for bar in [placeholderTitleBar, placeholderSubtitleBar] {
+            bar.backgroundColor = UIColor.label.withAlphaComponent(0.14)
+            bar.layer.cornerRadius = 4
+            placeholderCaptionBars.addArrangedSubview(bar)
+        }
+        placeholderCaptionBars.isHidden = true
+        contentView.addSubview(placeholderCaptionBars)
 
         gradient.frame = bounds
         gradient.locations = [0.6, 1]
@@ -230,6 +249,9 @@ class MangaGridCell: UICollectionViewCell {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         subtitleLabel.translatesAutoresizingMaskIntoConstraints = false
         placeholderStackView.translatesAutoresizingMaskIntoConstraints = false
+        placeholderCaptionBars.translatesAutoresizingMaskIntoConstraints = false
+        placeholderTitleBar.translatesAutoresizingMaskIntoConstraints = false
+        placeholderSubtitleBar.translatesAutoresizingMaskIntoConstraints = false
         badgeView.translatesAutoresizingMaskIntoConstraints = false
         bookmarkView.translatesAutoresizingMaskIntoConstraints = false
         highlightView.translatesAutoresizingMaskIntoConstraints = false
@@ -257,6 +279,13 @@ class MangaGridCell: UICollectionViewCell {
             placeholderStackView.centerYAnchor.constraint(equalTo: coverView.centerYAnchor),
             placeholderIconView.widthAnchor.constraint(equalToConstant: 22),
             placeholderIconView.heightAnchor.constraint(equalToConstant: 22),
+
+            placeholderCaptionBars.topAnchor.constraint(equalTo: coverView.bottomAnchor, constant: 8),
+            placeholderCaptionBars.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            placeholderTitleBar.widthAnchor.constraint(equalTo: coverView.widthAnchor, multiplier: 0.55),
+            placeholderTitleBar.heightAnchor.constraint(equalToConstant: 8),
+            placeholderSubtitleBar.widthAnchor.constraint(equalTo: coverView.widthAnchor, multiplier: 0.32),
+            placeholderSubtitleBar.heightAnchor.constraint(equalToConstant: 8),
 
             overlayView.topAnchor.constraint(equalTo: coverView.topAnchor),
             overlayView.leadingAnchor.constraint(equalTo: coverView.leadingAnchor),
@@ -334,6 +363,8 @@ class MangaGridCell: UICollectionViewCell {
         updateCoverImage()
         updatePosterBorderAppearance()
         guard hidesNSFWCover else { return }
+        nsfwCoverView.foregroundColorOverride = nil
+        nsfwCoverView.symbolName = "eye.slash"
         nsfwCoverView.presentation = hidesNSFW
             ? (AppSettings.library.hideCoverTitles.get() ? .title : .iconOnly)
             : .blank
@@ -369,11 +400,15 @@ class MangaGridCell: UICollectionViewCell {
     func setPlaceholder(
         _ text: String?,
         symbolName: String? = nil,
-        horizontalPadding: CGFloat = 12
+        horizontalPadding: CGFloat = 12,
+        matchesHiddenCover: Bool = false
     ) {
+        let wasHiddenCoverPlaceholder = isHiddenCoverPlaceholder
         isPlaceholder = text != nil
+        isHiddenCoverPlaceholder = isPlaceholder && matchesHiddenCover
         titleLabel.isHidden = !showsCaption || isPlaceholder
         subtitleLabel.isHidden = !showsCaption || isPlaceholder
+        placeholderCaptionBars.isHidden = !showsCaption || !isHiddenCoverPlaceholder
         placeholderLabel.text = text
         placeholderIconView.image = symbolName.flatMap {
             UIImage(
@@ -381,7 +416,7 @@ class MangaGridCell: UICollectionViewCell {
                 withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
             )
         }
-        placeholderStackView.isHidden = !isPlaceholder
+        placeholderStackView.isHidden = !isPlaceholder || isHiddenCoverPlaceholder
         placeholderLeadingConstraint?.constant = horizontalPadding
         placeholderTrailingConstraint?.constant = -horizontalPadding
         imageView.isHidden = isPlaceholder
@@ -390,9 +425,25 @@ class MangaGridCell: UICollectionViewCell {
         selectionView.isHidden = isPlaceholder || !isEditing
         shadowOverlayView.isHidden = isPlaceholder
         coverView.backgroundColor = isPlaceholder ? Self.coverBackgroundColor : .clear
+        if isHiddenCoverPlaceholder {
+            hidesNSFWCover = true
+            nsfwCoverView.foregroundColorOverride = .secondaryLabel
+            nsfwCoverView.symbolName = symbolName ?? "eye.slash"
+            nsfwCoverView.presentation = showsCaption ? .iconOnly : .title
+            nsfwCoverView.layer.cornerRadius = coverView.layer.cornerRadius
+            nsfwCoverView.layer.cornerCurve = .continuous
+            nsfwCoverView.configure(title: text)
+            nsfwCoverView.isHidden = false
+        } else if wasHiddenCoverPlaceholder {
+            hidesNSFWCover = false
+            nsfwCoverView.isHidden = true
+            nsfwCoverView.foregroundColorOverride = nil
+            nsfwCoverView.symbolName = "eye.slash"
+        }
+        updatePosterBorderAppearance()
         if isPlaceholder {
             updatePlaceholderAppearance()
-            coverView.bringSubviewToFront(placeholderStackView)
+            coverView.bringSubviewToFront(isHiddenCoverPlaceholder ? nsfwCoverView : placeholderStackView)
         }
     }
 }
@@ -614,6 +665,8 @@ enum MangaCoverImageAppearance {
 }
 
 final class NSFWCoverView: UIView {
+    static let iconOpacity: CGFloat = 0.6
+
     enum Presentation {
         case title
         case iconOnly
@@ -626,6 +679,10 @@ final class NSFWCoverView: UIView {
     var iconOnlySize: CGFloat = 32 {
         didSet { updatePresentation() }
     }
+    var symbolName = "eye.slash" {
+        didSet { updatePresentation() }
+    }
+    var foregroundColorOverride: UIColor?
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
     private let stackView = UIStackView()
@@ -654,6 +711,7 @@ final class NSFWCoverView: UIView {
         }
 
         iconView.contentMode = .scaleAspectFit
+        iconView.alpha = Self.iconOpacity
         iconView.image = UIImage(
             systemName: "eye.slash",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
@@ -712,7 +770,7 @@ final class NSFWCoverView: UIView {
         iconWidth?.constant = size
         iconHeight?.constant = size
         iconView.image = UIImage(
-            systemName: "eye.slash",
+            systemName: symbolName,
             withConfiguration: UIImage.SymbolConfiguration(pointSize: size, weight: .semibold)
         )
     }
@@ -735,8 +793,8 @@ final class NSFWCoverView: UIView {
             CoverPalette.hiddenForegroundColor(for: $0, dark: isDark, identifier: identifier)
         }
             ?? Self.foregroundColor(for: background)
-        iconView.tintColor = foreground
-        titleLabel.textColor = foreground
+        iconView.tintColor = foregroundColorOverride ?? foreground
+        titleLabel.textColor = foregroundColorOverride ?? foreground
 
         layer.borderWidth = MangaCoverBorderStyle.width(for: traitCollection)
         layer.borderColor = Self.blend(

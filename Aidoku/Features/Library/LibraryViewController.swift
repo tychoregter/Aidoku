@@ -868,7 +868,8 @@ class LibraryViewController: OldMangaCollectionViewController {
                 case .pinned: self.shouldShowPinnedPlaceholder
                 default: false
             }
-            let sectionShowsCaptions = showsCaptions && !isPinnedPlaceholderSection
+            let sectionShowsCaptions = showsCaptions
+                && (!isPinnedPlaceholderSection || sectionIdentifier == .continueReading)
             let usesHorizontalPinnedRow = sectionIdentifier == .continueReading
                 || (sectionIdentifier == .pinned
                     && self.usesSeparatedPinnedSections
@@ -923,16 +924,17 @@ class LibraryViewController: OldMangaCollectionViewController {
     override func configure(cell: MangaGridCell, info: MangaInfo, indexPath: IndexPath) {
         let showsCaption = !AppSettings.library.hideCoverTitles.get()
         if info.isEmptyPinnedPlaceholder {
-            cell.showsCaption = false
+            let isContinueReadingPlaceholder = dataSource.snapshot()
+                .sectionIdentifiers[safe: indexPath.section] == .continueReading
+            cell.showsCaption = showsCaption && isContinueReadingPlaceholder
             cell.identifier = nil
             cell.setPlaceholder(
-                DeveloperMode.enabled ? "Collection" : info.title,
+                DeveloperMode.enabled && !isContinueReadingPlaceholder ? "Collection" : info.title,
                 symbolName: pinTypeIconName(
-                    for: dataSource.snapshot().sectionIdentifiers[safe: indexPath.section] == .continueReading
-                        ? .started
-                        : viewModel.pinType
+                    for: isContinueReadingPlaceholder ? .started : viewModel.pinType
                 ),
-                horizontalPadding: AppSettings.appearance.layout.get() == .standard ? 20 : 12
+                horizontalPadding: AppSettings.appearance.layout.get() == .standard ? 20 : 12,
+                matchesHiddenCover: isContinueReadingPlaceholder
             )
             cell.setEditing(false, animated: false)
             return

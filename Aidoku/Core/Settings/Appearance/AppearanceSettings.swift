@@ -42,7 +42,7 @@ struct AppearanceSettings: Sendable {
     let dedicatedBrowseTab = SettingsKey<Bool>("Appearance.dedicatedBrowseTab", default: true)
     let dedicatedHistoryTab = SettingsKey<Bool>("Appearance.dedicatedHistoryTab", default: false)
     let dedicatedFavoritesTab = SettingsKey<Bool>("Appearance.dedicatedFavoritesTab", default: false)
-    let dedicatedSettingsTab = SettingsKey<Bool>("Appearance.dedicatedSettingsTab", default: false)
+    let dedicatedSettingsTab = SettingsKey<Bool>("Appearance.dedicatedSettingsTab", default: true)
     let dedicatedSearchTab = SettingsKey<Bool>("Appearance.dedicatedSearchTab", default: true)
     let dedicatedUpdatesTab = SettingsKey<Bool>("Appearance.dedicatedUpdatesTab", default: false)
     let navigationTabOrder = SettingsKey<[String]>("Appearance.navigationTabOrder", default: NavigationTab.allCases.map(\.rawValue))
@@ -57,7 +57,7 @@ struct AppearanceSettings: Sendable {
 }
 
 enum NavigationTab: String, CaseIterable, Identifiable {
-    case library, favorites, browse, history, updates, settings, search
+    case library, browse, search, settings, history, updates, favorites
 
     var id: String { rawValue }
 
