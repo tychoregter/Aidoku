@@ -348,7 +348,7 @@ extension SettingsView {
 
     @ViewBuilder
     func pageContentHandler(_ key: String) -> (some View)? {
-        if key == "Advanced.labsFeatures" {
+        if key == "Labs" {
             LabsFeaturesView(path: path)
         } else if key == "Library.categories" {
             CategoriesView(categories: $categoriesOnly)

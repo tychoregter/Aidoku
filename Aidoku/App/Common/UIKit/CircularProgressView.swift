@@ -37,6 +37,11 @@ class CircularProgressView: UIView {
     }
     var lineWidth: CGFloat = 3
     var radius: CGFloat = 20
+    var roundedProgressEnds = false {
+        didSet {
+            progressLayer.lineCap = roundedProgressEnds ? .round : .butt
+        }
+    }
 
     private var progressQueue: [Float] = []
     private var isAnimating = false

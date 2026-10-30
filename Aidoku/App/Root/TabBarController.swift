@@ -56,6 +56,54 @@ class TabBarController: UITabBarController {
     private var settingsViewController: UIViewController?
     private weak var settingsRootViewController: UIViewController?
     private var cachedModernTabs: [String: AnyObject] = [:]
+    private var libraryRefreshIsActive = false
+    private var libraryRefreshIsManual = false
+    private var libraryRefreshAccessoryIsVisible = false
+    private var libraryRefreshProgress: Float = 0
+    private var libraryRefreshSession = 0
+    private lazy var libraryProgressView = CircularProgressView(frame: CGRect(x: 0, y: 0, width: 20, height: 20))
+
+    private lazy var libraryRefreshAccessory: UIView = {
+        let accessory = UIView()
+        let label = UILabel()
+        label.text = NSLocalizedString("REFRESHING_LIBRARY")
+        label.translatesAutoresizingMaskIntoConstraints = false
+        accessory.addSubview(label)
+
+        libraryProgressView.radius = 12
+        libraryProgressView.lineWidth = 3
+        libraryProgressView.roundedProgressEnds = true
+        libraryProgressView.translatesAutoresizingMaskIntoConstraints = false
+        accessory.addSubview(libraryProgressView)
+
+        if #unavailable(iOS 26.0) {
+            let background = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+            background.layer.cornerRadius = 24
+            background.layer.borderColor = UIColor.quaternarySystemFill.cgColor
+            background.layer.borderWidth = 1
+            background.clipsToBounds = true
+            background.translatesAutoresizingMaskIntoConstraints = false
+            accessory.insertSubview(background, at: 0)
+            NSLayoutConstraint.activate([
+                background.leadingAnchor.constraint(equalTo: accessory.leadingAnchor),
+                background.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
+                background.topAnchor.constraint(equalTo: accessory.topAnchor),
+                background.bottomAnchor.constraint(equalTo: accessory.bottomAnchor)
+            ])
+        }
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: accessory.leadingAnchor, constant: 16),
+            label.trailingAnchor.constraint(equalTo: libraryProgressView.leadingAnchor, constant: -16),
+            label.centerYAnchor.constraint(equalTo: accessory.centerYAnchor),
+            label.heightAnchor.constraint(equalToConstant: 48),
+            libraryProgressView.trailingAnchor.constraint(equalTo: accessory.trailingAnchor, constant: -16),
+            libraryProgressView.centerYAnchor.constraint(equalTo: accessory.centerYAnchor),
+            libraryProgressView.widthAnchor.constraint(equalToConstant: 20),
+            libraryProgressView.heightAnchor.constraint(equalToConstant: 20)
+        ])
+        return accessory
+    }()
 
     // UIKit may hold both tab representations during setTabs. They must never
     // resolve to the same navigation controller while Search changes position.
@@ -196,6 +244,18 @@ class TabBarController: UITabBarController {
         )
         .receive(on: RunLoop.main)
         .sink { [weak self] _ in self?.configureTabs() }
+        .store(in: &cancellables)
+        NotificationCenter.default.publisher(
+            for: .init(AppSettings.general.showRefreshProgress.key)
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] _ in self?.updateLibraryRefreshAccessoryVisibility() }
+        .store(in: &cancellables)
+        NotificationCenter.default.publisher(
+            for: .init(AppSettings.general.hideAutomaticRefreshProgress.key)
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] _ in self?.updateLibraryRefreshAccessoryVisibility() }
         .store(in: &cancellables)
 
     }
@@ -515,6 +575,65 @@ class TabBarController: UITabBarController {
 }
 
 extension TabBarController {
+    func showLibraryRefreshView(isManual: Bool) {
+        libraryRefreshSession += 1
+        libraryRefreshIsActive = true
+        libraryRefreshIsManual = isManual
+        libraryRefreshProgress = 0
+        if libraryRefreshAccessoryIsVisible {
+            libraryProgressView.setProgress(value: 0, withAnimation: false)
+        }
+        updateLibraryRefreshAccessoryVisibility()
+    }
+
+    func setLibraryRefreshProgress(_ progress: Float) {
+        libraryRefreshProgress = progress
+        guard libraryRefreshAccessoryIsVisible else { return }
+        libraryProgressView.setProgress(value: progress, withAnimation: true)
+    }
+
+    func finishLibraryRefreshView() async {
+        let session = libraryRefreshSession
+        if libraryRefreshAccessoryIsVisible {
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+        guard session == libraryRefreshSession else { return }
+        libraryRefreshIsActive = false
+        updateLibraryRefreshAccessoryVisibility()
+    }
+
+    private func updateLibraryRefreshAccessoryVisibility() {
+        let shouldShow = libraryRefreshIsActive
+            && AppSettings.general.showRefreshProgress.get()
+            && (libraryRefreshIsManual || !AppSettings.general.hideAutomaticRefreshProgress.get())
+        guard shouldShow != libraryRefreshAccessoryIsVisible else { return }
+        libraryRefreshAccessoryIsVisible = shouldShow
+        if shouldShow {
+            libraryProgressView.setProgress(value: libraryRefreshProgress, withAnimation: false)
+            if #available(iOS 26.0, *) {
+                setBottomAccessory(.init(contentView: libraryRefreshAccessory), animated: true)
+            } else {
+                libraryRefreshAccessory.layer.removeAllAnimations()
+                libraryRefreshAccessory.layer.opacity = 0
+                view.insertSubview(libraryRefreshAccessory, belowSubview: tabBar)
+                view.setNeedsLayout()
+                UIView.animate(withDuration: 0.5) {
+                    self.libraryRefreshAccessory.layer.opacity = 1
+                }
+            }
+        } else if #available(iOS 26.0, *) {
+            setBottomAccessory(nil, animated: true)
+        } else {
+            UIView.animate(withDuration: 0.5) {
+                self.libraryRefreshAccessory.layer.opacity = 0
+            } completion: { _ in
+                if !self.libraryRefreshAccessoryIsVisible {
+                    self.libraryRefreshAccessory.removeFromSuperview()
+                }
+            }
+        }
+    }
+
     func search(for query: String) {
         if #available(iOS 26.0, *) {
             if let tab = tabs.first(where: isSearchTab) {
@@ -550,6 +669,15 @@ extension TabBarController {
     }
 
     override func viewDidLayoutSubviews() {
+        if #unavailable(iOS 26.0), libraryRefreshAccessoryIsVisible {
+            let padding: CGFloat = 16
+            libraryRefreshAccessory.frame = CGRect(
+                x: tabBar.frame.minX + view.safeAreaInsets.left + padding,
+                y: tabBar.frame.minY - 48 - padding / 2,
+                width: tabBar.frame.width - padding * 2 - view.safeAreaInsets.left - view.safeAreaInsets.right,
+                height: 48
+            )
+        }
         updateFrame()
     }
 

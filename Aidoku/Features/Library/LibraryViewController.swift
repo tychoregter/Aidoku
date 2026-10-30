@@ -329,7 +329,7 @@ class LibraryViewController: OldMangaCollectionViewController {
                     header?.configure(title: NSLocalizedString("LIBRARY"))
             }
             if let header {
-                self.alignSectionHeader(header, at: indexPath)
+                header.setAlignmentContext(collectionView: collectionView, navigationBar: self.navigationController?.navigationBar)
             }
             return header
         }
@@ -379,16 +379,7 @@ class LibraryViewController: OldMangaCollectionViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
-        for indexPath in collectionView.indexPathsForVisibleSupplementaryElements(
-            ofKind: UICollectionView.elementKindSectionHeader
-        ) {
-            if let header = collectionView.supplementaryView(
-                forElementKind: UICollectionView.elementKindSectionHeader,
-                at: indexPath
-            ) as? LibrarySectionHeader {
-                alignSectionHeader(header, at: indexPath)
-            }
-        }
+        layoutVisibleSectionHeaders()
 
         // UIKit implements orthogonal compositional-layout sections with
         // nested scroll views. Continue Reading and horizontal pinned rows
@@ -397,28 +388,18 @@ class LibraryViewController: OldMangaCollectionViewController {
         enableHorizontalRowBouncing(in: collectionView)
     }
 
-    private func alignSectionHeader(_ header: LibrarySectionHeader, at indexPath: IndexPath) {
-        guard let navigationBar = navigationController?.navigationBar else { return }
-        let marginFrame = navigationBar.layoutMarginsGuide.layoutFrame
-        let isRightToLeft = view.effectiveUserInterfaceLayoutDirection == .rightToLeft
-        let titleEdge = isRightToLeft ? marginFrame.maxX : marginFrame.minX
-        let titleEdgeInCollection = navigationBar.convert(
-            CGPoint(x: titleEdge, y: 0),
-            to: collectionView
-        ).x
-        let layoutFrame = collectionView.collectionViewLayout.layoutAttributesForSupplementaryView(
-            ofKind: UICollectionView.elementKindSectionHeader,
-            at: indexPath
-        )?.frame ?? header.frame
-        // Orthogonal sections can place the actual supplementary view farther
-        // in than its layout attributes, especially for an empty placeholder.
-        let headerFrame = header.frame.width > 0 ? header.frame : layoutFrame
-        let targetEdge = isRightToLeft
-            ? min(collectionView.bounds.width - 20, titleEdgeInCollection)
-            : max(20, titleEdgeInCollection)
-        header.leadingInset = max(0, isRightToLeft
-            ? headerFrame.maxX - targetEdge
-            : targetEdge - headerFrame.minX)
+    private func layoutVisibleSectionHeaders() {
+        for indexPath in collectionView.indexPathsForVisibleSupplementaryElements(
+            ofKind: UICollectionView.elementKindSectionHeader
+        ) {
+            if let header = collectionView.supplementaryView(
+                forElementKind: UICollectionView.elementKindSectionHeader,
+                at: indexPath
+            ) as? LibrarySectionHeader {
+                header.setNeedsLayout()
+                header.layoutIfNeeded()
+            }
+        }
     }
 
     private func enableHorizontalRowBouncing(in view: UIView) {
@@ -1372,6 +1353,7 @@ extension LibraryViewController {
                     UIAlertAction(title: NSLocalizedString("REFRESH_ANYWAYS"), style: .default) { _ in
                         Task {
                             refreshControl?.beginRefreshing()
+                            self.releaseRefreshControlForProgress(refreshControl)
                             await MangaManager.shared.backgroundRefreshLibrary(
                                 category: self.viewModel.isInRealCategory ? self.viewModel.currentCategory : nil,
                                 skipReachabilityCheck: true
@@ -1386,6 +1368,7 @@ extension LibraryViewController {
         }
 
         shouldRestoreLargeTitleAfterRefresh = true
+        releaseRefreshControlForProgress(refreshControl)
         Task {
             await MangaManager.shared.backgroundRefreshLibrary(
                 category: viewModel.isInRealCategory ? viewModel.currentCategory : nil
@@ -1395,6 +1378,18 @@ extension LibraryViewController {
                 refreshControl?.endRefreshing()
                 self.shouldHideRefreshAfterDrag = false
             }
+        }
+    }
+
+    private func releaseRefreshControlForProgress(_ refreshControl: UIRefreshControl?) {
+        guard AppSettings.general.showRefreshProgress.get(), let refreshControl else { return }
+        Task { [weak self] in
+            // Keep the pull gesture's animation long enough to settle before
+            // handing ongoing progress over to the tab bar accessory.
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, AppSettings.general.showRefreshProgress.get() else { return }
+            refreshControl.endRefreshing()
+            self.shouldHideRefreshAfterDrag = false
         }
     }
 
@@ -1595,14 +1590,20 @@ extension LibraryViewController {
                 )
             ], toSection: .regular)
         }
-        if self.showsEmptyRegularSection != showsEmptyRegularSection {
+        let emptyLayoutChanged = self.showsEmptyRegularSection != showsEmptyRegularSection
+        if emptyLayoutChanged {
             self.showsEmptyRegularSection = showsEmptyRegularSection
             collectionView.setCollectionViewLayout(makeCollectionViewLayout(), animated: false)
         }
 
-        dataSource.apply(snapshot) { [weak self] in
-            if reloadCells { self?.collectionView.reloadData() }
-            self?.updateVisibleSectionHeaders()
+        // Switching between a grid and the empty section changes where its
+        // supplementary header is laid out. Do not display the intermediate
+        // position while the diffable snapshot animates to the new layout.
+        dataSource.apply(snapshot, animatingDifferences: !emptyLayoutChanged) { [weak self] in
+            guard let self else { return }
+            if reloadCells { self.collectionView.reloadData() }
+            self.collectionView.layoutIfNeeded()
+            self.updateVisibleSectionHeaders()
             // A diffable update can recreate UIKit's orthogonal scroll view
             // after the layout pass that configured the previous one. Apply
             // the bounce behavior again once the new hierarchy is installed.
@@ -1671,6 +1672,8 @@ extension LibraryViewController {
                 case .regular:
                     header.configure(title: NSLocalizedString("LIBRARY"))
             }
+            header.setAlignmentContext(collectionView: collectionView, navigationBar: navigationController?.navigationBar)
+            header.layoutIfNeeded()
         }
     }
 
@@ -1760,20 +1763,24 @@ final class LibraryEmptyCell: UICollectionViewCell {
 
 private final class LibrarySectionHeader: UICollectionReusableView {
     static let reuseIdentifier = "LibrarySectionHeader"
+    private static let titleEdgePadding: CGFloat = 4
 
     private let titleButton = UIButton(type: .system)
     private var titleLeadingConstraint: NSLayoutConstraint!
     private var titleAction: UIAction?
-
-    var leadingInset: CGFloat = 0 {
-        didSet { titleLeadingConstraint.constant = leadingInset }
-    }
+    private weak var alignmentCollectionView: UICollectionView?
+    private weak var alignmentNavigationBar: UINavigationBar?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         var configuration = UIButton.Configuration.plain()
         configuration.baseForegroundColor = .label
-        configuration.contentInsets = .zero
+        configuration.contentInsets = NSDirectionalEdgeInsets(
+            top: Self.titleEdgePadding,
+            leading: Self.titleEdgePadding,
+            bottom: 0,
+            trailing: 0
+        )
         configuration.imagePadding = 6
         configuration.imagePlacement = .trailing
         configuration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
@@ -1793,6 +1800,47 @@ private final class LibrarySectionHeader: UICollectionReusableView {
             titleButton.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -20),
             titleButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -12)
         ])
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        alignmentCollectionView = nil
+        alignmentNavigationBar = nil
+        titleLeadingConstraint.constant = 0
+    }
+
+    func setAlignmentContext(collectionView: UICollectionView, navigationBar: UINavigationBar?) {
+        alignmentCollectionView = collectionView
+        alignmentNavigationBar = navigationBar
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        updateTitleAlignment()
+        super.layoutSubviews()
+    }
+
+    private func updateTitleAlignment() {
+        guard let collectionView = alignmentCollectionView,
+              let navigationBar = alignmentNavigationBar,
+              isDescendant(of: collectionView) else { return }
+        let marginFrame = navigationBar.layoutMarginsGuide.layoutFrame
+        let isRightToLeft = effectiveUserInterfaceLayoutDirection == .rightToLeft
+        let titleEdge = isRightToLeft ? marginFrame.maxX : marginFrame.minX
+        let titleEdgeInCollection = navigationBar.convert(CGPoint(x: titleEdge, y: 0), to: collectionView).x
+        let frameInCollection = convert(bounds, to: collectionView)
+        let targetEdge = isRightToLeft
+            ? min(collectionView.bounds.width - 20, titleEdgeInCollection)
+            : max(20, titleEdgeInCollection)
+        let inset = max(0, isRightToLeft
+            ? frameInCollection.maxX - targetEdge
+            : targetEdge - frameInCollection.minX)
+        // Give the first glyph breathing room inside the button without moving
+        // the visible title away from the navigation bar's text alignment.
+        let buttonInset = inset + (isRightToLeft ? Self.titleEdgePadding : -Self.titleEdgePadding)
+        if abs(titleLeadingConstraint.constant - buttonInset) > 0.5 {
+            titleLeadingConstraint.constant = buttonInset
+        }
     }
 
     func configure(

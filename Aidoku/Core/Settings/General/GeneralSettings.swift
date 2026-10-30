@@ -15,6 +15,9 @@ struct GeneralSettings: Sendable {
             recognizeCombinedBooks,
             disableTrackingMenu,
             libraryActionsMenu,
+            showRefreshProgress,
+            hideAutomaticRefreshProgress,
+            parallelLibraryRefreshes,
             combinedNavigation,
             developerMode,
             flareSolverrURL,
@@ -28,6 +31,9 @@ struct GeneralSettings: Sendable {
     let recognizeCombinedBooks = SettingsKey<Bool>("General.recognizeCombinedBooks", default: false)
     let disableTrackingMenu = SettingsKey<Bool>("General.disableTrackingMenu", default: false)
     let libraryActionsMenu = SettingsKey<Bool>("General.libraryActionsMenu", default: false)
+    let showRefreshProgress = SettingsKey<Bool>("General.showRefreshProgress", default: false)
+    let hideAutomaticRefreshProgress = SettingsKey<Bool>("General.hideAutomaticRefreshProgress", default: false)
+    let parallelLibraryRefreshes = SettingsKey<Int>("General.parallelLibraryRefreshes", default: 1)
     let combinedNavigation = SettingsKey<Bool>("General.combinedNavigation", default: false)
     let developerMode = SettingsKey<Bool>("General.developerMode", default: false)
     let flareSolverrURL = SettingsKey<String>("General.flareSolverrURL", default: "")

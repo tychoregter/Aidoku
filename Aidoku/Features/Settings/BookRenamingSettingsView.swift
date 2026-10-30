@@ -59,12 +59,29 @@ struct LabsFeaturesView: View {
     @AppStorage("General.recognizeCombinedBooks") private var recognizeCombinedBooks = false
     @AppStorage("General.disableTrackingMenu") private var disableTrackingMenu = false
     @AppStorage("General.libraryActionsMenu") private var libraryActionsMenu = false
+    @AppStorage("General.showRefreshProgress") private var showRefreshProgress = false
+    @AppStorage("General.hideAutomaticRefreshProgress") private var hideAutomaticRefreshProgress = false
+    @AppStorage("General.parallelLibraryRefreshes") private var parallelLibraryRefreshes = 1
     @AppStorage("General.combinedNavigation") private var combinedNavigation = false
     @AppStorage("General.flareSolverrURL") private var flareSolverrURL = ""
     @AppStorage("General.flareSolverrFallback") private var flareSolverrFallback = true
 
     var body: some View {
         List {
+            Section {
+                Toggle(NSLocalizedString("LIBRARY_ACTIONS_MENU", value: "Library Actions Menu", comment: "Show Settings, Select, and Refresh in the Library menu"),
+                       isOn: $libraryActionsMenu)
+                Toggle("Show Refresh Progress", isOn: $showRefreshProgress)
+                Toggle("Hide Automatic Refresh Progress", isOn: $hideAutomaticRefreshProgress)
+                    .disabled(!showRefreshProgress)
+                Stepper(value: $parallelLibraryRefreshes, in: 1...8) {
+                    LabeledContent("Parallel Refreshes", value: "\(parallelLibraryRefreshes)")
+                }
+            } header: {
+                Text(NSLocalizedString("LABS_LIBRARY", value: "Library", comment: "Labs settings related to the Library"))
+            } footer: {
+                Text("High values may overload a server or trigger source rate limits.")
+            }
             Section {
                 Toggle(NSLocalizedString("BOOK_RENAMING", value: "Book Renaming", comment: "Experimental per-series book naming feature"),
                        isOn: $bookRenamingEnabled)
@@ -81,12 +98,6 @@ struct LabsFeaturesView: View {
             Section {
                 Toggle(NSLocalizedString("RECOGNIZE_COMBINED_BOOKS", value: "Recognize Combined Books", comment: "Recognize multi-episode books when checking for missing books"),
                        isOn: $recognizeCombinedBooks)
-            }
-            Section {
-                Toggle(NSLocalizedString("LIBRARY_ACTIONS_MENU", value: "Library Actions Menu", comment: "Show Settings, Select, and Refresh in the Library menu"),
-                       isOn: $libraryActionsMenu)
-            } header: {
-                Text(NSLocalizedString("LABS_LIBRARY", value: "Library", comment: "Labs settings related to the Library"))
             }
             if #available(iOS 27.0, *) {
                 Section {
@@ -106,11 +117,6 @@ struct LabsFeaturesView: View {
                     .disabled(searchRequiresCombined)
                 } header: {
                     Text(NSLocalizedString("NAVIGATION", value: "Navigation", comment: "Navigation section title"))
-                } footer: {
-                    if NavigationTab.ordered.filter({ $0.isEnabled }).contains(.search),
-                       NavigationTab.ordered.filter({ $0.isEnabled }).last != .search {
-                        Text("Combined Navigation is required while Search is not the last tab.")
-                    }
                 }
             }
             Section {
@@ -131,6 +137,12 @@ struct LabsFeaturesView: View {
         .navigationTitle(NSLocalizedString("LABS_FEATURES"))
         .onChange(of: libraryActionsMenu) { _ in
             NotificationCenter.default.post(name: .init(AppSettings.general.libraryActionsMenu.key), object: nil)
+        }
+        .onChange(of: showRefreshProgress) { _ in
+            NotificationCenter.default.post(name: .init(AppSettings.general.showRefreshProgress.key), object: nil)
+        }
+        .onChange(of: hideAutomaticRefreshProgress) { _ in
+            NotificationCenter.default.post(name: .init(AppSettings.general.hideAutomaticRefreshProgress.key), object: nil)
         }
         .onChange(of: combinedNavigation) { _ in
             NotificationCenter.default.post(name: .init(AppSettings.general.combinedNavigation.key), object: nil)

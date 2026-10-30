@@ -64,7 +64,7 @@ enum Settings {
                 value: .page(.init(
                     items: [],
                     inlineTitle: true,
-                    icon: .system(name: "heart.fill", color: "orange")
+                    icon: .system(name: "heart.fill", color: "red")
                 ))
             ),
             .init(
@@ -108,7 +108,7 @@ enum Settings {
                 value: .page(.init(
                     items: pinSettings,
                     inlineTitle: true,
-                    icon: .system(name: "pin.fill", color: "purple")
+                    icon: .system(name: "pin.fill", color: "orange")
                 ))
             ),
             .init(
@@ -141,7 +141,7 @@ enum Settings {
                 value: .page(.init(
                     items: [],
                     inlineTitle: true,
-                    icon: .system(name: "clock.arrow.2.circlepath", color: "orange", inset: 4)
+                    icon: .system(name: "clock.arrow.2.circlepath", color: "blue", inset: 4)
                 ))
             ),
             .init(
@@ -150,6 +150,17 @@ enum Settings {
                     items: advancedSettings,
                     inlineTitle: true,
                     icon: .system(name: "gearshape.2.fill", color: "gray", inset: 4)
+                ))
+            )
+        ]))),
+        .init(value: .group(.init(items: [
+            .init(
+                key: "Labs",
+                title: NSLocalizedString("LABS_FEATURES"),
+                value: .page(.init(
+                    items: [],
+                    inlineTitle: true,
+                    icon: .system(name: "flask.fill", color: "orange")
                 ))
             )
         ]))),
@@ -1158,16 +1169,6 @@ extension Settings {
     ]
 
     private static let advancedSettings: [Setting] = [
-        .init(
-            title: "",
-            value: .group(.init(items: [
-                .init(
-                    key: "Advanced.labsFeatures",
-                    title: NSLocalizedString("LABS_FEATURES"),
-                    value: .page(.init(items: [], inlineTitle: true))
-                )
-            ]))
-        ),
         .init(
             title: NSLocalizedString("ADVANCED"),
             value: .group(.init(items: [
