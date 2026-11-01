@@ -51,6 +51,7 @@ struct MangaDetailsHeaderView: View {
     var onTitlePressed: (() -> Void)?
     var onReadButtonPressed: (() -> Void)?
     var onReadIncognitoPressed: (() -> Void)?
+    var onReadAgainPressed: (() -> Void)?
 
     @EnvironmentObject private var path: NavigationCoordinator
     @Environment(\.openURL) private var openURL
@@ -133,7 +134,8 @@ struct MangaDetailsHeaderView: View {
         onHeroBottomChange: ((CGFloat) -> Void)? = nil,
         onTitlePressed: (() -> Void)? = nil,
         onReadButtonPressed: (() -> Void)? = nil,
-        onReadIncognitoPressed: (() -> Void)? = nil
+        onReadIncognitoPressed: (() -> Void)? = nil,
+        onReadAgainPressed: (() -> Void)? = nil
     ) {
         self.section = section
         self._source = source
@@ -159,6 +161,7 @@ struct MangaDetailsHeaderView: View {
         self.onTitlePressed = onTitlePressed
         self.onReadButtonPressed = onReadButtonPressed
         self.onReadIncognitoPressed = onReadIncognitoPressed
+        self.onReadAgainPressed = onReadAgainPressed
 
         self._isTracking = State(initialValue: TrackerManager.shared.isTracking(
             mangaId: manga.wrappedValue.identifier
@@ -456,11 +459,13 @@ struct MangaDetailsHeaderView: View {
                     }
                 }
 
-                ReadIncognitoButtonInteraction(
+                ReadButtonInteraction(
                     onRead: { onReadButtonPressed?() },
                     onReadIncognito: { onReadIncognitoPressed?() },
+                    onReadAgain: { onReadAgainPressed?() },
                     isEnabled: !readButtonDisabled,
                     hasIncognitoAction: nextChapter != nil,
+                    hasReadAgainAction: allChaptersRead && source != nil && chapters.contains(where: { !$0.locked }),
                     content: AnyView(
                         readButtonLabel
                             .foregroundStyle(readButtonTextColor.opacity(readButtonDisabled ? 0.78 : 1))
@@ -878,19 +883,23 @@ struct MangaDetailsHeaderView: View {
 
 /// UIKit owns the visible button as well as its context menu, so its native
 /// press highlight and menu lift animate the same view without a second copy.
-private struct ReadIncognitoButtonInteraction: UIViewControllerRepresentable {
+private struct ReadButtonInteraction: UIViewControllerRepresentable {
     let onRead: () -> Void
     let onReadIncognito: () -> Void
+    let onReadAgain: () -> Void
     let isEnabled: Bool
     let hasIncognitoAction: Bool
+    let hasReadAgainAction: Bool
     let content: AnyView
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onRead: onRead,
             onReadIncognito: onReadIncognito,
+            onReadAgain: onReadAgain,
             isEnabled: isEnabled,
-            hasIncognitoAction: hasIncognitoAction
+            hasIncognitoAction: hasIncognitoAction,
+            hasReadAgainAction: hasReadAgainAction
         )
     }
 
@@ -898,7 +907,7 @@ private struct ReadIncognitoButtonInteraction: UIViewControllerRepresentable {
         let controller = UIHostingController(rootView: content)
         controller.safeAreaRegions = []
         controller.view.backgroundColor = .clear
-        controller.view.isUserInteractionEnabled = isEnabled
+        controller.view.isUserInteractionEnabled = isEnabled || hasReadAgainAction
         let tap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.read)
@@ -910,11 +919,13 @@ private struct ReadIncognitoButtonInteraction: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: UIHostingController<AnyView>, context: Context) {
         controller.rootView = content
-        controller.view.isUserInteractionEnabled = isEnabled
+        controller.view.isUserInteractionEnabled = isEnabled || hasReadAgainAction
         context.coordinator.onRead = onRead
         context.coordinator.onReadIncognito = onReadIncognito
+        context.coordinator.onReadAgain = onReadAgain
         context.coordinator.isEnabled = isEnabled
         context.coordinator.hasIncognitoAction = hasIncognitoAction
+        context.coordinator.hasReadAgainAction = hasReadAgainAction
     }
 
     func sizeThatFits(
@@ -930,19 +941,25 @@ private struct ReadIncognitoButtonInteraction: UIViewControllerRepresentable {
     final class Coordinator: NSObject, UIContextMenuInteractionDelegate {
         var onRead: () -> Void
         var onReadIncognito: () -> Void
+        var onReadAgain: () -> Void
         var isEnabled: Bool
         var hasIncognitoAction: Bool
+        var hasReadAgainAction: Bool
 
         init(
             onRead: @escaping () -> Void,
             onReadIncognito: @escaping () -> Void,
+            onReadAgain: @escaping () -> Void,
             isEnabled: Bool,
-            hasIncognitoAction: Bool
+            hasIncognitoAction: Bool,
+            hasReadAgainAction: Bool
         ) {
             self.onRead = onRead
             self.onReadIncognito = onReadIncognito
+            self.onReadAgain = onReadAgain
             self.isEnabled = isEnabled
             self.hasIncognitoAction = hasIncognitoAction
+            self.hasReadAgainAction = hasReadAgainAction
         }
 
         @objc func read() {
@@ -953,16 +970,26 @@ private struct ReadIncognitoButtonInteraction: UIViewControllerRepresentable {
             _ interaction: UIContextMenuInteraction,
             configurationForMenuAtLocation location: CGPoint
         ) -> UIContextMenuConfiguration? {
-            guard isEnabled, hasIncognitoAction else { return nil }
+            guard (isEnabled && hasIncognitoAction) || hasReadAgainAction else { return nil }
             return UIContextMenuConfiguration(
                 identifier: nil,
                 previewProvider: nil,
                 actionProvider: { [weak self] _ in
-                    UIMenu(children: [
+                    if self?.hasReadAgainAction == true {
+                        return UIMenu(children: [
+                            UIAction(
+                                title: NSLocalizedString("READ_AGAIN"),
+                                image: UIImage(systemName: "book.closed")
+                            ) { [weak self] _ in
+                                self?.onReadAgain()
+                            }
+                        ])
+                    }
+                    return UIMenu(children: [
                         UIAction(
                             title: NSLocalizedString("READ_INCOGNITO"),
                             image: UIImage(systemName: "book.closed")
-                        ) { _ in
+                        ) { [weak self] _ in
                             self?.onReadIncognito()
                         }
                     ])

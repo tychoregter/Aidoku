@@ -863,6 +863,13 @@ extension MangaView.ViewModel {
         case chapter(AidokuRunner.Chapter)
     }
 
+    var firstReadableChapter: AidokuRunner.Chapter? {
+        let visibleChapterKeys = Set(chapters.map(\.key))
+        return (manga.chapters ?? chapters).reversed().first {
+            visibleChapterKeys.contains($0.key) && !$0.locked
+        }
+    }
+
     private func getNextChapter() -> ChapterResult {
         guard !chapters.isEmpty else { return .none }
 

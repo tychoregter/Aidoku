@@ -12,11 +12,15 @@ import AidokuRunner
 import PhotosUI
 
 class LibraryViewController: OldMangaCollectionViewController {
+    private static let librarySearchEnabled = false
     private static var libraryActionsMenuEnabled: Bool { AppSettings.general.libraryActionsMenu.get() }
     private static var selectionEnabled: Bool { libraryActionsMenuEnabled }
 
     private var horizontalRowScrollViewObservations: [NSKeyValueObservation] = []
     private var isOpeningLibraryItem = false
+    private var librarySearchQuery = ""
+    private var isLibrarySearchActive = false
+    private var isShowingLibrarySearch: Bool { isLibrarySearchActive || !librarySearchQuery.isEmpty }
 
 
     typealias Scope = LibraryViewModel.Scope
@@ -137,10 +141,11 @@ class LibraryViewController: OldMangaCollectionViewController {
         usesSeparatedPinnedSections && AppSettings.appearance.keepPinnedTitlesInLibrary.get()
     }
     private var shouldShowPinnedPlaceholder: Bool {
-        showsPinnedSectionTitles && viewModel.pinnedManga.isEmpty
+        !isShowingLibrarySearch && showsPinnedSectionTitles && viewModel.pinnedManga.isEmpty
     }
     private var shouldShowContinueReadingPlaceholder: Bool {
-        usesDedicatedContinueReadingSection && viewModel.continueReadingManga.isEmpty
+        !isShowingLibrarySearch
+            && usesDedicatedContinueReadingSection && viewModel.continueReadingManga.isEmpty
     }
     private var showsCombinedLibraryHeader: Bool {
         usesDedicatedContinueReadingSection && !showsPinnedSectionTitles
@@ -202,9 +207,14 @@ class LibraryViewController: OldMangaCollectionViewController {
         // fix refresh control snapping height
         refreshControl.didMoveToSuperview()
 
-        // The Library has no text input. Clear any responder retained by the
-        // system search tab so opening a menu cannot restore its keyboard.
-        view.window?.endEditing(true)
+        // Keep the upstream search presentation ready for a future re-enable.
+        if Self.librarySearchEnabled && !navigationItem.hidesSearchBarWhenScrolling {
+            navigationItem.hidesSearchBarWhenScrolling = true
+        }
+
+        if navigationItem.searchController?.isActive != true {
+            view.window?.endEditing(true)
+        }
     }
 
     private func restoreNavigationBarAppearance() {
@@ -248,6 +258,17 @@ class LibraryViewController: OldMangaCollectionViewController {
 
         navigationController?.navigationBar.prefersLargeTitles = true
         collectionView.contentInset.top = 8
+        if Self.librarySearchEnabled {
+            navigationItem.hidesSearchBarWhenScrolling = false
+            collectionView.keyboardDismissMode = .onDrag
+
+            let searchController = UISearchController(searchResultsController: nil)
+            searchController.searchResultsUpdater = self
+            searchController.delegate = self
+            searchController.obscuresBackgroundDuringPresentation = false
+            navigationItem.searchController = searchController
+            updateSearchPlaceholder()
+        }
 
         // navbar buttons
         updateMoreMenu()
@@ -1289,12 +1310,18 @@ extension LibraryViewController {
     // updates library empty message
     // should be called when category changes and when library loads initially
     func updateEmptyStack() {
+        updateSearchPlaceholder()
         emptyStackView.imageSystemName = if isFavoritesTab {
             "heart.fill"
         } else if isStackView {
             "square.stack.3d.up.fill"
         } else {
             "books.vertical.fill"
+        }
+        if !librarySearchQuery.isEmpty {
+            emptyStackView.title = String(format: NSLocalizedString("NO_RESULTS_FOR_%@"), librarySearchQuery)
+            emptyStackView.text = NSLocalizedString("NO_RESULTS_TEXT")
+            return
         }
         if isFavoritesTab {
             emptyStackView.title = "Favorites"
@@ -1310,7 +1337,12 @@ extension LibraryViewController {
                 ? NSLocalizedString("LIBRARY_ADD_CONTENT")
                 : NSLocalizedString("LIBRARY_ADJUST_FILTERS")
         }
+    }
 
+    private func updateSearchPlaceholder() {
+        navigationItem.searchController?.searchBar.placeholder = viewModel.currentCategory == nil
+            ? NSLocalizedString("LIBRARY_SEARCH")
+            : NSLocalizedString("CATEGORY_SEARCH")
     }
 
     @objc func stopEditing() {
@@ -1494,6 +1526,18 @@ extension LibraryViewController {
 
 // MARK: - Data Source Updating
 extension LibraryViewController {
+    private func matchesLibrarySearch(_ item: MangaInfo) -> Bool {
+        guard !librarySearchQuery.isEmpty else { return true }
+        if item.title?.localizedCaseInsensitiveContains(librarySearchQuery) == true
+            || item.author?.localizedCaseInsensitiveContains(librarySearchQuery) == true {
+            return true
+        }
+        if let stackID = item.stackID {
+            return viewModel.stackContainsSearchMatch(stackID, query: librarySearchQuery)
+        }
+        return false
+    }
+
     func clearDataSource() {
         let snapshot = NSDiffableDataSourceSnapshot<Section, MangaInfo>()
         dataSource.apply(snapshot)
@@ -1503,9 +1547,10 @@ extension LibraryViewController {
         if isFavoritesTab || isStackView {
             usesSeparatedPinnedSections = false
             var snapshot = NSDiffableDataSourceSnapshot<Section, MangaInfo>()
-            if !locked, !viewModel.manga.isEmpty {
+            let matchingManga = viewModel.manga.filter(matchesLibrarySearch)
+            if !locked, !matchingManga.isEmpty {
                 snapshot.appendSections([.regular])
-                snapshot.appendItems(viewModel.manga, toSection: .regular)
+                snapshot.appendItems(matchingManga, toSection: .regular)
             }
             dataSource.apply(snapshot) { [weak self] in
                 if reloadCells { self?.collectionView.reloadData() }
@@ -1518,8 +1563,9 @@ extension LibraryViewController {
             }
             return
         }
-        let shouldSeparate = isSeparatedPinnedLayoutEnabled
-            && (!viewModel.pinnedManga.isEmpty || AppSettings.appearance.showPinnedSectionTitles.get())
+        let matchingPinnedManga = viewModel.pinnedManga.filter(matchesLibrarySearch)
+        let shouldSeparate = !isShowingLibrarySearch && isSeparatedPinnedLayoutEnabled
+            && (!matchingPinnedManga.isEmpty || AppSettings.appearance.showPinnedSectionTitles.get())
         if usesSeparatedPinnedSections != shouldSeparate {
             usesSeparatedPinnedSections = shouldSeparate
             collectionView.setCollectionViewLayout(makeCollectionViewLayout(), animated: false)
@@ -1528,7 +1574,7 @@ extension LibraryViewController {
         var snapshot = NSDiffableDataSourceSnapshot<Section, MangaInfo>()
 
         if !locked {
-            if usesDedicatedContinueReadingSection {
+            if usesDedicatedContinueReadingSection && !isShowingLibrarySearch {
                 snapshot.appendSections([.continueReading])
                 if shouldShowContinueReadingPlaceholder {
                     var placeholder = MangaInfo.emptyPinnedPlaceholder(title: "Nothing to Continue")
@@ -1546,7 +1592,7 @@ extension LibraryViewController {
                             .emptyPinnedPlaceholder(title: emptyPinnedPlaceholderTitle)
                         ], toSection: .pinned)
                     } else {
-                        snapshot.appendItems(viewModel.pinnedManga, toSection: .pinned)
+                        snapshot.appendItems(matchingPinnedManga, toSection: .pinned)
                     }
                 }
                 let libraryManga = if keepsPinnedTitlesInLibrary {
@@ -1560,12 +1606,14 @@ extension LibraryViewController {
                     viewModel.manga
                 }
                 let stackedLibraryManga = viewModel.stackLibraryItems(libraryManga)
+                    .filter(matchesLibrarySearch)
                 if !stackedLibraryManga.isEmpty {
                     snapshot.appendSections([.regular])
                     snapshot.appendItems(stackedLibraryManga, toSection: .regular)
                 }
             } else {
-                let libraryManga = viewModel.pinnedManga + viewModel.stackLibraryItems(viewModel.manga)
+                let libraryManga = matchingPinnedManga + viewModel.stackLibraryItems(viewModel.manga)
+                    .filter(matchesLibrarySearch)
                 if !libraryManga.isEmpty {
                     snapshot.appendSections([.regular])
                     snapshot.appendItems(libraryManga, toSection: .regular)
@@ -1576,17 +1624,23 @@ extension LibraryViewController {
         // An empty Continue Reading or pinned row still occupies its section
         // with a placeholder, so keep the Library empty state below it.
         let hasOtherVisibleSection = snapshot.sectionIdentifiers.contains { $0 != .regular }
-        let showsEmptyRegularSection = !snapshot.sectionIdentifiers.contains(.regular) && hasOtherVisibleSection
+        let showsEmptyRegularSection = !snapshot.sectionIdentifiers.contains(.regular)
+            && hasOtherVisibleSection
+            && (librarySearchQuery.isEmpty || snapshot.itemIdentifiers.isEmpty)
         if showsEmptyRegularSection {
             snapshot.appendSections([.regular])
             snapshot.appendItems([
                 .emptyLibraryPlaceholder(
-                    title: viewModel.currentCategory == nil
-                        ? NSLocalizedString("LIBRARY_EMPTY")
-                        : NSLocalizedString("CATEGORY_EMPTY"),
-                    text: viewModel.actuallyEmpty
-                        ? NSLocalizedString("LIBRARY_ADD_CONTENT")
-                        : NSLocalizedString("LIBRARY_ADJUST_FILTERS")
+                    title: librarySearchQuery.isEmpty
+                        ? (viewModel.currentCategory == nil
+                            ? NSLocalizedString("LIBRARY_EMPTY")
+                            : NSLocalizedString("CATEGORY_EMPTY"))
+                        : String(format: NSLocalizedString("NO_RESULTS_FOR_%@"), librarySearchQuery),
+                    text: librarySearchQuery.isEmpty
+                        ? (viewModel.actuallyEmpty
+                            ? NSLocalizedString("LIBRARY_ADD_CONTENT")
+                            : NSLocalizedString("LIBRARY_ADJUST_FILTERS"))
+                        : NSLocalizedString("NO_RESULTS_TEXT")
                 )
             ], toSection: .regular)
         }
@@ -3382,6 +3436,27 @@ extension LibraryViewController {
 
     func transitionSourceView(for mangaId: MangaIdentifier) -> UIView? {
         libraryTransitionSourceView(for: mangaId)
+    }
+}
+
+// MARK: - Search Results
+extension LibraryViewController: UISearchResultsUpdating, UISearchControllerDelegate {
+    func willPresentSearchController(_ searchController: UISearchController) {
+        isLibrarySearchActive = true
+        updateDataSource()
+    }
+
+    func didDismissSearchController(_ searchController: UISearchController) {
+        isLibrarySearchActive = false
+        updateDataSource()
+    }
+
+    func updateSearchResults(for searchController: UISearchController) {
+        let query = searchController.searchBar.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard librarySearchQuery != query else { return }
+        librarySearchQuery = query
+        updateEmptyStack()
+        updateDataSource()
     }
 }
 

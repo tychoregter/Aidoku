@@ -104,13 +104,25 @@ class VerticalContentOffsetPreservingLayout: UICollectionViewFlowLayout {
 
         var origin: CGFloat = 0
         let width = collectionView.bounds.size.width
+        let alignPages = minimumLineSpacing == 0 && AppSettings.general.alignWebtoonPages.get()
+        // Texture's ASRatioLayoutSpec floors image height to a screen pixel.
+        // Match that height from the first layout, before the image node has
+        // had a chance to relayout after the reader controls are shown.
+        let pixelsPerPoint = collectionView.traitCollection.displayScale
 
         for section in 0..<collectionView.numberOfSections {
             for itemIndex in 0..<collectionView.numberOfItems(inSection: section) {
                 let indexPath = IndexPath(item: itemIndex, section: section)
                 let attributes = UICollectionViewLayoutAttributes(forCellWith: indexPath)
 
-                let size = CGSize(width: width, height: getHeight(for: indexPath))
+                let pageHeight = getHeight(for: indexPath)
+                let height: CGFloat
+                if alignPages && pixelsPerPoint > 0 && pageHeight > 0 {
+                    height = floor((pageHeight + CGFloat(Float.ulpOfOne)) * pixelsPerPoint) / pixelsPerPoint
+                } else {
+                    height = pageHeight
+                }
+                let size = CGSize(width: width, height: height)
                 attributes.frame = CGRect(origin: CGPoint(x: 0, y: origin), size: size)
                 currentAttributes[indexPath] = attributes
                 itemIdentifiers[indexPath] = itemIdentifier(for: indexPath)

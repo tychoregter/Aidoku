@@ -18,6 +18,7 @@ struct GeneralSettings: Sendable {
             showRefreshProgress,
             hideAutomaticRefreshProgress,
             parallelLibraryRefreshes,
+            alignWebtoonPages,
             combinedNavigation,
             developerMode,
             flareSolverrURL,
@@ -34,6 +35,7 @@ struct GeneralSettings: Sendable {
     let showRefreshProgress = SettingsKey<Bool>("General.showRefreshProgress", default: false)
     let hideAutomaticRefreshProgress = SettingsKey<Bool>("General.hideAutomaticRefreshProgress", default: false)
     let parallelLibraryRefreshes = SettingsKey<Int>("General.parallelLibraryRefreshes", default: 1)
+    let alignWebtoonPages = SettingsKey<Bool>("General.alignWebtoonPages", default: false)
     let combinedNavigation = SettingsKey<Bool>("General.combinedNavigation", default: false)
     let developerMode = SettingsKey<Bool>("General.developerMode", default: false)
     let flareSolverrURL = SettingsKey<String>("General.flareSolverrURL", default: "")

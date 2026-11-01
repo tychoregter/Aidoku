@@ -408,6 +408,7 @@
 "RECENTLY_UPDATED" = "Recently Updated";
 "READ" = "Read";
 "READ_INCOGNITO" = "Read Incognito";
+"READ_AGAIN" = "Read Again";
 "UNREAD" = "Unread";
 "MARK" = "Mark";
 "MARK_ALL" = "Mark All";

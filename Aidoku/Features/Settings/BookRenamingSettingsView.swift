@@ -62,6 +62,7 @@ struct LabsFeaturesView: View {
     @AppStorage("General.showRefreshProgress") private var showRefreshProgress = false
     @AppStorage("General.hideAutomaticRefreshProgress") private var hideAutomaticRefreshProgress = false
     @AppStorage("General.parallelLibraryRefreshes") private var parallelLibraryRefreshes = 1
+    @AppStorage("General.alignWebtoonPages") private var alignWebtoonPages = false
     @AppStorage("General.combinedNavigation") private var combinedNavigation = false
     @AppStorage("General.flareSolverrURL") private var flareSolverrURL = ""
     @AppStorage("General.flareSolverrFallback") private var flareSolverrFallback = true
@@ -81,6 +82,13 @@ struct LabsFeaturesView: View {
                 Text(NSLocalizedString("LABS_LIBRARY", value: "Library", comment: "Labs settings related to the Library"))
             } footer: {
                 Text("High values may overload a server or trigger source rate limits.")
+            }
+            Section {
+                Toggle("Align Webtoon Pages", isOn: $alignWebtoonPages)
+            } header: {
+                Text(NSLocalizedString("READER", value: "Reader", comment: "Reader settings"))
+            } footer: {
+                Text("Aligns webtoon page edges to screen pixels to reduce hairline seams.")
             }
             Section {
                 Toggle(NSLocalizedString("BOOK_RENAMING", value: "Book Renaming", comment: "Experimental per-series book naming feature"),

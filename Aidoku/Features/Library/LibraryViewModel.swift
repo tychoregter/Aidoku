@@ -1022,6 +1022,15 @@ extension LibraryViewModel {
 
     }
 
+    func stackContainsSearchMatch(_ stackID: UUID, query: String) -> Bool {
+        guard let stack = LibraryStackStore.shared.stack(id: stackID) else { return false }
+        return stack.members.contains { memberID in
+            guard let member = unfilteredLibraryManga[memberID] else { return false }
+            return member.title?.localizedCaseInsensitiveContains(query) == true
+                || member.author?.localizedCaseInsensitiveContains(query) == true
+        }
+    }
+
     func stackLibraryItems(_ items: [MangaInfo]) -> [MangaInfo] {
         guard LibraryBundleFeature.isEnabled, scope == .library else { return items }
         let stacks = LibraryStackStore.shared.stacks

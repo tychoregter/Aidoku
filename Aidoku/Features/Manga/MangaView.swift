@@ -15,10 +15,12 @@ struct MangaView: View {
         let id = UUID()
         let chapter: AidokuRunner.Chapter
         let isIncognitoSession: Bool
+        let startPage: Int?
 
-        init(_ chapter: AidokuRunner.Chapter, incognito: Bool = false) {
+        init(_ chapter: AidokuRunner.Chapter, incognito: Bool = false, startPage: Int? = nil) {
             self.chapter = chapter
             self.isIncognitoSession = incognito
+            self.startPage = startPage
         }
     }
 
@@ -406,6 +408,7 @@ struct MangaView: View {
                         return mangaWithFilteredChapters
                     }(),
                     chapter: launch.chapter,
+                    startPage: launch.startPage,
                     transitionSource: readerTransitionSource
                         ?? ReaderTransitionSource(path.navigationController?.topViewController),
                     isIncognitoSession: launch.isIncognitoSession
@@ -515,6 +518,11 @@ extension MangaView {
             onReadIncognitoPressed: {
                 if let nextChapter = viewModel.nextChapter {
                     readerLaunch = ReaderLaunch(nextChapter, incognito: true)
+                }
+            },
+            onReadAgainPressed: {
+                if let firstChapter = viewModel.firstReadableChapter {
+                    readerLaunch = ReaderLaunch(firstChapter, startPage: 1)
                 }
             }
         )

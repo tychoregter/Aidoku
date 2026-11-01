@@ -149,9 +149,28 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
     override func layout() {
         super.layout()
 
+        fillAlignedWebtoonPage()
+
         if needsDictionaryOverlayRender {
             renderDictionaryOverlaysIfNeeded()
         }
+    }
+
+    private func fillAlignedWebtoonPage() {
+        guard
+            image != nil,
+            delegate?.readingMode == .webtoon,
+            !pillarbox,
+            AppSettings.general.alignWebtoonPages.get(),
+            bounds.width > 0,
+            bounds.height > 0,
+            imageNode.frame != bounds
+        else { return }
+
+        // The ratio layout can retain the fractional image height even when
+        // the collection cell ends on a pixel boundary. Fill that cell so its
+        // image shares the snapped edge with the next page.
+        imageNode.frame = bounds
     }
 
     override func didEnterPreloadState() {
@@ -240,6 +259,7 @@ class ReaderWebtoonPageNode: BaseObservingCellNode {
         } completion: { [weak self] _ in
             guard let self = self else { return }
             self.imageNode.frame = context.finalFrame(for: self.imageNode)
+            self.fillAlignedWebtoonPage()
             self.textNode.frame = context.finalFrame(for: self.textNode)
             if let delegate = self.delegate {
                 Task { @MainActor in
@@ -657,7 +677,30 @@ extension ReaderWebtoonPageNode {
         } else {
             ratio ?? Self.defaultRatio
         }
-        let size = CGSize(width: width, height: width * ratio)
+        let naturalHeight = width * ratio
+        var height = naturalHeight
+        if
+            AppSettings.general.alignWebtoonPages.get(),
+            delegate?.readingMode == .webtoon,
+            !pillarbox,
+            let indexPath,
+            let collectionNode = owningNode as? ASCollectionNode,
+            let layout = collectionNode.collectionViewLayout as? VerticalContentOffsetPreservingLayout,
+            let attributes = layout.layoutAttributesForItem(at: indexPath)
+        {
+            let zoom = layout.getScale()
+            let displayScale = collectionNode.view.traitCollection.displayScale
+            if zoom > 0 && displayScale > 0 {
+                let alignedHeight = attributes.frame.height / zoom
+                // The collection layout owns the page boundary. A loaded image
+                // must not replace its pixel-aligned cell height with the raw
+                // ratio height while the initial pages are appearing.
+                if abs(alignedHeight - naturalHeight) <= 1 / (displayScale * zoom) {
+                    height = alignedHeight
+                }
+            }
+        }
+        let size = CGSize(width: width, height: height)
         frame = CGRect(origin: .zero, size: size)
         transitionLayout(with: ASSizeRange(min: .zero, max: size), animated: animated, shouldMeasureAsync: false)
     }
